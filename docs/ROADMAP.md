@@ -14,11 +14,13 @@ harness turns the team's agentic-engineering practices into a tool that any repo
 - [x] Test suite on Linux, plus macOS with bash 3.2 / BSD awk
 - [x] This repo runs its own harness
 - [x] Apache-2.0 license; generated output is unrestricted (NOTICE)
+- [x] Maintainer-only tool: generated repos are self-contained (`.harness/README.md`, `.harness/report.sh`); collaborators install nothing
 - [x] Fork-friendly install: install from a local clone or `HARNESS_REPO`, `self-update` from the fork's origin, fork-aware links
 
 ## v0.2: hardening
 
 - [ ] `guard-bash`: fewer false positives on quoted or heredoc text. A command that only *writes* the string `curl ... | bash` into a file is blocked today; parse out quoted and heredoc bodies before matching. Seen in practice while editing this repo.
+- [ ] CI drift check without the tool: a committed `.harness/verify.sh` that fails when generated files no longer match `.harness/manifest`, or when `config`/`permissions` changed without regeneration
 - [ ] `make dist`: versioned tarball + SHA-256 for offline or artifact-store installs; `install.sh --from-tarball`
 - [ ] `docs/SECURITY-REVIEW.md`: every file harness writes and every network call it makes, for corporate intake reviews
 - [ ] `supply-chain` module: internal package index config (pip/uv/npm), version cooldown, agent-guard allowlist check for new dependencies

@@ -9,6 +9,7 @@ module_apply() {
   emit block gitignore.tmpl .gitignore
   emit seed editorconfig.tmpl .editorconfig
   emit seed permissions.tmpl .harness/permissions
+  emit file harness-readme.md .harness/README.md
 
   settings_hook SessionStart "" session-start.sh 600
 

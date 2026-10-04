@@ -365,6 +365,35 @@ test_install_from_fork() {
   check_not "no credentials leaked" grep -rq 't0ken' "$d" --exclude-dir=.git
 }
 
+# The tech lead runs harness once; collaborators only clone the project repo.
+test_collaborator_needs_nothing() {
+  local lead clone bin t out
+  lead=$(new_repo lead package.json)
+  "$H" configure --yes -C "$lead" --preset strict --owners @acme/x >/dev/null 2>&1
+  git -C "$lead" add -A && git -C "$lead" commit -qm "chore: harness"
+  clone=$WORK/collaborator
+  rm -rf "$clone"
+  git clone -q "$lead" "$clone"
+
+  check_not "no absolute paths to the tool" grep -rqF "$ROOT" "$clone" --exclude-dir=.git
+  check_not "no 'run harness update' for everyone" \
+    grep -rlE 'harness (update|report)' "$clone" --exclude-dir=.git --exclude=README.md --exclude=config
+  check ".harness/README.md explains it" contains "$clone/.harness/README.md" 'Collaborators: nothing to install'
+
+  # A machine with no harness, no jq, no python3.
+  bin=$WORK/collabbin
+  mkdir -p "$bin"
+  for t in bash sh cat grep sed tr head tail dirname date mkdir git printf cut awk sort env pwd; do
+    [ -e "$bin/$t" ] || ln -s "$(command -v "$t")" "$bin/$t" 2>/dev/null || true
+  done
+  [ "$(hook_json Bash command 'git push --force origin x' |
+    env -i PATH="$bin" CLAUDE_PROJECT_DIR="$clone" "$clone/.claude/hooks/guard-bash.sh" >/dev/null 2>&1
+  echo $?)" = 2 ] || fail "guard hook does not work on a bare collaborator machine"
+  out=$(env -i PATH="$bin" "$clone/.harness/report.sh" 2>&1) || fail "report.sh failed: $out"
+  check "report.sh standalone" grep -q 'Blocked: 1' <<<"$out"
+  ok
+}
+
 test_cli_errors() {
   check_not "unknown command fails" "$H" frobnicate
   check_not "unknown module fails" "$H" configure --yes -C "$(new_repo err)" --modules core,nope

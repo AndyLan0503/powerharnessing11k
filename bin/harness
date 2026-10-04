@@ -159,7 +159,8 @@ next_steps() {
   ui_ok "Harness applied to $TARGET"
   printf '\n'
   ui_info "${C_BOLD}Next steps${C_RESET}"
-  ui_info "  1. Review and commit:  git add -A && git commit -m 'chore: set up agent harness'"
+  ui_info "  1. Review, commit, and open a PR:  git add -A && git commit -m 'chore: set up agent harness'"
+  ui_info "     Once it merges, collaborators get everything on their next pull; they install nothing."
   ui_info "  2. Write project-specific guidance above the managed block in CLAUDE.md"
   if list_has "$HV_MODULES" ci; then
     ui_info "  3. Protect '$HV_DEFAULT_BRANCH': require PR review + the CI check (Settings → Branches)"
@@ -272,50 +273,12 @@ cmd_doctor() {
   fi
 }
 
-_days_ago() {
-  date -u -d "-$1 days" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-"$1"d +%Y-%m-%dT%H:%M:%SZ
-}
-
 cmd_report() {
   resolve_target
-  local log=$TARGET/.harness/logs/events.jsonl since=''
-  [ -f "$log" ] || {
-    ui_info "No audit log yet at ${log#"$TARGET"/}. It fills as agents work (audit module)."
-    return 0
-  }
-  [ -z "$OPT_DAYS" ] || since=$(_days_ago "$OPT_DAYS")
-  ui_info "${C_BOLD}Agent activity${C_RESET}${since:+ since $since}  ${C_DIM}(${log#"$TARGET"/})${C_RESET}"
-  printf '\n'
-  awk -v since="$since" '
-    function field(name,    re, v) {
-      re = "\"" name "\":\"([^\"\\\\]|\\\\.)*\""
-      if (!match($0, re)) return ""
-      v = substr($0, RSTART + length(name) + 4, RLENGTH - length(name) - 5)
-      return v
-    }
-    {
-      ts = field("ts"); if (since != "" && ts < since) next
-      kind = field("kind"); tool = field("tool"); sid = field("session_id")
-      total++; kinds[kind]++
-      if (sid != "") sessions[sid] = 1
-      if (kind == "tool" && tool != "") { if (!(tool in tools)) nt++; tools[tool]++ }
-      if (kind == "blocked") blocked[++nb] = ts "  " field("detail")
-      if (kind == "check_failed") failed++
-    }
-    END {
-      ns = 0; for (s in sessions) ns++
-      printf "  Events: %d   Sessions: %d   Turns: %d   Blocked: %d   Failed checks: %d\n\n", total, ns, kinds["turn_end"], nb, failed
-      if (nt > 0) {
-        print "  Tool calls"
-        for (t in tools) printf "    %-14s %d\n", t, tools[t] | "sort -k2 -nr"
-        close("sort -k2 -nr")
-        print ""
-      }
-      if (nb > 0) {
-        print "  Most recent blocked actions"
-        for (i = (nb > 10 ? nb - 9 : 1); i <= nb; i++) print "    " blocked[i]
-      }
-    }' "$log"
+  # Same script the audit module installs as .harness/report.sh, so the
+  # maintainer's view and every collaborator's view are identical.
+  bash "$HARNESS_ROOT/modules/audit/report.sh" --log "$TARGET/.harness/logs/events.jsonl" \
+    ${OPT_DAYS:+--days "$OPT_DAYS"}
 }
 
 cmd_list() {

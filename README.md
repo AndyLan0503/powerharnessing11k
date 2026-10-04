@@ -2,14 +2,15 @@
 
 **A repeatable agentic harness for any git repository.** Think `p10k configure`, but instead of a zsh prompt it sets up everything a team needs to work safely with coding agents: agent context, guardrail hooks, CI, review automation, and monitoring of what agents actually do.
 
-```sh
-git clone https://github.com/reclan-ai/harness-workflow ~/.harness-workflow
-~/.harness-workflow/install.sh
-cd your-repo
-harness configure
-```
+**The tech lead runs it once; everyone else just pulls.** harness writes self-contained files into the project repo: plain-bash hooks, settings, workflows, and docs. Collaborators install nothing. They clone the project as usual, and Claude Code and GitHub Actions pick everything up.
 
-(If your network allows raw downloads, `curl -fsSL https://raw.githubusercontent.com/reclan-ai/harness-workflow/main/install.sh | bash` does the same in one step.)
+```sh
+# Tech lead, once per project (no install needed):
+git clone https://github.com/reclan-ai/harness-workflow /tmp/harness
+/tmp/harness/bin/harness configure -C ~/work/my-project
+cd ~/work/my-project && git checkout -b chore/agent-harness && git add -A && git commit -m "chore: set up agent harness"
+# open a PR; once merged, every collaborator has the harness on their next pull
+```
 
 ```
    _
@@ -36,7 +37,20 @@ harness configure
   (q)  Quit and do nothing.
 ```
 
-Seven single-key questions: stack (auto-detected), commands, which agents, preset, code owners, telemetry, and confirm. Answers are saved to `.harness/config`, so the setup is **reproducible**. Re-run `harness update` whenever you change the config or upgrade harness, and it never clobbers files your team has edited.
+Seven single-key questions: stack (auto-detected), commands, which agents, preset, code owners, telemetry, and confirm. Answers are saved in the project at `.harness/config`, so the setup is **reproducible**. Any maintainer can later re-apply it with `harness update`, for example after changing the config or to pick up a newer harness, and it never clobbers files the team has edited.
+
+## Who does what
+
+| | Tech lead / maintainer | Collaborators |
+|---|---|---|
+| Install harness | No: run `bin/harness` from any clone | **No** |
+| Set up the project | `harness configure`, then commit and open a PR | Pull, as with any change |
+| Day to day | Nothing | Nothing. Hooks, permissions, and skills run automatically in Claude Code |
+| Change a guardrail or permission | Edit `.harness/config` or `.harness/permissions`, run `harness update`, commit | Propose it in a PR or issue (see the generated `.harness/README.md`) |
+| See local agent activity | `.harness/report.sh` | `.harness/report.sh` |
+| Upgrade the harness | `git pull` the harness clone, run `harness update`, commit | Pull |
+
+Inside the project, `.harness/README.md` explains all of this to collaborators, so nobody needs to read this page.
 
 ## Why
 
@@ -88,18 +102,20 @@ Every blocked action is logged and explained to the agent: *"Blocked by harness 
 ## Three layers of agent monitoring
 
 1. **Live usage** (`telemetry`): OpenTelemetry metrics from Claude Code covering cost, tokens, sessions, and tool decisions.
-2. **Local audit** (`audit`): `.harness/logs/events.jsonl` records each tool call, blocked action, and failed check. `harness report --days 7` summarises it.
+2. **Local audit** (`audit`): `.harness/logs/events.jsonl` records each tool call, blocked action, and failed check. `.harness/report.sh --days 7`, which is committed in the project, summarises it.
 3. **Outcomes** (`agent-guard`): every PR is checked in CI. Agent PRs are detected (co-author trailer, branch prefix, or PR checkbox), labelled `agent-authored`, and inspected for the failure modes agents are most prone to. A weekly **Agent digest** issue reports agent PR volume, merge rate, closures, and reverts.
 
-## Commands
+## Commands (maintainers)
+
+Run them from any clone as `/path/to/harness/bin/harness <command>`. Optionally, `install.sh` puts `harness` on your PATH if you manage many repos.
 
 ```
 harness configure   Run the wizard (re-run any time; previous answers are kept)
 harness update      Re-apply from .harness/config, e.g. after editing it or upgrading harness
 harness doctor      Check drift, hook permissions, settings validity, tool availability
-harness report      Summarise the local agent audit log (--days N)
+harness report      Same as the project's .harness/report.sh (--days N)
 harness list        Show modules and presets
-harness self-update Pull the latest harness
+harness self-update Pull the latest harness (only if installed via install.sh)
 ```
 
 Non-interactive (CI, scripts, fleet rollout):
@@ -119,17 +135,16 @@ harness owns files in one of four ways (details in [docs/ARCHITECTURE.md](docs/A
 - **Seeds** (`SECURITY.md`, `.editorconfig`, `.harness/permissions`) are written once and never touched again.
 - **Your rules** in `.harness/permissions` (`allow|ask|deny <rule>`) are merged into the generated `settings.json` on every update.
 
-Commit `.harness/config`, `.harness/manifest`, and `.harness/permissions`. Logs are git-ignored.
+Commit everything harness writes, including `.harness/config`, `.harness/manifest`, `.harness/permissions`, `.harness/README.md`, and `.harness/report.sh`. Logs are git-ignored.
 
 ## Using harness inside a company
 
-harness is designed to be forked into a company's GitHub org and run from there. Many companies block raw downloads from public GitHub, and they should review outside tools anyway.
+harness is designed to be forked into a company's GitHub org and run from there. Many companies block raw downloads from public GitHub, and they should review outside tools anyway. Only tech leads ever touch the fork; project collaborators never need access to it.
 
 1. **Fork or import** the repo into your org (e.g. `github.com/yourco/harness-workflow`), through whatever route your security team approves.
-2. **Install from the fork:** clone it and run `install.sh` from the clone, or set `HARNESS_REPO=<fork url>`. Nothing reaches public GitHub.
-3. `harness self-update` pulls from the fork's `origin`, so the fork is the team's release channel. Sync upstream changes into it when you choose to.
-4. Generated `CONTRIBUTING.md` files link to wherever harness was installed from (credentials stripped), so your repos point at your fork automatically.
-5. Pin a release by installing a tag: `HARNESS_REF=v0.1.0`.
+2. **Run it from the fork:** `git clone <fork> /tmp/harness && /tmp/harness/bin/harness configure -C <project>`. Nothing reaches public GitHub.
+3. The fork is your team's release channel. Sync upstream changes into it when you choose to, and pin with a tag (`git checkout v0.1.0`).
+4. Generated docs (`CONTRIBUTING.md`, `.harness/README.md`) link to wherever harness was run from (credentials stripped), so projects point at your fork automatically.
 
 ## Requirements
 

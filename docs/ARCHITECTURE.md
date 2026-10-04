@@ -4,9 +4,9 @@
 bin/harness          CLI entry point: argument parsing and commands
 lib/
   ui.sh              p10k-style terminal UI (one question per screen, single keys)
-  wizard.sh          the seven configuration questions
+  wizard.sh          the eight configuration questions
   detect.sh          stack, package-manager, and default-branch detection; per-stack commands
-  modules.sh         module registry, presets, derived template flags
+  modules.sh         module registry, profiles and tiers, derived template flags
   render.sh/.awk     template engine
   apply.sh           writing files into the target repo (ownership modes)
   settings.sh        composing .claude/settings.json from module contributions
@@ -14,7 +14,7 @@ lib/
 modules/<name>/
   module.sh          MODULE_DESC + module_apply()
   ...                templates
-presets/*.preset     GUARD_LEVEL + MODULES
+profiles/*.profile   TITLE, DESC, GUARD_LEVEL, STRICT_GUARD, and MINIMAL / RECOMMENDED / STRICT module lists
 tests/run.sh         end-to-end test suite
 ```
 
@@ -45,9 +45,17 @@ A pre-existing file that harness never wrote is treated like an edited one: harn
 {{#if NAME}} / {{#unless NAME}}  on their own line, closed by {{/if}}; nestable
 a{{#if NAME}}b{{/if}}c           inline form on one line, not nestable
 {{> file.md}}                    on its own line: include $MODULE_DIR/file.md
+                                 (partials may include partials, up to 5 deep)
 ```
 
 A value is falsy when it is empty, `0`, `false`, `no`, or `off`.
+
+## Adding a profile
+
+1. Create `profiles/<name>.profile` with `TITLE`, `DESC`, `GUARD_LEVEL`, `STRICT_GUARD`, `MINIMAL`, `RECOMMENDED`, and `STRICT`.
+2. Add `<name>` to `ALL_PROFILES` in `lib/modules.sh`. Templates get `PROFILE_<NAME>`; also decide whether it counts as `PROFILE_ENGINEERING` (PR-centric agreement) or `PROFILE_SOLO` (no PR flow).
+3. Usually add a same-named module (`modules/<name>/`) for its skills and seed files, plus `modules/core/agreements/<name>.md`, which is included in `CLAUDE.md` when the module is on.
+4. Extend `test_every_profile_and_tier` and `test_profile_specifics` in `tests/run.sh`.
 
 ## Writing a module
 
@@ -66,7 +74,7 @@ module_apply() {
 EOF
 ```
 
-Then add the module name to `ALL_MODULES` in `lib/modules.sh` (that list sets the order) and, if appropriate, to a preset. Hooks should source `lib.sh` (`. "$(dirname "$0")/lib.sh"`) to get `hook_field`, `hook_block`, and `hook_log`. Add a test to `tests/run.sh`; the `test_every_stack` test already fails on any unrendered `{{PLACEHOLDER}}`.
+Then add the module name to `ALL_MODULES` in `lib/modules.sh` (that list sets the order) and, if appropriate, to the tiers in `profiles/*.profile`. Hooks should source `lib.sh` (`. "$(dirname "$0")/lib.sh"`) to get `hook_field`, `hook_block`, and `hook_log`. Add a test to `tests/run.sh`; the `test_every_stack` test already fails on any unrendered `{{PLACEHOLDER}}`.
 
 ## Compatibility rules
 

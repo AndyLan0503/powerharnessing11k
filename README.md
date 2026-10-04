@@ -19,25 +19,28 @@ cd ~/work/my-project && git checkout -b chore/agent-harness && git add -A && git
   | | | | (_| | |  | | | |  __/\__ \__ \
   |_| |_|\__,_|_|  |_| |_|\___||___/___/
 
-  [4/7]  How much harness do you want?
+  [1/8]  What is this repository for?
 
-  (1)  Minimal
-       Guardrails only: agent context + hooks that block destructive actions.
+  (1)  Software engineering
+       Apps, services, libraries: PR workflow, CI, security scanning, agent PR monitoring
 
-  (2)  Standard (recommended)
-       Recommended for teams: guardrails, quality hooks, collaboration files, CI, ...
+  (2)  Data science & ML
+       Notebooks, pipelines, models: reproducibility, immutable raw data, experiment log, ...
 
-  (3)  Strict
-       For regulated or high-stakes repos: everything in standard, plus Claude PR review, ...
+  (3)  Agentic applications
+       LLM apps and agents: prompts as code, evals gate changes, tool safety, ...
 
-  (4)  Custom
-       Pick modules and guard level one by one
+  (4)  Self-paced study
+       Claude as a tutor: learning plan, notes, quizzes, progress log; it hints rather than ...
+
+  (5)  Research
+       Lab notebook, literature notes, verified citations, immutable raw data, ...
 
   (r)  Restart from the beginning.
   (q)  Quit and do nothing.
 ```
 
-Seven single-key questions: stack (auto-detected), commands, which agents, preset, code owners, telemetry, and confirm. Answers are saved in the project at `.harness/config`, so the setup is **reproducible**. Any maintainer can later re-apply it with `harness update`, for example after changing the config or to pick up a newer harness, and it never clobbers files the team has edited.
+Eight single-key questions: profile, stack (auto-detected), commands, which agents, how much harness (minimal / recommended / strict / custom), code owners, telemetry, and confirm. Answers are saved in the project at `.harness/config`, so the setup is **reproducible**. Any maintainer can later re-apply it with `harness update`, for example after changing the config or to pick up a newer harness, and it never clobbers files the team has edited.
 
 ## Who does what
 
@@ -64,6 +67,20 @@ Every team adopting coding agents rebuilds the same scaffolding by hand, and oft
 
 harness packages all of this as modules, and the defaults are opinionated defaults a tech lead would sign off on.
 
+## Profiles
+
+A **profile** says what the repo is for; a **tier** (minimal / recommended / strict) says how much harness. The profile changes the agent's working agreement in `CLAUDE.md`, adds its own skills, seed files, and guardrails, and picks sensible default modules.
+
+| Profile | Agent working agreement | Skills | Seeded files | Extra guardrails and checks | Recommended modules |
+|---|---|---|---|---|---|
+| **software** | PR workflow, tests are the contract, scope, deps | `steward`, `task-intake`, `reviewer`, `test-writer` | n/a | n/a | core guardrails quality audit skills collab ci security agent-guard |
+| **ml** | + immutable raw data, no data/models in git, seeds and configs, no leakage, baselines, ask before expensive runs | + `experiment`, `data-audit` | `EXPERIMENTS.md`, `docs/DATA.md`, `data/README.md` | `data/raw/` read-only; data/model artifacts git-ignored; CI flags notebooks with outputs and files > 5 MB | software's + `ml` |
+| **agentic** | + prompts as code, evals gate changes, model config, untrusted tool output, least-privilege tools, budgets | + `prompt-change`, `agent-tool` | `prompts/`, `evals/` (with example cases) | `evals.yml` runs `EVAL_CMD` on prompt/agent PRs; CI flags prompt changes without eval changes | software's + `agentic` |
+| **study** | Tutor, not ghostwriter: diagnose, hints before answers, check understanding, keep the progress log | `tutor`, `quiz`, `study-plan` | `LEARNING_PLAN.md`, `PROGRESS.md`, `notes/`, `exercises/` | Claude Code **Learning** output style; `exercises/` is read-only for agents; solo repo, so pushing to `main` is allowed | core guardrails audit study (guard: relaxed) |
+| **research** | Never fabricate citations or results, separate evidence from inference, lab notebook, reproducible analyses | `lab-notebook`, `lit-review`, `claim-check` | `RESEARCH_LOG.md`, `references.bib`, `literature/` | `data/raw/` read-only; `WebSearch` pre-approved; CI flags notebooks with outputs | core guardrails quality audit research collab ci |
+
+`harness list` prints every profile and tier with its exact module list. `EVAL_CMD` (ml, agentic) is asked for in the commands step.
+
 ## What gets installed
 
 | Module | Files | What it does |
@@ -71,7 +88,7 @@ harness packages all of this as modules, and the defaults are opinionated defaul
 | `core` | `CLAUDE.md` (+ `AGENTS.md`), `.claude/settings.json`, `session-start.sh`, `.gitignore` block | Agent working agreement, permissions, dependency install in cloud sessions |
 | `guardrails` | `guard-bash.sh`, `guard-paths.sh` | Block force-push, `--no-verify`, `rm -rf ~`, `curl \| sh`, secret access, pushes to the default branch |
 | `quality` | `format-on-edit.sh`, `stop-checks.sh` | Auto-format edited files; run lint/typecheck before the agent says "done" |
-| `audit` | `audit-log.sh` | Local JSONL trail of agent tool use and blocked actions → `harness report` |
+| `audit` | `audit-log.sh`, `.harness/report.sh` | Local JSONL trail of agent tool use and blocked actions, summarised by `.harness/report.sh` |
 | `skills` | `.claude/skills/{steward,task-intake}`, `.claude/agents/{reviewer,test-writer}` | Repo workflows for driving PRs to green and starting tasks well |
 | `collab` | `CONTRIBUTING.md`, `CODEOWNERS`, PR template, issue templates (incl. **Agent task**), `docs/agents/HANDBOOK.md` | How humans and agents collaborate |
 | `ci` | `ci.yml`, `pr-title.yml` | Stack-aware CI; Conventional Commit PR titles |
@@ -79,8 +96,9 @@ harness packages all of this as modules, and the defaults are opinionated defaul
 | `agent-guard` | `agent-guard.yml` + script, `agent-digest.yml` | Detect and label agent PRs; flag deleted/skipped tests, removed assertions, protected-path edits, oversized diffs, new deps; weekly digest issue |
 | `review` | `claude.yml`, `claude-review.yml`, `REVIEW.md` | `@claude` on issues/PRs and automatic PR review |
 | `telemetry` | settings `env`, `docs/agents/TELEMETRY.md` | Claude Code OpenTelemetry export to your collector |
+| `ml` / `agentic` / `study` / `research` | see [Profiles](#profiles) | Profile-specific skills, seed files, and guardrails |
 
-Presets: **minimal** (`core guardrails`), **standard** (everything except `review` and `telemetry`), **strict** (standard + `review`, strict guard level). Telemetry is added whenever you give an OTLP endpoint.
+Tiers per profile: **minimal** (core, guardrails, and the profile module; guard relaxed), **recommended** (the profile's defaults above), **strict** (more modules, such as `review`, and a stricter guard level). Telemetry is added whenever you give an OTLP endpoint.
 
 Supported stacks: Node (npm/pnpm/yarn/bun), Python (uv/poetry/pip), Go, Rust, and generic (bring your own commands).
 
@@ -114,14 +132,15 @@ harness configure   Run the wizard (re-run any time; previous answers are kept)
 harness update      Re-apply from .harness/config, e.g. after editing it or upgrading harness
 harness doctor      Check drift, hook permissions, settings validity, tool availability
 harness report      Same as the project's .harness/report.sh (--days N)
-harness list        Show modules and presets
+harness list        Show profiles, tiers, and modules
 harness self-update Pull the latest harness (only if installed via install.sh)
 ```
 
 Non-interactive (CI, scripts, fleet rollout):
 
 ```sh
-harness configure --yes --preset strict --owners @acme/platform --agents multi
+harness configure --yes --profile ml --tier strict --owners @acme/platform --agents multi
+harness configure --yes --profile study
 harness configure --yes --stack python --modules core,guardrails,ci --guard standard
 harness update --dry-run
 ```

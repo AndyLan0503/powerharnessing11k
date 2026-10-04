@@ -66,6 +66,37 @@ size=$(git diff --numstat "$RANGE" | { grep -Ev "$LOCKFILES" || true; } | awk '{
 manifests=$(git diff --name-only "$RANGE" | grep -E "$MANIFESTS" || true)
 [ -z "$manifests" ] || add warn "Dependency manifests changed" "$(printf '%s' "$manifests" | tr '\n' ' ')"
 
+changed_am=$(git diff --name-only --diff-filter=AM "$RANGE")
+big=''
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  bytes=$(git cat-file -s "$HEAD_SHA:$f" 2>/dev/null || echo 0)
+  [ "$bytes" -le 5242880 ] || big="$big $f"
+done <<EOF
+$changed_am
+EOF
+[ -z "$big" ] || add warn "Large files (> 5 MB)" "keep data and model artifacts out of git:$big"
+{{#if NOTEBOOK_CHECK}}
+
+dirty_nb=''
+while IFS= read -r f; do
+  case $f in *.ipynb) ;; *) continue ;; esac
+  if git show "$HEAD_SHA:$f" 2>/dev/null | grep -Eq '"output_type"[[:space:]]*:|"execution_count"[[:space:]]*:[[:space:]]*[0-9]'; then
+    dirty_nb="$dirty_nb $f"
+  fi
+done <<EOF
+$changed_am
+EOF
+[ -z "$dirty_nb" ] || add warn "Notebooks committed with outputs" "clear outputs before committing:$dirty_nb"
+{{/if}}
+{{#if MOD_AGENTIC}}
+
+changed_all=$(git diff --name-only "$RANGE")
+if printf '%s\n' "$changed_all" | grep -q '^prompts/' && ! printf '%s\n' "$changed_all" | grep -q '^evals/'; then
+  add warn "Prompts changed without eval changes" "attach before/after eval results or add eval cases (prompt-change skill)"
+fi
+{{/if}}
+
 # ---- Report -----------------------------------------------------------------
 blocking=false
 if [ "$agent" = true ] && [ "$MODE" = block ] && grep -q '^block' "$findings"; then

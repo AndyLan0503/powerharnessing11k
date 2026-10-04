@@ -1,3 +1,0 @@
-# Guardrails only: agent context + hooks that block destructive actions.
-GUARD_LEVEL=relaxed
-MODULES=core guardrails

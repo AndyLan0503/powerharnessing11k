@@ -2,17 +2,24 @@
 
 # render_template SRC DEST — expand a template using the exported HV_* vars.
 # A line of the form "{{> path}}" is first replaced by the contents of
-# $MODULE_DIR/path (one level, no recursion) so modules can share fragments.
+# $MODULE_DIR/path. Partials may include partials, up to 5 levels deep.
 render_template() {
   local dir=${MODULE_DIR:-$(dirname "$1")}
   awk -v dir="$dir" '
-    /^\{\{> [^}]+\}\}[ \t]*$/ {
-      f = $0; sub(/^\{\{> /, "", f); sub(/\}\}[ \t]*$/, "", f)
-      path = dir "/" f
-      if ((getline l < path) <= 0) { print "render: missing partial " path > "/dev/stderr"; exit 3 }
-      print l
-      while ((getline l < path) > 0) print l
-      close(path); next
+    function expand(path, depth,    l, f, n) {
+      if (depth > 5) { print "render: partials nested too deeply at " path > "/dev/stderr"; exit 3 }
+      n = 0
+      while ((getline l < path) > 0) {
+        n++
+        if (l ~ /^\{\{> [^}]+\}\}[ \t]*$/) {
+          f = l; sub(/^\{\{> /, "", f); sub(/\}\}[ \t]*$/, "", f)
+          expand(dir "/" f, depth + 1)
+        } else {
+          print l
+        }
+      }
+      close(path)
+      if (n == 0) { print "render: missing or empty partial " path > "/dev/stderr"; exit 3 }
     }
-    { print }' "$1" | awk -f "$HARNESS_ROOT/lib/render.awk" >"$2"
+    BEGIN { expand(ARGV[1], 0); exit }' "$1" | awk -f "$HARNESS_ROOT/lib/render.awk" >"$2"
 }

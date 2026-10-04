@@ -4,16 +4,22 @@
 #   .harness/manifest  "<sha256>  <path>" for every whole-file managed by harness
 # Together they make `harness update` reproducible and safe to re-run.
 
-ANSWER_KEYS="PROJECT_NAME STACK PKG_MANAGER INSTALL_CMD LINT_CMD TYPECHECK_CMD TEST_CMD FORMAT_CMD DEFAULT_BRANCH CODEOWNERS AGENT_TOOLS GUARD_LEVEL MODULES OTEL_ENDPOINT DIFF_BUDGET"
+ANSWER_KEYS="PROFILE PROJECT_NAME STACK PKG_MANAGER INSTALL_CMD LINT_CMD TYPECHECK_CMD TEST_CMD EVAL_CMD FORMAT_CMD DEFAULT_BRANCH CODEOWNERS AGENT_TOOLS GUARD_LEVEL MODULES OTEL_ENDPOINT DIFF_BUDGET"
 
 config_path() { printf '%s/.harness/config' "$TARGET"; }
 manifest_path() { printf '%s/.harness/manifest' "$TARGET"; }
 
 # Load .harness/config into HV_* variables. Never sources the file.
 config_load() {
-  local file line key val
+  local file line key val var
   file=$(config_path)
   [ -f "$file" ] || return 1
+  # Keys missing from older configs default to empty (PROFILE to software).
+  for key in $ANSWER_KEYS; do
+    var="HV_$key"
+    [ -n "${!var+x}" ] || printf -v "$var" '%s' ''
+    export "${var?}"
+  done
   while IFS= read -r line || [ -n "$line" ]; do
     case $line in '' | '#'*) continue ;; esac
     key=${line%%=*}
@@ -22,6 +28,8 @@ config_load() {
     printf -v "HV_$key" '%s' "$val"
     export "HV_$key"
   done <"$file"
+  [ -n "$HV_PROFILE" ] || HV_PROFILE=software
+  export HV_PROFILE
   return 0
 }
 

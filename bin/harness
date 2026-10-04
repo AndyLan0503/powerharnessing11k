@@ -30,7 +30,7 @@ Commands:
               or after upgrading harness). Never overwrites files you edited.
   doctor      Check the harness in a repo: drift, hooks, settings, tools.
   report      Summarise the local agent audit log (.harness/logs).
-  list        Show available modules and presets.
+  list        Show profiles, tiers, and modules.
   self-update Pull the latest harness release.
   version     Print the version.
 
@@ -39,10 +39,12 @@ Options:
   -y, --yes             Non-interactive: accept detected defaults
   -n, --dry-run         Show what would change without writing anything
   -f, --force           Overwrite managed files even if you edited them
-      --preset NAME     minimal | standard | strict (default: standard)
+      --profile NAME    software | ml | agentic | study | research (default: software)
+      --tier NAME       minimal | recommended | strict (default: recommended;
+                        --preset is an alias, and "standard" means recommended)
       --stack NAME      node | python | go | rust | generic (default: detected)
-      --modules LIST    Comma-separated modules (overrides the preset's list)
-      --guard LEVEL     relaxed | standard | strict (overrides the preset's level)
+      --modules LIST    Comma-separated modules (overrides the tier's list)
+      --guard LEVEL     relaxed | standard | strict (overrides the tier's level)
       --agents KIND     claude | multi (multi adds AGENTS.md for other agents)
       --owners LIST     CODEOWNERS entries, e.g. "@acme/platform"
       --otel URL        OTLP endpoint; enables the telemetry module
@@ -53,7 +55,7 @@ EOF
 # ---- argument parsing ------------------------------------------------------
 CMD=${1:-help}
 [ $# -eq 0 ] || shift
-TARGET=. YES='' DRY_RUN='' FORCE='' OPT_PRESET='' OPT_STACK='' OPT_MODULES=''
+TARGET=. YES='' DRY_RUN='' FORCE='' OPT_PROFILE='' OPT_TIER='' OPT_STACK='' OPT_MODULES=''
 OPT_GUARD='' OPT_AGENTS='' OPT_OWNERS='' OPT_OWNERS_SET='' OPT_OTEL='' OPT_DAYS=''
 while [ $# -gt 0 ]; do
   case $1 in
@@ -61,7 +63,8 @@ while [ $# -gt 0 ]; do
     -y | --yes) YES=1 ;;
     -n | --dry-run) DRY_RUN=1 ;;
     -f | --force) FORCE=1 ;;
-    --preset) OPT_PRESET=${2:?}; shift ;;
+    --profile) OPT_PROFILE=${2:?}; shift ;;
+    --tier | --preset) OPT_TIER=${2:?}; shift ;;
     --stack) OPT_STACK=${2:?}; shift ;;
     --modules) OPT_MODULES=${2:?}; shift ;;
     --guard) OPT_GUARD=${2:?}; shift ;;
@@ -89,6 +92,7 @@ resolve_target() {
 }
 
 validate_answers() {
+  list_has "$ALL_PROFILES" "${HV_PROFILE:-}" || harness_die "invalid profile: ${HV_PROFILE:-} (${ALL_PROFILES// /, })"
   case $HV_STACK in node | python | go | rust | generic) ;; *) harness_die "invalid stack: $HV_STACK" ;; esac
   case $HV_GUARD_LEVEL in relaxed | standard | strict) ;; *) harness_die "invalid guard level: $HV_GUARD_LEVEL" ;; esac
   case $HV_AGENT_TOOLS in claude | multi) ;; *) harness_die "invalid agents value: $HV_AGENT_TOOLS" ;; esac
@@ -105,7 +109,9 @@ apply_flag_overrides() {
     export HV_STACK HV_PKG_MANAGER
     stack_defaults
   fi
-  [ -z "$OPT_PRESET" ] || preset_load "$OPT_PRESET"
+  if [ -n "$OPT_PROFILE$OPT_TIER" ]; then
+    profile_load "${OPT_PROFILE:-$HV_PROFILE}" "${OPT_TIER:-recommended}"
+  fi
   if [ -n "$OPT_MODULES" ]; then HV_MODULES=${OPT_MODULES//,/ }; fi
   [ -z "$OPT_GUARD" ] || HV_GUARD_LEVEL=$OPT_GUARD
   [ -z "$OPT_AGENTS" ] || HV_AGENT_TOOLS=$OPT_AGENTS
@@ -179,11 +185,11 @@ cmd_configure() {
   HV_DEFAULT_BRANCH=$(detect_default_branch "$TARGET")
   HV_STACK=$(detect_stack "$TARGET")
   HV_PKG_MANAGER=$(detect_pkg_manager "$TARGET" "$HV_STACK")
-  HV_AGENT_TOOLS=claude HV_CODEOWNERS='' HV_OTEL_ENDPOINT='' HV_DIFF_BUDGET=800
+  HV_AGENT_TOOLS=claude HV_CODEOWNERS='' HV_OTEL_ENDPOINT='' HV_DIFF_BUDGET=800 HV_EVAL_CMD=''
   export HV_PROJECT_NAME HV_DEFAULT_BRANCH HV_STACK HV_PKG_MANAGER HV_AGENT_TOOLS \
-    HV_CODEOWNERS HV_OTEL_ENDPOINT HV_DIFF_BUDGET
+    HV_CODEOWNERS HV_OTEL_ENDPOINT HV_DIFF_BUDGET HV_EVAL_CMD
   stack_defaults
-  preset_load standard
+  profile_load software recommended
   local had_config=''
   if config_load; then had_config=1; fi
   apply_flag_overrides
@@ -196,7 +202,7 @@ cmd_configure() {
     ui_clear
     ui_banner
   else
-    ui_info "${C_BOLD}harness${C_RESET} $HARNESS_VERSION → $TARGET  ${C_DIM}($HV_STACK, $HV_GUARD_LEVEL${had_config:+, using .harness/config})${C_RESET}"
+    ui_info "${C_BOLD}harness${C_RESET} $HARNESS_VERSION → $TARGET  ${C_DIM}($HV_PROFILE, $HV_STACK, $HV_GUARD_LEVEL${had_config:+, using .harness/config})${C_RESET}"
   fi
   do_apply
   next_steps
@@ -282,14 +288,21 @@ cmd_report() {
 }
 
 cmd_list() {
-  local m p
+  local m p t
+  ui_info "${C_BOLD}Profiles${C_RESET}  (--profile)"
+  for p in $ALL_PROFILES; do
+    printf '  %-10s %s\n' "$p" "$(profile_field "$p" TITLE): $(profile_field "$p" DESC)"
+  done
+  printf '\n'
+  ui_info "${C_BOLD}Tiers${C_RESET}  (--tier): modules per profile"
+  for p in $ALL_PROFILES; do
+    for t in MINIMAL RECOMMENDED STRICT; do
+      printf '  %-10s %-12s %s\n' "$p" "$(printf '%s' "$t" | tr 'A-Z' 'a-z')" "$(profile_field "$p" "$t")"
+    done
+  done
+  printf '\n'
   ui_info "${C_BOLD}Modules${C_RESET}"
   for m in $ALL_MODULES; do printf '  %-12s %s\n' "$m" "$(module_desc "$m")"; done
-  printf '\n'
-  ui_info "${C_BOLD}Presets${C_RESET}"
-  for p in minimal standard strict; do
-    printf '  %-12s %s\n' "$p" "$(sed -n 's/^MODULES=//p' "$HARNESS_ROOT/presets/$p.preset")"
-  done
 }
 
 cmd_self_update() {

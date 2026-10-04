@@ -365,6 +365,121 @@ test_install_from_fork() {
   check_not "no credentials leaked" grep -rq 't0ken' "$d" --exclude-dir=.git
 }
 
+_set_config() { # dir KEY value
+  sed -i.bak "s|^$2=.*|$2=$3|" "$1/.harness/config" && rm -f "$1/.harness/config.bak"
+}
+
+test_every_profile_and_tier() {
+  local p t d f
+  for p in software ml agentic study research; do
+    for t in minimal recommended strict; do
+      d=$(new_repo "prof-$p-$t" pyproject.toml uv.lock)
+      "$H" configure --yes -C "$d" --profile "$p" --tier "$t" --owners @acme/x >/dev/null 2>&1 ||
+        fail "$p/$t: configure failed"
+      check "$p/$t: profile recorded" grep -q "^PROFILE=$p\$" "$d/.harness/config"
+      check "$p/$t: settings.json valid" jq empty "$d/.claude/settings.json"
+      check_not "$p/$t: unrendered placeholders" grep -rEn '\{\{[#/>]?[A-Z]' "$d" --exclude-dir=.git
+      for f in "$d"/.claude/hooks/*.sh "$d"/.harness/report.sh "$d"/.github/scripts/*.sh; do
+        [ -e "$f" ] || continue
+        check "$p/$t: bash syntax $(basename "$f")" bash -n "$f"
+        if command -v shellcheck >/dev/null 2>&1; then
+          check "$p/$t: shellcheck $(basename "$f")" shellcheck -S warning -e SC1091 "$f"
+        fi
+      done
+      if python3 -c 'import yaml' 2>/dev/null; then
+        for f in "$d"/.github/workflows/*.yml; do
+          [ -e "$f" ] || continue
+          check "$p/$t: valid yaml $(basename "$f")" python3 -c "import sys,yaml; yaml.safe_load(open(sys.argv[1]))" "$f"
+        done
+      fi
+    done
+  done
+}
+
+test_profile_specifics() {
+  local d
+  # Study: tutor agreement, Learning style, exercises protected, solo pushes OK.
+  d=$WORK/prof-study-recommended
+  check "study: Learning output style" jq -e '.outputStyle == "Learning"' "$d/.claude/settings.json"
+  check "study: tutor agreement" contains "$d/CLAUDE.md" 'How to help me learn'
+  check_not "study: no PR agreement" contains "$d/CLAUDE.md" 'Working agreement for agents'
+  check "study: plan seeded" test -f "$d/LEARNING_PLAN.md"
+  check "study: quiz skill" test -f "$d/.claude/skills/quiz/SKILL.md"
+  check_not "study: no collab files" test -e "$d/CONTRIBUTING.md"
+  [ "$(_guard "$d" guard-paths.sh Edit file_path "$d/exercises/ch1.py")" = 2 ] || fail "study: exercise edit allowed"
+  [ "$(_guard "$d" guard-paths.sh Edit file_path "$d/notes/ch1.md")" = 0 ] || fail "study: notes edit blocked"
+  [ "$(_guard "$d" guard-bash.sh Bash command 'git push origin main')" = 0 ] || fail "study: push to main blocked"
+  [ "$(_guard "$d" guard-bash.sh Bash command 'rm -rf ~')" = 2 ] || fail "study: rm -rf ~ allowed"
+
+  # Software keeps blocking pushes to the default branch.
+  d=$WORK/prof-software-minimal
+  [ "$(_guard "$d" guard-bash.sh Bash command 'git push origin main')" = 2 ] || fail "software: push to main allowed"
+
+  # ML: raw data immutable, data dir ignored except its README, ML agreement.
+  d=$WORK/prof-ml-recommended
+  [ "$(_guard "$d" guard-paths.sh Write file_path "$d/data/raw/train.csv")" = 2 ] || fail "ml: raw data edit allowed"
+  [ "$(_guard "$d" guard-paths.sh Write file_path "$d/data/processed/train.csv")" = 0 ] || fail "ml: processed edit blocked"
+  check "ml: agreement" contains "$d/CLAUDE.md" 'Data science and ML rules'
+  check "ml: experiment skill" test -f "$d/.claude/skills/experiment/SKILL.md"
+  check "ml: data ignored" git -C "$d" check-ignore -q data/raw/x.csv
+  check_not "ml: data/README.md not ignored" git -C "$d" check-ignore -q data/README.md
+  check "ml: checkpoints ignored" git -C "$d" check-ignore -q model.ckpt
+
+  # Research: raw data immutable, WebSearch allowed, research agreement.
+  d=$WORK/prof-research-recommended
+  [ "$(_guard "$d" guard-paths.sh Edit file_path "$d/data/raw/survey.csv")" = 2 ] || fail "research: raw data edit allowed"
+  check "research: WebSearch allowed" jq -e '.permissions.allow | index("WebSearch")' "$d/.claude/settings.json"
+  check "research: agreement" contains "$d/CLAUDE.md" 'Never fabricate'
+  check "research: bib seeded" test -f "$d/references.bib"
+
+  # Agentic: evals workflow appears once EVAL_CMD is set.
+  d=$WORK/prof-agentic-recommended
+  check "agentic: agreement" contains "$d/CLAUDE.md" 'Prompts are code'
+  check_not "agentic: no evals.yml without EVAL_CMD" test -e "$d/.github/workflows/evals.yml"
+  _set_config "$d" EVAL_CMD 'uv run python -m evals'
+  "$H" update -C "$d" >/dev/null 2>&1
+  check "agentic: evals.yml generated" contains "$d/.github/workflows/evals.yml" 'uv run python -m evals'
+  check "agentic: eval command in CLAUDE.md" contains "$d/CLAUDE.md" 'Evals: `uv run python -m evals`'
+  ok
+}
+
+test_old_config_without_profile() {
+  local d
+  d=$(new_repo legacy package.json)
+  "$H" configure --yes -C "$d" >/dev/null 2>&1
+  grep -v '^PROFILE=' "$d/.harness/config" >"$d/.harness/config.tmp" && mv "$d/.harness/config.tmp" "$d/.harness/config"
+  check "config without PROFILE still updates" "$H" update -C "$d"
+  check "treated as software" grep -q '^PROFILE=software$' "$d/.harness/config"
+}
+
+test_agent_guard_profile_checks() {
+  local d base out
+  d=$(new_repo agp pyproject.toml)
+  "$H" configure --yes -C "$d" --profile agentic >/dev/null 2>&1
+  mkdir -p "$d/prompts"
+  git -C "$d" add -A && git -C "$d" commit -qm base
+  base=$(git -C "$d" rev-parse HEAD)
+  echo "You are helpful." >"$d/prompts/system.md"
+  head -c 6000000 /dev/zero >"$d/blob.bin"
+  git -C "$d" add -A && git -C "$d" commit -qm "feat: prompt"
+  (cd "$d" && BASE_SHA=$base HEAD_SHA=$(git rev-parse HEAD) GITHUB_OUTPUT=/dev/null \
+    GITHUB_STEP_SUMMARY=$WORK/agp.md .github/scripts/agent-guard.sh >/dev/null 2>&1) || fail "agent-guard crashed (agentic)"
+  check "prompts without evals flagged" contains "$WORK/agp.md" 'Prompts changed without eval changes'
+  check "large file flagged" contains "$WORK/agp.md" 'Large files'
+
+  d=$(new_repo mlg pyproject.toml)
+  "$H" configure --yes -C "$d" --profile ml >/dev/null 2>&1
+  git -C "$d" add -A && git -C "$d" commit -qm base
+  base=$(git -C "$d" rev-parse HEAD)
+  printf '{"cells":[{"cell_type":"code","execution_count":3,"outputs":[{"output_type":"stream","text":"hi"}],"source":"print(1)"}]}\n' >"$d/eda.ipynb"
+  printf '{"cells":[{"cell_type":"code","execution_count":null,"outputs":[],"source":"print(1)"}]}\n' >"$d/clean.ipynb"
+  git -C "$d" add -A && git -C "$d" commit -qm "feat: eda"
+  (cd "$d" && BASE_SHA=$base HEAD_SHA=$(git rev-parse HEAD) GITHUB_OUTPUT=/dev/null \
+    GITHUB_STEP_SUMMARY=$WORK/mlg.md .github/scripts/agent-guard.sh >/dev/null 2>&1) || fail "agent-guard crashed (ml)"
+  check "notebook with outputs flagged" contains "$WORK/mlg.md" 'eda.ipynb'
+  check_not "clean notebook not flagged" contains "$WORK/mlg.md" 'clean.ipynb'
+}
+
 # The tech lead runs harness once; collaborators only clone the project repo.
 test_collaborator_needs_nothing() {
   local lead clone bin t out

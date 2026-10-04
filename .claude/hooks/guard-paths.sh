@@ -19,6 +19,7 @@ case $base in
   *.pem | *.key | *.p12 | *.pfx | id_rsa* | id_ed25519*) hook_block "editing $rel: key material is human-only" ;;
 esac
 
+
 [ "$LEVEL" = strict ] || exit 0
 
 case $rel in

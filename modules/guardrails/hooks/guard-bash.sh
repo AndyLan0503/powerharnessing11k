@@ -13,8 +13,13 @@ has() { printf '%s' "$cmd" | grep -Eq -- "$1"; }
 # Always blocked, at every level.
 has 'rm[[:space:]]+(-[[:alnum:]-]+[[:space:]]+)*(/|/\*|~/?|\$HOME/?)([[:space:]]|;|&|\||$)' &&
   hook_block "recursive delete of a root or home directory"
+{{#unless PROFILE_SOLO}}
 has "git[[:space:]]+push[^;&|]*[[:space:]:+]$DEFAULT_BRANCH([[:space:]]|;|&|$)" &&
   hook_block "direct push to $DEFAULT_BRANCH; push a branch and open a PR"
+{{/if}}
+{{#if PROFILE_SOLO}}
+: "$DEFAULT_BRANCH" # solo repo: pushing to the default branch is fine
+{{/if}}
 
 [ "$LEVEL" = relaxed ] && exit 0
 

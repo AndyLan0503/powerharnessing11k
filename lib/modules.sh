@@ -3,7 +3,9 @@
 # and module_apply(), which calls emit / settings_* (see lib/apply.sh and
 # lib/settings.sh). Order matters only for readability of the summary.
 
-ALL_MODULES="core guardrails quality audit skills collab ci security agent-guard review telemetry"
+ALL_MODULES="core guardrails quality audit skills ml agentic study research collab ci security agent-guard review telemetry"
+ALL_PROFILES="software ml agentic study research"
+ALL_TIERS="minimal recommended strict"
 
 module_desc() {
   (
@@ -39,23 +41,42 @@ modules_normalize() {
   trim "$out"
 }
 
-preset_load() { # name -> sets HV_GUARD_LEVEL HV_MODULES
-  local file=$HARNESS_ROOT/presets/$1.preset line key val
-  [ -f "$file" ] || harness_die "unknown preset '$1' (minimal, standard, strict)"
-  while IFS= read -r line || [ -n "$line" ]; do
-    case $line in '' | '#'*) continue ;; esac
-    key=${line%%=*}
-    val=${line#*=}
-    case $key in
-      GUARD_LEVEL) HV_GUARD_LEVEL=$val ;;
-      MODULES) HV_MODULES=$val ;;
-    esac
-  done <"$file"
-  export HV_GUARD_LEVEL HV_MODULES
+# A profile (profiles/<name>.profile) says what the repo is for; a tier says
+# how much harness. Together they choose modules and a guard level.
+
+profile_field() { # profile KEY
+  local file=$HARNESS_ROOT/profiles/$1.profile
+  [ -f "$file" ] || harness_die "unknown profile '$1' (${ALL_PROFILES// /, })"
+  sed -n "s/^$2=//p" "$file" | head -n 1
 }
 
-preset_desc() {
-  sed -n 's/^# \{0,1\}//p' "$HARNESS_ROOT/presets/$1.preset" | tr '\n' ' '
+tier_normalize() { # accepts the old preset name "standard" as "recommended"
+  case $1 in
+    minimal | recommended | strict) printf '%s' "$1" ;;
+    standard) printf 'recommended' ;;
+    *) harness_die "unknown tier '$1' (minimal, recommended, strict)" ;;
+  esac
+}
+
+profile_load() { # profile tier -> sets HV_PROFILE HV_MODULES HV_GUARD_LEVEL
+  local tier
+  tier=$(tier_normalize "$2")
+  HV_PROFILE=$1
+  case $tier in
+    minimal)
+      HV_MODULES=$(profile_field "$1" MINIMAL)
+      HV_GUARD_LEVEL=relaxed
+      ;;
+    recommended)
+      HV_MODULES=$(profile_field "$1" RECOMMENDED)
+      HV_GUARD_LEVEL=$(profile_field "$1" GUARD_LEVEL)
+      ;;
+    strict)
+      HV_MODULES=$(profile_field "$1" STRICT)
+      HV_GUARD_LEVEL=$(profile_field "$1" STRICT_GUARD)
+      ;;
+  esac
+  export HV_PROFILE HV_MODULES HV_GUARD_LEVEL
 }
 
 # Flags derived from answers, used by templates ({{#if MOD_CI}} etc.).
@@ -66,14 +87,35 @@ derive_vars() {
   export HV_HARNESS_URL
   HV_MULTI_AGENT=''
   [ "$HV_AGENT_TOOLS" = multi ] && HV_MULTI_AGENT=1
-  HV_GUARD_STRICT=''
-  [ "$HV_GUARD_LEVEL" = strict ] && HV_GUARD_STRICT=1
+  HV_GUARD_RELAXED='' HV_GUARD_STANDARD='' HV_GUARD_STRICT=''
+  case $HV_GUARD_LEVEL in
+    relaxed) HV_GUARD_RELAXED=1 ;;
+    standard) HV_GUARD_STANDARD=1 ;;
+    strict) HV_GUARD_STRICT=1 ;;
+  esac
+  export HV_GUARD_RELAXED HV_GUARD_STANDARD
   HV_AGENT_GUARD_MODE=warn
   [ "$HV_GUARD_LEVEL" = strict ] && HV_AGENT_GUARD_MODE=block
   HV_DIFF_BUDGET=${HV_DIFF_BUDGET:-800}
   HV_HAS_COMMANDS=''
-  [ -z "$HV_LINT_CMD$HV_TYPECHECK_CMD$HV_TEST_CMD" ] || HV_HAS_COMMANDS=1
+  [ -z "$HV_LINT_CMD$HV_TYPECHECK_CMD$HV_TEST_CMD$HV_EVAL_CMD" ] || HV_HAS_COMMANDS=1
   export HV_HARNESS_VERSION HV_MULTI_AGENT HV_GUARD_STRICT HV_AGENT_GUARD_MODE HV_DIFF_BUDGET HV_HAS_COMMANDS
+
+  # Profile flags. ENGINEERING: profiles whose work ships through PRs and CI.
+  # SOLO: one person, no review flow (pushing to the default branch is fine).
+  HV_PROFILE=${HV_PROFILE:-software}
+  for m in $ALL_PROFILES; do
+    up=$(printf '%s' "$m" | tr 'a-z' 'A-Z')
+    if [ "$HV_PROFILE" = "$m" ]; then printf -v "HV_PROFILE_$up" '1'; else printf -v "HV_PROFILE_$up" ''; fi
+    export "HV_PROFILE_$up"
+  done
+  HV_PROFILE_TITLE=$(profile_field "$HV_PROFILE" TITLE)
+  HV_PROFILE_ENGINEERING='' HV_PROFILE_SOLO='' HV_PROTECT_RAW_DATA=''
+  case $HV_PROFILE in software | ml | agentic) HV_PROFILE_ENGINEERING=1 ;; esac
+  case $HV_PROFILE in study) HV_PROFILE_SOLO=1 ;; esac
+  case $HV_PROFILE in ml | research) HV_PROTECT_RAW_DATA=1 ;; esac
+  HV_NOTEBOOK_CHECK=$HV_PROTECT_RAW_DATA
+  export HV_PROFILE HV_PROFILE_TITLE HV_PROFILE_ENGINEERING HV_PROFILE_SOLO HV_PROTECT_RAW_DATA HV_NOTEBOOK_CHECK
 
   for m in $ALL_MODULES; do
     up=$(printf '%s' "$m" | tr 'a-z-' 'A-Z_')

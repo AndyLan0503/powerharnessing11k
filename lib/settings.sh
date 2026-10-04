@@ -5,13 +5,15 @@
 
 settings_reset() {
   local f
-  for f in allow deny ask env hooks; do : >"$HARNESS_TMP/settings.$f"; done
+  for f in allow deny ask env hooks top; do : >"$HARNESS_TMP/settings.$f"; done
 }
 
 settings_allow() { printf '%s\n' "$@" >>"$HARNESS_TMP/settings.allow"; }
 settings_deny() { printf '%s\n' "$@" >>"$HARNESS_TMP/settings.deny"; }
 settings_ask() { printf '%s\n' "$@" >>"$HARNESS_TMP/settings.ask"; }
 settings_env() { printf '%s\t%s\n' "$1" "$2" >>"$HARNESS_TMP/settings.env"; }
+# settings_string KEY VALUE: a top-level string setting, e.g. outputStyle.
+settings_string() { printf '%s\t%s\n' "$1" "$2" >>"$HARNESS_TMP/settings.top"; }
 
 # settings_hook EVENT MATCHER SCRIPT [TIMEOUT_SECONDS]
 # SCRIPT is a file name under .claude/hooks/. MATCHER may be empty.
@@ -58,6 +60,10 @@ settings_render() { # -> stdout
   printf '    "ask": %s,\n' "$(_json_array "$HARNESS_TMP/settings.ask" '    ')"
   printf '    "deny": %s\n' "$(_json_array "$HARNESS_TMP/settings.deny" '    ')"
   printf '  }'
+
+  while IFS="$(printf '\t')" read -r key value; do
+    printf ',\n  "%s": "%s"' "$(json_escape "$key")" "$(json_escape "$value")"
+  done <"$HARNESS_TMP/settings.top"
 
   if [ -s "$HARNESS_TMP/settings.env" ]; then
     printf ',\n  "env": {'

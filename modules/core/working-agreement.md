@@ -1,7 +1,14 @@
 ## Project
 
+- Purpose: {{PROFILE_TITLE}}
 - Stack: {{STACK}} (`{{PKG_MANAGER}}`)
+{{#if PROFILE_SOLO}}
+- Default branch: `{{DEFAULT_BRANCH}}`. This is a personal repo: committing straight to it is fine. Commit small and often, with messages that say what changed.
+{{/if}}
+{{#unless PROFILE_SOLO}}
 - Default branch: `{{DEFAULT_BRANCH}}`. Never commit to it directly: branch, then open a PR.
+{{/if}}
+{{#if HAS_COMMANDS}}
 
 ## Commands
 
@@ -17,9 +24,19 @@
 {{#if TEST_CMD}}
 - Test: `{{TEST_CMD}}`
 {{/if}}
+{{#if EVAL_CMD}}
+- Evals: `{{EVAL_CMD}}`
+{{/if}}
+{{/if}}
 {{#unless HAS_COMMANDS}}
+{{#if PROFILE_ENGINEERING}}
+
+## Commands
+
 - No commands configured yet. A maintainer sets them in `.harness/config` (see `.harness/README.md`).
 {{/if}}
+{{/if}}
+{{#if PROFILE_ENGINEERING}}
 
 Run lint and tests before you say a task is done, and report the result honestly.
 
@@ -33,16 +50,44 @@ Run lint and tests before you say a task is done, and report the result honestly
 6. **Commit hygiene.** Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`). Keep the agent `Co-Authored-By` trailer: it is how CI recognizes agent work.
 7. **Dependencies are decisions.** Don't add one without stating why in the PR description.
 8. **A human owns every merge.** Agents open PRs; humans approve them.
+{{/if}}
+{{#if MOD_ML}}
+
+{{> agreements/ml.md}}
+{{/if}}
+{{#if MOD_AGENTIC}}
+
+{{> agreements/agentic.md}}
+{{/if}}
+{{#if MOD_STUDY}}
+
+{{> agreements/study.md}}
+{{/if}}
+{{#if MOD_RESEARCH}}
+
+{{> agreements/research.md}}
+{{/if}}
 
 ## Guardrails (level: {{GUARD_LEVEL}})
 
+{{#if GUARD_RELAXED}}
+Hooks block only catastrophic actions: recursive deletes of `/` or `~`{{#unless PROFILE_SOLO}}, pushing straight to `{{DEFAULT_BRANCH}}`{{/if}}, and edits to secret files.
+{{/if}}
+{{#if GUARD_STANDARD}}
+Hooks in `.claude/hooks/` block destructive commands (force-push, `--no-verify`, `rm -rf` of root/home, piping downloads into a shell{{#unless PROFILE_SOLO}}, pushing straight to `{{DEFAULT_BRANCH}}`{{/if}}) and edits to secret files.
+{{/if}}
 {{#if GUARD_STRICT}}
 Strict mode. In addition to the standard rules, these paths are human-only: `.github/workflows/`, `CODEOWNERS`, `.claude/settings.json`, `.claude/hooks/`, `.harness/`. `git reset --hard` and any force-push are blocked, and the Stop hook runs lint/typecheck before you finish.
 {{/if}}
-{{#unless GUARD_STRICT}}
-Hooks in `.claude/hooks/` block destructive commands (force-push, `--no-verify`, `rm -rf` of root/home, piping downloads into a shell) and edits to secret files.
+{{#if PROTECT_RAW_DATA}}
+`data/raw/` is read-only for agents: raw data is immutable. Write derived data to `data/processed/` (or `data/interim/`) with the script that produced it.
 {{/if}}
+{{#if MOD_STUDY}}
+`exercises/` is the learner's own work: agents may read it and comment, but never edit it.
+{{/if}}
+{{#if MOD_AUDIT}}
 Blocked actions are logged to `.harness/logs/events.jsonl`.
+{{/if}}
 
 ## Where things live
 
@@ -57,5 +102,17 @@ Blocked actions are logged to `.harness/logs/events.jsonl`.
 - `REVIEW.md`: the review checklist used by humans and the Claude review workflow.
 {{/if}}
 {{#if MOD_SKILLS}}
-- `.claude/skills/`: repo workflows (`steward` for driving PRs to green, `task-intake` for starting work).
+- `.claude/skills/steward`, `.claude/skills/task-intake`: driving PRs to green, starting work well.
+{{/if}}
+{{#if MOD_ML}}
+- `EXPERIMENTS.md`: experiment log. `docs/DATA.md`: dataset cards. Skills: `experiment`, `data-audit`.
+{{/if}}
+{{#if MOD_AGENTIC}}
+- `prompts/`: versioned prompts. `evals/`: eval cases and how to run them. Skills: `prompt-change`, `agent-tool`.
+{{/if}}
+{{#if MOD_STUDY}}
+- `LEARNING_PLAN.md`, `PROGRESS.md`, `notes/`, `exercises/`. Skills: `tutor`, `quiz`, `study-plan`.
+{{/if}}
+{{#if MOD_RESEARCH}}
+- `RESEARCH_LOG.md` (lab notebook), `literature/`, `references.bib`. Skills: `lit-review`, `lab-notebook`, `claim-check`.
 {{/if}}

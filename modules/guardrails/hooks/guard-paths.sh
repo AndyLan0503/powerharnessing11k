@@ -19,6 +19,17 @@ case $base in
   *.pem | *.key | *.p12 | *.pfx | id_rsa* | id_ed25519*) hook_block "editing $rel: key material is human-only" ;;
 esac
 
+{{#if PROTECT_RAW_DATA}}
+case $rel in
+  data/raw/*) hook_block "editing $rel: raw data is immutable; write derived data to data/processed/ from a script" ;;
+esac
+{{/if}}
+{{#if MOD_STUDY}}
+case $rel in
+  exercises/*) hook_block "editing $rel: this is the learner's own work; give hints or explanations instead" ;;
+esac
+{{/if}}
+
 [ "$LEVEL" = strict ] || exit 0
 
 case $rel in

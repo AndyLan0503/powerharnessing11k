@@ -66,6 +66,17 @@ size=$(git diff --numstat "$RANGE" | { grep -Ev "$LOCKFILES" || true; } | awk '{
 manifests=$(git diff --name-only "$RANGE" | grep -E "$MANIFESTS" || true)
 [ -z "$manifests" ] || add warn "Dependency manifests changed" "$(printf '%s' "$manifests" | tr '\n' ' ')"
 
+changed_am=$(git diff --name-only --diff-filter=AM "$RANGE")
+big=''
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  bytes=$(git cat-file -s "$HEAD_SHA:$f" 2>/dev/null || echo 0)
+  [ "$bytes" -le 5242880 ] || big="$big $f"
+done <<EOF
+$changed_am
+EOF
+[ -z "$big" ] || add warn "Large files (> 5 MB)" "keep data and model artifacts out of git:$big"
+
 # ---- Report -----------------------------------------------------------------
 blocking=false
 if [ "$agent" = true ] && [ "$MODE" = block ] && grep -q '^block' "$findings"; then

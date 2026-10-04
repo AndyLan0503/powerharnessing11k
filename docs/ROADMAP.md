@@ -7,9 +7,9 @@ harness turns the team's agentic-engineering practices into a tool that any repo
 - [x] p10k-style wizard with restart/quit, plus a non-interactive mode
 - [x] Stack detection: Node (npm/pnpm/yarn/bun), Python (uv/poetry/pip), Go, Rust, generic
 - [x] Reproducible config (`.harness/config`) and safe updates (manifest checksums, managed blocks, `.harness-new` proposals)
-- [x] Modules: core, guardrails, quality, audit, skills, collab, ci, security, agent-guard, review, telemetry
-- [x] Presets: minimal / standard / strict, with three guard levels
-- [x] Monitoring: local audit log + `harness report`, agent-guard CI, weekly digest, OpenTelemetry
+- [x] Modules: core, guardrails, quality, audit, skills, collab, ci, security, agent-guard, review, telemetry, plus profile modules ml, agentic, study, research
+- [x] Profiles (software, ml, agentic, study, research) × tiers (minimal, recommended, strict), with three guard levels
+- [x] Monitoring: local audit log + `.harness/report.sh`, agent-guard CI, weekly digest, OpenTelemetry
 - [x] `doctor`, `report`, `list`, `self-update`
 - [x] Test suite on Linux, plus macOS with bash 3.2 / BSD awk
 - [x] This repo runs its own harness
@@ -19,6 +19,7 @@ harness turns the team's agentic-engineering practices into a tool that any repo
 
 ## v0.2: hardening
 
+- [ ] Profile feedback loop: try each profile on a real repo and tune its agreement, skills, and defaults
 - [ ] `guard-bash`: fewer false positives on quoted or heredoc text. A command that only *writes* the string `curl ... | bash` into a file is blocked today; parse out quoted and heredoc bodies before matching. Seen in practice while editing this repo.
 - [ ] CI drift check without the tool: a committed `.harness/verify.sh` that fails when generated files no longer match `.harness/manifest`, or when `config`/`permissions` changed without regeneration
 - [ ] `make dist`: versioned tarball + SHA-256 for offline or artifact-store installs; `install.sh --from-tarball`

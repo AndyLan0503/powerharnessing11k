@@ -62,6 +62,8 @@ preset_desc() {
 derive_vars() {
   local m up
   HV_HARNESS_VERSION=$HARNESS_VERSION
+  HV_HARNESS_URL=$(harness_url)
+  export HV_HARNESS_URL
   HV_MULTI_AGENT=''
   [ "$HV_AGENT_TOOLS" = multi ] && HV_MULTI_AGENT=1
   HV_GUARD_STRICT=''

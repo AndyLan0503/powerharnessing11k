@@ -330,6 +330,10 @@ cmd_list() {
 }
 
 cmd_self_update() {
+  if ! git -C "$HARNESS_ROOT" symbolic-ref --quiet HEAD >/dev/null; then
+    harness_die "$HARNESS_ROOT is pinned to a release tag; re-run install.sh with HARNESS_REF=<new tag>"
+  fi
+  ui_info "Pulling from $(harness_url)"
   git -C "$HARNESS_ROOT" pull --ff-only && ui_ok "harness is now $(cat "$HARNESS_ROOT/VERSION")"
   ui_note "Run 'harness update' in each repo to pick up template changes."
 }

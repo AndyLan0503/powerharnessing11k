@@ -38,6 +38,41 @@ trim() {
   printf '%s' "$s"
 }
 
+# Browsable https URL for a git remote, with any credentials removed:
+#   git@host:org/repo.git           -> https://host/org/repo
+#   https://user:tok@host/org/repo  -> https://host/org/repo
+web_url() {
+  local u=$1 scheme rest
+  case $u in
+    git@*:*)
+      u=${u#git@}
+      u="https://${u%%:*}/${u#*:}"
+      ;;
+    ssh://*)
+      u=${u#ssh://}
+      u="https://${u#*@}"
+      ;;
+    http://* | https://*) ;;
+    *) return 1 ;;
+  esac
+  scheme=${u%%://*}
+  rest=${u#*://}
+  case ${rest%%/*} in *@*) rest=${rest#*@} ;; esac
+  u="$scheme://$rest"
+  u=${u%/}
+  printf '%s' "${u%.git}"
+}
+
+# Where this copy of harness came from, so a company fork links to itself.
+HARNESS_UPSTREAM_DEFAULT=https://github.com/reclan-ai/harness-workflow
+harness_url() {
+  local remote
+  if remote=$(git -C "$HARNESS_ROOT" remote get-url origin 2>/dev/null) && web_url "$remote"; then
+    return 0
+  fi
+  printf '%s' "$HARNESS_UPSTREAM_DEFAULT"
+}
+
 harness_tmpdir() {
   if [ -z "${HARNESS_TMP:-}" ]; then
     HARNESS_TMP=$(mktemp -d 2>/dev/null || mktemp -d -t harness)

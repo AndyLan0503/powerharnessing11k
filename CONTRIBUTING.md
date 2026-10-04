@@ -20,4 +20,4 @@ This repo is built by humans and coding agents together. The rules are the same 
 
 - Read [docs/agents/HANDBOOK.md](docs/agents/HANDBOOK.md) before delegating work to an agent.
 - Agent configuration (`CLAUDE.md`, `.claude/`, `.harness/`) is code: changes go through PR review like anything else.
-- The agent harness is managed by [harness-workflow](https://github.com/reclan-ai/harness-workflow). Change `.harness/config`, then run `harness update`.
+- The agent harness is managed by [harness](https://github.com/reclan-ai/harness-workflow). Change `.harness/config`, then run `harness update`.

@@ -308,6 +308,63 @@ EOF
   check "report lists block" grep -q 'force-push rewrites' <<<"$out"
 }
 
+test_web_url() {
+  local in want got
+  while IFS='|' read -r in want; do
+    got=$(bash -c ". '$ROOT/lib/util.sh'; web_url '$in'") || got='<fail>'
+    [ "$got" = "$want" ] || fail "web_url $in -> $got (want $want)"
+  done <<'EOF'
+git@github.com:acme/harness-workflow.git|https://github.com/acme/harness-workflow
+https://github.com/acme/harness-workflow.git|https://github.com/acme/harness-workflow
+https://user:s3cret@github.acme.internal/eng/harness-workflow.git|https://github.acme.internal/eng/harness-workflow
+ssh://git@github.acme.internal/eng/harness-workflow.git|https://github.acme.internal/eng/harness-workflow
+https://github.com/acme/harness-workflow/|https://github.com/acme/harness-workflow
+EOF
+  check_not "web_url rejects local paths" bash -c ". '$ROOT/lib/util.sh'; web_url /tmp/x"
+  ok
+}
+
+# A "company fork": a bare clone of this working tree, served from a path.
+_make_fork() {
+  local fork=$WORK/fork.git src=$WORK/fork-src
+  rm -rf "$fork" "$src"
+  mkdir -p "$src"
+  (cd "$ROOT" && tar cf - --exclude=.git --exclude=.harness/logs . | tar xf - -C "$src")
+  git -C "$src" init -q -b main
+  git -C "$src" add -A
+  git -C "$src" commit -qm fork
+  git clone -q --bare "$src" "$fork"
+  printf '%s' "$fork"
+}
+
+test_install_from_fork() {
+  local fork home=$WORK/inst/home bin=$WORK/inst/bin out
+  fork=$(_make_fork)
+  rm -rf "$WORK/inst"
+  out=$(HOME=$WORK/inst HARNESS_REPO=$fork HARNESS_HOME=$home HARNESS_BIN=$bin bash "$ROOT/install.sh" 2>&1) ||
+    fail "install from fork failed: $out"
+  check "symlink installed" test -x "$bin/harness"
+  check "cloned onto a branch" git -C "$home" symbolic-ref --quiet HEAD
+
+  # Re-running the installer updates in place and keeps a tracking branch.
+  out=$(HOME=$WORK/inst HARNESS_REPO=$fork HARNESS_HOME=$home HARNESS_BIN=$bin bash "$ROOT/install.sh" 2>&1) ||
+    fail "re-install failed: $out"
+  check "re-install keeps tracking branch" git -C "$home" rev-parse --abbrev-ref '@{upstream}'
+  check "self-update pulls from fork" "$bin/harness" self-update
+
+  # Installing from inside a checkout uses that checkout, without cloning.
+  out=$(HOME=$WORK/inst HARNESS_BIN=$WORK/inst/bin2 bash "$home/install.sh" 2>&1) || fail "local install failed: $out"
+  check "local install links checkout" test "$(readlink "$WORK/inst/bin2/harness")" = "$home/bin/harness"
+
+  # Generated CONTRIBUTING.md links to wherever harness came from.
+  local d
+  d=$(new_repo forklink package.json)
+  git -C "$home" remote set-url origin "https://bot:t0ken@github.acme.internal/eng/harness-workflow.git"
+  "$bin/harness" configure --yes -C "$d" >/dev/null 2>&1
+  check "CONTRIBUTING links to fork" contains "$d/CONTRIBUTING.md" '(https://github.acme.internal/eng/harness-workflow)'
+  check_not "no credentials leaked" grep -rq 't0ken' "$d" --exclude-dir=.git
+}
+
 test_cli_errors() {
   check_not "unknown command fails" "$H" frobnicate
   check_not "unknown module fails" "$H" configure --yes -C "$(new_repo err)" --modules core,nope

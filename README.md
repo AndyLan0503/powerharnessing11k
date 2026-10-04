@@ -3,10 +3,13 @@
 **A repeatable agentic harness for any git repository.** Think `p10k configure`, but instead of a zsh prompt it sets up everything a team needs to work safely with coding agents: agent context, guardrail hooks, CI, review automation, and monitoring of what agents actually do.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/reclan-ai/harness-workflow/main/install.sh | bash
+git clone https://github.com/reclan-ai/harness-workflow ~/.harness-workflow
+~/.harness-workflow/install.sh
 cd your-repo
 harness configure
 ```
+
+(If your network allows raw downloads, `curl -fsSL https://raw.githubusercontent.com/reclan-ai/harness-workflow/main/install.sh | bash` does the same in one step.)
 
 ```
    _
@@ -118,6 +121,16 @@ harness owns files in one of four ways (details in [docs/ARCHITECTURE.md](docs/A
 
 Commit `.harness/config`, `.harness/manifest`, and `.harness/permissions`. Logs are git-ignored.
 
+## Using harness inside a company
+
+harness is designed to be forked into a company's GitHub org and run from there. Many companies block raw downloads from public GitHub, and they should review outside tools anyway.
+
+1. **Fork or import** the repo into your org (e.g. `github.com/yourco/harness-workflow`), through whatever route your security team approves.
+2. **Install from the fork:** clone it and run `install.sh` from the clone, or set `HARNESS_REPO=<fork url>`. Nothing reaches public GitHub.
+3. `harness self-update` pulls from the fork's `origin`, so the fork is the team's release channel. Sync upstream changes into it when you choose to.
+4. Generated `CONTRIBUTING.md` files link to wherever harness was installed from (credentials stripped), so your repos point at your fork automatically.
+5. Pin a release by installing a tag: `HARNESS_REF=v0.1.0`.
+
 ## Requirements
 
 bash 3.2+ (stock macOS works), git, awk, sed. `jq` is optional: hooks fall back to python3, then to sed. No Node, no Python, no package install.
@@ -130,3 +143,9 @@ make test   # tests/run.sh: renders every stack, checks idempotency, conflicts, 
 ```
 
 This repo runs its own harness (see `.harness/config`). Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) to add a module, and [docs/ROADMAP.md](docs/ROADMAP.md) for what's next.
+
+## License
+
+Apache License 2.0; see [LICENSE](LICENSE) and [NOTICE](NOTICE). You can use, modify, and redistribute harness, including privately inside a company, as long as you keep the license and notices.
+
+**The files harness generates into your repository are yours.** `NOTICE` grants an additional permission to use, modify, and license generated output however you like, with no attribution required.

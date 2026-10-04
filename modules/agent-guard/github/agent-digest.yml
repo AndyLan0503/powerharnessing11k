@@ -51,13 +51,13 @@ jobs:
           : > review-comments.jsonl
           for n in $(jq -r '.[:100][].number' prs.json); do
             gh api --paginate "repos/$REPO/issues/$n/comments" \
-              --jq '.[] | .body | select(contains("<!-- harness-scorecard")) | capture("<!-- harness-scorecard (?<j>\\{.*\\}) -->").j' \
+              --jq '.[] | select(.user.type == "Bot") | .body | select(contains("<!-- harness-scorecard")) | capture("<!-- harness-scorecard (?<j>\\{.*\\}) -->").j | fromjson? // empty | tojson' \
               2>/dev/null | tail -n 1 >> scorecards.jsonl || true
             gh api --paginate "repos/$REPO/pulls/$n/comments" \
-              --jq '.[] | select(.body | contains("<!-- harness-review:")) | {down: .reactions["-1"], m: (.body | capture("<!-- harness-review:(?<j>\\{.*\\}) -->").j | fromjson)} | {pattern: .m.pattern, cat: .m.cat, sev: .m.sev, down}' \
+              --jq '.[] | select(.user.type == "Bot" and (.body | contains("<!-- harness-review:"))) | {down: (.reactions["-1"] // 0), m: (.body | capture("<!-- harness-review:(?<j>\\{[^\\n]*\\}) -->").j | fromjson? // {})} | {pattern: (.m.pattern // "unknown" | tostring | gsub("[^a-z0-9-]"; "")), cat: (.m.cat // "" | tostring | gsub("[^a-z0-9-]"; "")), down} | tojson' \
               2>/dev/null >> review-comments.jsonl || true
           done
-          jq -rs '
+          jq -R 'fromjson? // empty' scorecards.jsonl | jq -rs '
             if length == 0 then "" else
               . as $s
               | def avg(f): if length == 0 then "n/a" else ((map(f) | add) / length * 10 | round / 10 | tostring) end;
@@ -66,14 +66,14 @@ jobs:
               + "| Average score | \([$s[] | select(.agent)] | avg(.score)) | \([$s[] | select(.agent | not)] | avg(.score)) |\n"
               + "| Currently failing | \([$s[] | select(.agent and .verdict == "fail")] | length) | \([$s[] | select((.agent | not) and .verdict == "fail")] | length) |\n"
               + "| Overrides (`gate-override`) | \([$s[] | select(.agent and .override)] | length) | \([$s[] | select((.agent | not) and .override)] | length) |\n\n"
-            end' scorecards.jsonl >> digest.md
-          jq -rs '
+            end' >> digest.md
+          jq -R 'fromjson? // empty' review-comments.jsonl | jq -rs '
             if length == 0 then "" else
               group_by(.pattern) | map({pattern: .[0].pattern, cat: .[0].cat, posted: length, dismissed: ([.[] | select(.down > 0)] | length)})
               | sort_by(-.dismissed, -.posted) | .[:10]
               | "### AI review: findings by pattern\n\nA 👎 counts as a dismissal. Patterns with high dismissal rates are candidates for sharper criteria, or for switching their category off in `.github/review/criteria.md`.\n\n| Pattern | Category | Posted | Dismissed (👎) |\n|---|---|---|---|\n"
                 + (map("| `\(.pattern)` | \(.cat) | \(.posted) | \(.dismissed) |") | join("\n")) + "\n"
-            end' review-comments.jsonl >> digest.md
+            end' >> digest.md
           cat digest.md >> "$GITHUB_STEP_SUMMARY"
       - name: Post issue
         env:

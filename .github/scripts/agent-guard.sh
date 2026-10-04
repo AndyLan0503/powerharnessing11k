@@ -26,11 +26,11 @@ AGENT_BRANCH='^(claude|copilot|codex|cursor|devin|agent)/'
 # ---- Is this agent work? ---------------------------------------------------
 agent=false
 why=''
-if git log --format='%B%n%ae' "$BASE_SHA..$HEAD_SHA" | grep -Eiq "$AGENT_TRAILER|^noreply@anthropic\.com$"; then
+if grep -Eiq "$AGENT_TRAILER|^noreply@anthropic\.com$" <<<"$(git log --format='%B%n%ae' "$BASE_SHA..$HEAD_SHA")"; then
   agent=true why='agent co-author trailer in commits'
-elif printf '%s' "${HEAD_REF:-}" | grep -Eq "$AGENT_BRANCH"; then
+elif grep -Eq "$AGENT_BRANCH" <<<"${HEAD_REF:-}"; then
   agent=true why="agent branch name (${HEAD_REF})"
-elif printf '%s' "${PR_BODY:-}" | grep -Eiq '\[x\][[:space:]]*Agent-authored'; then
+elif grep -Eiq '\[x\][[:space:]]*Agent-authored' <<<"${PR_BODY:-}"; then
   agent=true why='PR template box "Agent-authored" is checked'
 fi
 

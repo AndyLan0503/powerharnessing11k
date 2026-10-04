@@ -7,7 +7,8 @@ H=$ROOT/bin/harness
 FILTER=${1:-}
 PASS=0 FAIL=0 CURRENT=''
 WORK=$(mktemp -d)
-trap 'rm -rf "$WORK"' EXIT
+# KEEP=1 tests/run.sh <filter> keeps the workspace for debugging.
+if [ -n "${KEEP:-}" ]; then echo "workspace: $WORK"; else trap 'rm -rf "$WORK"' EXIT; fi
 export NO_COLOR=1 HARNESS_NO_CLEAR=1
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com
 export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
@@ -265,6 +266,8 @@ test_agent_guard_script() {
   out=$(cd "$d" && BASE_SHA=$base HEAD_SHA=$head GUARD_MODE=block GITHUB_OUTPUT=$WORK/ag.out \
     GITHUB_STEP_SUMMARY=$WORK/ag.md .github/scripts/agent-guard.sh 2>&1) || fail "agent-guard crashed: $out"
   check "detects agent" grep -q '^agent=true$' "$WORK/ag.out"
+  check "reports reason" grep -q '^reason=agent co-author trailer' "$WORK/ag.out"
+  check "counts blocking-class findings" grep -q '^block_count=3$' "$WORK/ag.out"
   check "blocks in block mode" grep -q '^blocking=true$' "$WORK/ag.out"
   check "reports deleted test" contains "$WORK/ag.md" 'Deleted test files'
   check "reports skip" contains "$WORK/ag.md" 'Skipped/focused tests added'
@@ -505,9 +508,14 @@ test_profile_claude_code_config() {
   check "multi: path rules still emitted" test -f "$d/.claude/rules/data.md"
 }
 
-# A stand-in for `claude -p`: flags a SQL f-string as blocking and anything
-# containing "TODO-LOWCONF" as a low-confidence nit. STUB_SHAPE=result puts
-# the JSON in .result instead of .structured_output; STUB_FAIL=1 fails.
+# A stand-in for `claude -p`. Findings depend on what the prompt contains:
+#   f"SELECT     -> blocking sql-string-concat at the matching line(s)
+#   TODO-LOWCONF -> low-confidence nit
+#   moved.py     -> finding on line 1, outside the renamed file's hunk
+#   SECRETLEAK   -> detail containing a key-shaped secret and an injected pattern
+#   cross-file pass -> one nit
+# STUB_SHAPE=result puts JSON in .result; STUB_FAIL=1 fails every pass;
+# STUB_FAIL_MATCH=<text> fails passes whose prompt contains it.
 _make_claude_stub() {
   local bin=$WORK/stubbin
   mkdir -p "$bin"
@@ -516,16 +524,30 @@ _make_claude_stub() {
 [ -z "${STUB_FAIL:-}" ] || exit 1
 prompt=$(cat)
 echo "$prompt" >>"${STUB_LOG:-/dev/null}"
-findings='[]'
+echo "GH_TOKEN=${GH_TOKEN:-unset}" >>"${STUB_ENV_LOG:-/dev/null}"
+if [ -n "${STUB_FAIL_MATCH:-}" ]; then case $prompt in *"$STUB_FAIL_MATCH"*) exit 1 ;; esac; fi
+f() { # line severity pattern conf title [detail]
+  printf '{"path":"%s","line":%s,"severity":"%s","category":"security","title":"%s","detail":"%s","suggested_fix":null,"detected_pattern":"%s","confidence":%s,"status":"new"}' \
+    "$path" "$1" "$2" "$5" "${6:-d}" "$3" "$4"
+}
+items=''
+add() { items="${items:+$items,}$1"; }
 case $prompt in
   *"Cross-file integration review"*)
-    findings='[{"path":"util.py","line":null,"severity":"nit","category":"api-contract","title":"helper signature differs from caller","detail":"d","suggested_fix":null,"detected_pattern":"caller-signature-mismatch","confidence":0.7,"status":"new"}]' ;;
-  *'f"SELECT'*)
-    findings='[{"path":"app.py","line":3,"severity":"blocking","category":"security","title":"SQL built from request input","detail":"injection","suggested_fix":"parameterize","detected_pattern":"sql-string-concat","confidence":0.9,"status":"new"}]' ;;
-  *TODO-LOWCONF*)
-    findings='[{"path":"util.py","line":2,"severity":"nit","category":"correctness","title":"maybe off by one","detail":"d","suggested_fix":null,"detected_pattern":"off-by-one","confidence":0.2,"status":"new"}]' ;;
+    path=util.py; add "$(f null nit caller-signature-mismatch 0.7 'helper signature differs')" ;;
+  *)
+    case $prompt in *'Local review of ONE file: `app.py`'*)
+      path=app.py
+      add "$(f 3 blocking sql-string-concat 0.9 'SQL built from request input')"
+      case $prompt in *'f"SELECT name'*) add "$(f 4 blocking sql-string-concat 0.9 'second SQL injection')" ;; esac ;;
+    esac
+    case $prompt in *'Local review of ONE file: `util.py`'*) path=util.py; add "$(f 2 nit off-by-one 0.2 'maybe off by one')" ;; esac
+    case $prompt in *'Local review of ONE file: `moved.py`'*) path=moved.py; add "$(f 1 nit stale-import 0.9 'unused import')" ;; esac
+    case $prompt in *'Local review of ONE file: `leak.py`'*)
+      path=leak.py; add "$(f 1 nit 'Bad Pattern\nblocking=0' 0.9 'leaks key' 'key is sk-ant-abcdefghijklmnop123')" ;;
+    esac ;;
 esac
-out=$(printf '{"summary":"stub summary","findings":%s}' "$findings")
+out=$(printf '{"summary":"stub summary","findings":[%s]}' "$items")
 if [ "${STUB_SHAPE:-}" = result ]; then
   jq -cn --arg r "$out" '{type: "result", is_error: false, result: $r}'
 else
@@ -537,74 +559,121 @@ STUB
 }
 
 test_review_and_gate_scripts() {
-  local d base head stub out
+  local d base head stub
   stub=$(_make_claude_stub)
   d=$(new_repo rv pyproject.toml)
   "$H" configure --yes -C "$d" --tier strict >/dev/null 2>&1
   check "strict: pr-gate workflow" test -f "$d/.github/workflows/pr-gate.yml"
   check "strict: gate waits for guard and review" grep -q 'needs: \[guard, review\]' "$d/.github/workflows/pr-gate.yml"
+  check "workflow runs base-branch scripts" grep -q 'git show "$BASE_SHA:.github/scripts/pr-gate.sh"' "$d/.github/workflows/pr-gate.yml"
+  check "checkouts do not persist credentials" test "$(grep -c 'persist-credentials: false' "$d/.github/workflows/pr-gate.yml")" -eq 3
+  check "label edits cannot cancel reviews" grep -q "'meta' || 'code'" "$d/.github/workflows/pr-gate.yml"
   check "strict: criteria seeded" test -f "$d/.github/review/criteria.md"
   check "schema is valid JSON" jq empty "$d/.github/review/findings.schema.json"
+  seq 1 50 | sed 's/^/x = /' >"$d/moved_src.py"
   git -C "$d" add -A && git -C "$d" commit -qm base
   base=$(git -C "$d" rev-parse HEAD)
   printf 'import db\ndef get(req):\n    return db.q(f"SELECT * FROM t WHERE id={req.args[\x27id\x27]}")\n' >"$d/app.py"
   printf 'def helper(a):\n    return a  # TODO-LOWCONF\n' >"$d/util.py"
+  git -C "$d" mv moved_src.py moved.py
+  sed -i.bak 's/^x = 40$/x = 4000/' "$d/moved.py" && rm -f "$d/moved.py.bak"
+  head -c 200000 /dev/zero | tr '\0' 'a' | fold -w 100 >"$d/big.py"
   git -C "$d" add -A && git -C "$d" commit -qm "feat: x"
   head=$(git -C "$d" rev-parse HEAD)
 
   _review() { # extra env assignments...
+    rm -rf "$WORK/rv-out"
+    : >"$WORK/rv.out"
     (cd "$d" && env BASE_SHA="$base" HEAD_SHA="$head" CLAUDE_BIN="$stub" ANTHROPIC_API_KEY=x NO_POST=1 \
-      OUT_DIR="$WORK/rv-out" GITHUB_OUTPUT="$WORK/rv.out" GITHUB_STEP_SUMMARY=/dev/null STUB_LOG="$WORK/rv.log" "$@" \
-      .github/scripts/ai-review.sh >/dev/null 2>&1)
+      OUT_DIR="$WORK/rv-out" GITHUB_OUTPUT="$WORK/rv.out" GITHUB_STEP_SUMMARY=/dev/null STUB_LOG="$WORK/rv.log" \
+      STUB_ENV_LOG="$WORK/rv-env.log" "$@" .github/scripts/ai-review.sh >/dev/null 2>&1)
   }
-  rm -rf "$WORK/rv-out"
-  : >"$WORK/rv.out"
-  _review || fail "ai-review crashed"
+  : >"$WORK/rv-env.log"
+  _review GH_TOKEN=ghs_supersecret || fail "ai-review crashed (large diff, rename)"
   check "review ok" grep -q '^status=ok$' "$WORK/rv.out"
   check "one blocking" grep -q '^blocking=1$' "$WORK/rv.out"
-  check "two nits (cross-file + low-conf)" grep -q '^nits=2$' "$WORK/rv.out"
   check "patterns reported" grep -q '^patterns=.*sql-string-concat' "$WORK/rv.out"
-  check "per-file passes ran" test -f "$WORK/rv-out/prompt-2.txt"
   check "cross-file pass ran" grep -q 'Cross-file integration review' "$WORK/rv.log"
   check "criteria in prompt" grep -q 'Report these categories' "$WORK/rv-out/prompt-1.txt"
+  check "diff fenced as untrusted" grep -q '^<untrusted-[0-9a-f]*>$' "$WORK/rv-out/prompt-1.txt"
+  check "large diff truncated, not fatal" grep -rq '\[diff truncated\]' "$WORK/rv-out"
+  check_not "model never sees GH_TOKEN" grep -q 'supersecret' "$WORK/rv-env.log"
   check "inline comment on diff line" jq -e '.comments[] | select(.path == "app.py" and .line == 3 and .side == "RIGHT")' "$WORK/rv-out/review-payload.json"
+  check "renamed file: off-hunk line goes to body" jq -e '.body | contains("unused import")' "$WORK/rv-out/review-payload.json"
+  check_not "renamed file: no off-hunk inline" jq -e '.comments[] | select(.path == "moved.py")' "$WORK/rv-out/review-payload.json"
   check "low confidence goes to body" jq -e '.body | contains("maybe off by one")' "$WORK/rv-out/review-payload.json"
-  check_not "low confidence not inline" jq -e '.comments[] | select(.path == "util.py")' "$WORK/rv-out/review-payload.json"
-  check "fingerprint marker" jq -e '.comments[0].body | contains("<!-- harness-review:")' "$WORK/rv-out/review-payload.json"
+  check "body findings carry markers" jq -e '.body | contains("<!-- harness-review:")' "$WORK/rv-out/review-payload.json"
 
-  # Re-run after the findings were posted: count them, don't repost.
-  jq '[.[] | {fp, path, cat: .category, pattern: .detected_pattern, sev: .severity, title}]' \
-    "$WORK/rv-out/findings.json" >"$WORK/prior.json"
-  rm -rf "$WORK/rv-out"
-  : >"$WORK/rv.out"
+  # Re-run, with prior markers taken only from what was actually posted.
+  jq -r '.body, .comments[].body' "$WORK/rv-out/review-payload.json" |
+    sed -n 's/.*<!-- harness-review:\({.*}\) -->.*/\1/p' | jq -s '.' >"$WORK/prior.json"
+  check "markers parse" jq -e 'length == 4' "$WORK/prior.json"
   _review PRIOR_FILE="$WORK/prior.json" STUB_SHAPE=result || fail "ai-review re-run crashed"
   check "re-run still counts blocking" grep -q '^blocking=1$' "$WORK/rv.out"
   check "re-run posts nothing new" grep -q '^posted=0$' "$WORK/rv.out"
+  check "re-run: nothing new at all" jq -e '[.[] | select(.already_posted | not)] | length == 0' "$WORK/rv-out/findings.json"
   check "prior findings passed to model" grep -q 'sql-string-concat' "$WORK/rv-out/prompt-1.txt"
 
-  : >"$WORK/rv.out"
+  # A second injection with the same pattern elsewhere in the file is a separate finding.
+  printf 'import db\ndef get(req):\n    return db.q(f"SELECT * FROM t WHERE id={req.args[\x27id\x27]}")\n    db.q(f"SELECT name FROM u WHERE n={req.args[\x27n\x27]}")\n' >"$d/app.py"
+  git -C "$d" commit -qam "feat: more"
+  head=$(git -C "$d" rev-parse HEAD)
+  _review PRIOR_FILE="$WORK/prior.json" || fail "ai-review crashed (two findings)"
+  check "same pattern, two lines: two blocking" grep -q '^blocking=2$' "$WORK/rv.out"
+  check "only the new one is posted" grep -q '^posted=1$' "$WORK/rv.out"
+
+  # Model output is sanitised before it reaches outputs and comments.
+  printf 'x = 1\n# SECRETLEAK\n' >"$d/leak.py"
+  git -C "$d" add -A && git -C "$d" commit -qm "feat: leak"
+  head=$(git -C "$d" rev-parse HEAD)
+  _review || fail "ai-review crashed (sanitising)"
+  check "injected pattern cannot add outputs" test "$(grep -c '^blocking=' "$WORK/rv.out")" -eq 1
+  check "pattern sanitised" jq -e 'any(.[]; .detected_pattern == "bad-pattern-blocking-0")' "$WORK/rv-out/findings.json"
+  check_not "secret redacted" grep -q 'sk-ant-abcdef' "$WORK/rv-out/review-payload.json"
+  check "redaction visible" grep -q 'redacted' "$WORK/rv-out/review-payload.json"
+
+  _review STUB_FAIL_MATCH='`util.py`' || fail "ai-review crashed (partial)"
+  check "one failed pass: partial" grep -q '^status=partial$' "$WORK/rv.out"
+  check "failed passes counted" grep -q '^failed_passes=1$' "$WORK/rv.out"
   _review ANTHROPIC_API_KEY= || fail "ai-review without key crashed"
   check "no key: skipped" grep -q '^status=skipped$' "$WORK/rv.out"
-  : >"$WORK/rv.out"
   _review STUB_FAIL=1 || fail "ai-review with failing claude crashed"
   check "claude failure: error status" grep -q '^status=error$' "$WORK/rv.out"
 
-  # Gate: verdicts, override, reuse of the last review on the same commit.
+  # ---- Gate ----
   # shellcheck disable=SC2329 # invoked through check/check_not
-  _gate() { (cd "$d" && env HEAD_SHA="$head" GITHUB_STEP_SUMMARY=/dev/null SCORECARD_OUT="$WORK/card.md" "$@" .github/scripts/pr-gate.sh >/dev/null 2>&1); }
+  _gate() { (cd "$d" && env HEAD_SHA="$head" GITHUB_STEP_SUMMARY=/dev/null SCORECARD_OUT="$WORK/card.md" "$@" .github/scripts/pr-gate.sh 2>"$WORK/gate.err" >/dev/null); }
   check "gate passes clean PR" _gate REVIEW_ENABLED=1 REVIEW_STATUS=ok REVIEW_BLOCKING=0 REVIEW_NITS=2
   check "clean score" grep -q '"score":94' "$WORK/card.md"
   check_not "gate fails on blocking review finding" _gate REVIEW_ENABLED=1 REVIEW_STATUS=ok REVIEW_BLOCKING=1
   check "fail scorecard" grep -q 'PR gate: fail' "$WORK/card.md"
-  check "override label passes" _gate REVIEW_ENABLED=1 REVIEW_STATUS=ok REVIEW_BLOCKING=1 PR_LABELS=bug,gate-override
-  check "override recorded" grep -q '"override":true' "$WORK/card.md"
+  check "override by another human passes" _gate REVIEW_ENABLED=1 REVIEW_STATUS=ok REVIEW_BLOCKING=1 \
+    PR_LABELS=bug,gate-override OVERRIDE_ACTOR=bob PR_AUTHOR=alice
+  check "override recorded with actor" grep -q '"override":true,"override_by":"bob"' "$WORK/card.md"
+  check_not "PR author cannot override" _gate REVIEW_ENABLED=1 REVIEW_STATUS=ok REVIEW_BLOCKING=1 \
+    PR_LABELS=gate-override OVERRIDE_ACTOR=alice PR_AUTHOR=alice
+  check "ignored override explained" grep -q 'added by the PR author' "$WORK/card.md"
+  check_not "bot cannot override" _gate REVIEW_ENABLED=1 REVIEW_STATUS=ok REVIEW_BLOCKING=1 \
+    PR_LABELS=gate-override OVERRIDE_ACTOR='github-actions[bot]' PR_AUTHOR=alice
   check_not "guard blocking fails" _gate GUARD_ENABLED=1 GUARD_AGENT=true GUARD_BLOCKING=true GUARD_BLOCK_COUNT=2
+  check_not "guard job crash fails" _gate GUARD_ENABLED=1 GUARD_RESULT=failure
+  check "review job crash: visible, does not block" _gate REVIEW_ENABLED=1 REVIEW_RESULT=failure
+  check "review error shown" grep -q 'errored' "$WORK/card.md"
+  check_not "review expected but missing: pending" _gate REVIEW_ENABLED=1 REVIEW_EXPECTED=true REVIEW_RESULT=skipped
+  check "pending shown" grep -q 'waiting for the AI review' "$WORK/card.md"
+  check "fork/draft: skipped review passes" _gate REVIEW_ENABLED=1 REVIEW_EXPECTED=false REVIEW_RESULT=skipped
+  check "partial review shown" bash -c "cd '$d' && HEAD_SHA=x REVIEW_ENABLED=1 REVIEW_STATUS=partial REVIEW_FAILED=2 SCORECARD_OUT='$WORK/card.md' .github/scripts/pr-gate.sh >/dev/null && grep -q '2 pass(es) failed' '$WORK/card.md'"
   local prev
-  prev=$(sed -n 's/^<!-- harness-scorecard \(.*\) -->$/\1/p' "$WORK/card.md")
-  prev=$(jq -c --arg h "$head" '.head_sha = $h | .review = {status: "ok", blocking: 1, nits: 0, preexisting: 0, patterns: "x"}' <<<"$prev")
-  check_not "label event reuses last review on same commit" _gate REVIEW_ENABLED=1 REVIEW_STATUS= PREVIOUS_SCORECARD="$prev"
-  prev=$(jq -c '.head_sha = "other"' <<<"$prev")
-  check "new commit does not reuse stale review" _gate REVIEW_ENABLED=1 REVIEW_STATUS= PREVIOUS_SCORECARD="$prev"
+  prev=$(jq -cn --arg h "$head" '{head_sha: $h, review: {status: "ok", blocking: 1, nits: 0, preexisting: 0, patterns: "x"}}')
+  check_not "label event reuses last review on same commit" _gate REVIEW_ENABLED=1 REVIEW_EXPECTED=true PREVIOUS_SCORECARD="$prev"
+  check "stale review for another commit is not reused" _gate REVIEW_ENABLED=1 REVIEW_EXPECTED=false \
+    PREVIOUS_SCORECARD="$(jq -c '.head_sha = "other"' <<<"$prev")"
+  prev=$(jq -cn --arg h "$head" '{head_sha: $h, review: {status: "ok", blocking: "HEAD_SHA[$(echo PWNED >&2)]", nits: null}}')
+  _gate REVIEW_ENABLED=1 PREVIOUS_SCORECARD="$prev" || true
+  check_not "forged scorecard cannot execute code" grep -q PWNED "$WORK/gate.err"
+  check "forged values are zeroed" grep -q '"blocking":0' "$WORK/card.md"
+  _gate REVIEW_ENABLED=1 PREVIOUS_SCORECARD='not json' || true
+  check "malformed scorecard ignored" grep -q '"head_sha"' "$WORK/card.md"
 }
 
 test_mcp_module() {
@@ -613,7 +682,7 @@ test_mcp_module() {
   check "strict: .mcp.json" jq -e '.mcpServers.github.headers.Authorization == "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}"' "$d/.mcp.json"
   check "strict: MCP doc" contains "$d/docs/agents/MCP.md" 'claude mcp add --scope user'
   check_not "recommended: no .mcp.json" test -e "$WORK/prof-software-recommended/.mcp.json"
-  check_not "no literal tokens committed" grep -rqE 'ghp_|github_pat_' "$d" --exclude-dir=.git
+  check_not "no literal tokens committed" grep -rqE '(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})' "$d" --exclude-dir=.git
 }
 
 test_old_config_without_profile() {

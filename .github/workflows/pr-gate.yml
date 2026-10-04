@@ -5,6 +5,9 @@
 #   guard   detects agent-authored PRs, labels them, flags risky diff patterns
 #   gate    combines the signals into pass/fail and a scorecard comment;
 #           a maintainer's `gate-override` label accepts the risk on record
+#
+# Every job runs its scripts (and the review criteria) from the BASE branch, so
+# a PR cannot weaken the checks that judge it. Protect .github/ with CODEOWNERS.
 name: PR gate
 
 on:
@@ -16,9 +19,14 @@ permissions:
   pull-requests: write
   issues: write
 
+# Label/title edits get their own group so they never cancel a running review.
 concurrency:
-  group: pr-gate-${{ github.event.pull_request.number }}
+  group: pr-gate-${{ github.event.pull_request.number }}-${{ contains(fromJSON('["labeled","unlabeled","edited"]'), github.event.action) && 'meta' || 'code' }}
   cancel-in-progress: true
+
+env:
+  # Pin to a version you have tested, e.g. 2.1.0; "latest" tracks new releases.
+  CLAUDE_CODE_VERSION: latest
 
 jobs:
   guard:
@@ -34,9 +42,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
+      - name: Use the base branch's guard script
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git show "$BASE_SHA:.github/scripts/agent-guard.sh" >"$RUNNER_TEMP/agent-guard.sh" 2>/dev/null ||
+            cp .github/scripts/agent-guard.sh "$RUNNER_TEMP/agent-guard.sh"
       - name: Inspect diff
         id: guard
-        run: .github/scripts/agent-guard.sh
+        run: bash "$RUNNER_TEMP/agent-guard.sh"
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -61,15 +76,26 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Use the base branch's gate script
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git show "$BASE_SHA:.github/scripts/pr-gate.sh" >"$RUNNER_TEMP/pr-gate.sh" 2>/dev/null ||
+            cp .github/scripts/pr-gate.sh "$RUNNER_TEMP/pr-gate.sh"
       - name: Gate and scorecard
-        run: .github/scripts/pr-gate.sh
+        run: bash "$RUNNER_TEMP/pr-gate.sh"
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
           GUARD_ENABLED: "1"
+          GUARD_RESULT: ${{ needs.guard.result }}
           GUARD_AGENT: ${{ needs.guard.outputs.agent }}
           GUARD_REASON: ${{ needs.guard.outputs.reason }}
           GUARD_BLOCKING: ${{ needs.guard.outputs.blocking }}

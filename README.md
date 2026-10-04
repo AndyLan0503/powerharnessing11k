@@ -97,7 +97,17 @@ Every PR gets a single required check, **PR gate**, made of:
   - gate scores for agent vs human PRs, and overrides;
   - AI-review findings by `detected_pattern` with 👎 dismissal counts, which tell you which categories need sharper criteria or switching off.
 
-Plus stack-aware `ci.yml`, Conventional Commit PR titles, CodeQL, dependency review, Dependabot, `@claude` mentions, and an eval workflow for agentic repos. Make **CI** and **PR gate / gate** required in branch protection.
+Plus stack-aware `ci.yml`, Conventional Commit PR titles, CodeQL, dependency review, Dependabot, `@claude` mentions, and an eval workflow for agentic repos. Make **CI** and **PR gate / gate** required in branch protection. (Upgrading from an earlier harness? The old "Agent guard" check is now part of the gate: swap the required check.)
+
+The gate is hardened against the PR it judges:
+- every job runs its scripts and review criteria from the **base branch**;
+- only this workflow's bot comments are trusted as earlier scorecards;
+- a title or label edit can't cancel a running review, and a commit without a finished review waits instead of passing;
+- the reviewing model never sees GitHub tokens, and the diff is fenced off as untrusted data;
+- secret-shaped strings are redacted before posting;
+- the PR author (or a bot) can't apply their own override.
+
+Protect `.github/` with CODEOWNERS, and pin `CLAUDE_CODE_VERSION` in `pr-gate.yml` to a version you have tested.
 
 ## Guard levels
 

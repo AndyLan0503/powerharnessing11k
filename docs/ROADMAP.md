@@ -1,0 +1,43 @@
+# Roadmap
+
+harness turns the team's agentic-engineering practices into a tool that any repo can adopt in one command and keep up to date.
+
+## v0.1: foundation (this release)
+
+- [x] p10k-style wizard with restart/quit, plus a non-interactive mode
+- [x] Stack detection: Node (npm/pnpm/yarn/bun), Python (uv/poetry/pip), Go, Rust, generic
+- [x] Reproducible config (`.harness/config`) and safe updates (manifest checksums, managed blocks, `.harness-new` proposals)
+- [x] Modules: core, guardrails, quality, audit, skills, collab, ci, security, agent-guard, review, telemetry
+- [x] Presets: minimal / standard / strict, with three guard levels
+- [x] Monitoring: local audit log + `harness report`, agent-guard CI, weekly digest, OpenTelemetry
+- [x] `doctor`, `report`, `list`, `self-update`
+- [x] Test suite on Linux, plus macOS with bash 3.2 / BSD awk
+- [x] This repo runs its own harness
+
+## v0.2: hardening
+
+- [ ] Pin third-party GitHub Actions to commit SHAs (`harness pin`), with Dependabot keeping them current
+- [ ] `harness diff`: show a unified diff for each `.harness-new` proposal, with interactive accept/reject
+- [ ] Branch-protection setup through `gh api` (required checks, reviews, no force-push), opt-in
+- [ ] More stacks: Java/Kotlin (Gradle/Maven), Ruby, .NET; monorepo support (per-package commands)
+- [ ] Semver releases and changelog via release-please; `install.sh` pins to the latest tag
+
+## v0.3: monitoring depth
+
+- [ ] Agent-guard: scope check against the linked issue's acceptance criteria (Claude-powered, opt-in)
+- [ ] Digest: CI failure causes on agent PRs, median time-to-merge, agent vs. human revert rate
+- [ ] `harness report --json` and an optional uploader so local audit logs feed the team dashboard
+- [ ] Reference Grafana dashboard for the Claude Code OTel metrics
+- [ ] Eval harness module for repos that *build* agents: regression evals in CI with score thresholds
+
+## v0.4: fleet
+
+- [ ] Org-level defaults: a shared `harness.config` (owners, guard level, extra permissions) that repos inherit
+- [ ] `harness fleet status`: drift and version across many repos
+- [ ] Custom module directories (`HARNESS_MODULE_PATH`) so teams can ship private modules
+
+## Team practices (process, not code)
+
+- Every agent PR has a human approver, and the person who launched the agent owns the change.
+- `CLAUDE.md` and skills get a monthly review, driven by the friction the digest and audit log surface.
+- New guardrails start in `warn` (standard) and graduate to `block` (strict) once they have proven themselves.

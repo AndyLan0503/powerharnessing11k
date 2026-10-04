@@ -1,0 +1,347 @@
+#!/usr/bin/env bash
+# harness: a repeatable agentic-harness setup for any git repository.
+# https://github.com/reclan-ai/harness-workflow
+set -eu
+set -o pipefail
+
+_self=$0
+while [ -L "$_self" ]; do
+  _link=$(readlink "$_self")
+  case $_link in /*) _self=$_link ;; *) _self=$(dirname "$_self")/$_link ;; esac
+done
+HARNESS_ROOT=$(cd "$(dirname "$_self")/.." && pwd)
+HARNESS_VERSION=$(cat "$HARNESS_ROOT/VERSION")
+export HARNESS_ROOT HARNESS_VERSION
+
+for _lib in util ui render state apply settings detect modules wizard; do
+  # shellcheck disable=SC1090
+  . "$HARNESS_ROOT/lib/$_lib.sh"
+done
+
+usage() {
+  cat <<EOF
+harness $HARNESS_VERSION: agentic harness setup for git repositories
+
+Usage: harness <command> [options]
+
+Commands:
+  configure   Run the setup wizard (alias: init). Re-run any time.
+  update      Re-apply the harness from .harness/config (after editing it,
+              or after upgrading harness). Never overwrites files you edited.
+  doctor      Check the harness in a repo: drift, hooks, settings, tools.
+  report      Summarise the local agent audit log (.harness/logs).
+  list        Show available modules and presets.
+  self-update Pull the latest harness release.
+  version     Print the version.
+
+Options:
+  -C, --target DIR      Repository to operate on (default: current directory)
+  -y, --yes             Non-interactive: accept detected defaults
+  -n, --dry-run         Show what would change without writing anything
+  -f, --force           Overwrite managed files even if you edited them
+      --preset NAME     minimal | standard | strict (default: standard)
+      --stack NAME      node | python | go | rust | generic (default: detected)
+      --modules LIST    Comma-separated modules (overrides the preset's list)
+      --guard LEVEL     relaxed | standard | strict (overrides the preset's level)
+      --agents KIND     claude | multi (multi adds AGENTS.md for other agents)
+      --owners LIST     CODEOWNERS entries, e.g. "@acme/platform"
+      --otel URL        OTLP endpoint; enables the telemetry module
+      --days N          (report) only include the last N days
+EOF
+}
+
+# ---- argument parsing ------------------------------------------------------
+CMD=${1:-help}
+[ $# -eq 0 ] || shift
+TARGET=. YES='' DRY_RUN='' FORCE='' OPT_PRESET='' OPT_STACK='' OPT_MODULES=''
+OPT_GUARD='' OPT_AGENTS='' OPT_OWNERS='' OPT_OWNERS_SET='' OPT_OTEL='' OPT_DAYS=''
+while [ $# -gt 0 ]; do
+  case $1 in
+    -C | --target) TARGET=${2:?--target needs a value}; shift ;;
+    -y | --yes) YES=1 ;;
+    -n | --dry-run) DRY_RUN=1 ;;
+    -f | --force) FORCE=1 ;;
+    --preset) OPT_PRESET=${2:?}; shift ;;
+    --stack) OPT_STACK=${2:?}; shift ;;
+    --modules) OPT_MODULES=${2:?}; shift ;;
+    --guard) OPT_GUARD=${2:?}; shift ;;
+    --agents) OPT_AGENTS=${2:?}; shift ;;
+    --owners) OPT_OWNERS=${2-}; OPT_OWNERS_SET=1; shift ;;
+    --otel) OPT_OTEL=${2:?}; shift ;;
+    --days) OPT_DAYS=${2:?}; shift ;;
+    -h | --help) CMD=help ;;
+    *) harness_die "unknown option: $1 (see: harness help)" ;;
+  esac
+  shift
+done
+export DRY_RUN FORCE
+ui_init
+
+resolve_target() {
+  [ -d "$TARGET" ] || harness_die "no such directory: $TARGET"
+  TARGET=$(cd "$TARGET" && pwd)
+  if git -C "$TARGET" rev-parse --show-toplevel >/dev/null 2>&1; then
+    TARGET=$(git -C "$TARGET" rev-parse --show-toplevel)
+  else
+    ui_warn "$TARGET is not a git repository; continuing anyway."
+  fi
+  export TARGET
+}
+
+validate_answers() {
+  case $HV_STACK in node | python | go | rust | generic) ;; *) harness_die "invalid stack: $HV_STACK" ;; esac
+  case $HV_GUARD_LEVEL in relaxed | standard | strict) ;; *) harness_die "invalid guard level: $HV_GUARD_LEVEL" ;; esac
+  case $HV_AGENT_TOOLS in claude | multi) ;; *) harness_die "invalid agents value: $HV_AGENT_TOOLS" ;; esac
+  case $HV_DIFF_BUDGET in '' | *[!0-9]*) harness_die "DIFF_BUDGET must be a number" ;; esac
+  HV_MODULES=$(modules_normalize "$HV_MODULES")
+  export HV_MODULES
+}
+
+# Apply flags given on the command line on top of whatever answers we have.
+apply_flag_overrides() {
+  if [ -n "$OPT_STACK" ]; then
+    HV_STACK=$OPT_STACK
+    HV_PKG_MANAGER=$(detect_pkg_manager "$TARGET" "$HV_STACK")
+    export HV_STACK HV_PKG_MANAGER
+    stack_defaults
+  fi
+  [ -z "$OPT_PRESET" ] || preset_load "$OPT_PRESET"
+  if [ -n "$OPT_MODULES" ]; then HV_MODULES=${OPT_MODULES//,/ }; fi
+  [ -z "$OPT_GUARD" ] || HV_GUARD_LEVEL=$OPT_GUARD
+  [ -z "$OPT_AGENTS" ] || HV_AGENT_TOOLS=$OPT_AGENTS
+  [ -z "$OPT_OWNERS_SET" ] || HV_CODEOWNERS=$OPT_OWNERS
+  if [ -n "$OPT_OTEL" ]; then
+    HV_OTEL_ENDPOINT=$OPT_OTEL
+    HV_MODULES="$HV_MODULES telemetry"
+  fi
+  export HV_MODULES HV_GUARD_LEVEL HV_AGENT_TOOLS HV_CODEOWNERS HV_OTEL_ENDPOINT
+}
+
+do_apply() {
+  local tmp
+  validate_answers
+  derive_vars
+  apply_reset
+  settings_reset
+  local m
+  for m in $HV_MODULES; do module_run "$m"; done
+
+  tmp=$HARNESS_TMP/settings.json
+  settings_render >"$tmp"
+  MODULE_NAME=core
+  apply_rendered file "$tmp" .claude/settings.json
+
+  printf '\n'
+  [ -z "$DRY_RUN" ] || ui_warn "Dry run: nothing was written."
+  apply_summary
+
+  local orphans
+  orphans=$(manifest_orphans)
+  if [ -n "$orphans" ]; then
+    printf '\n'
+    ui_warn "No longer generated by your config (left in place; delete if unwanted):"
+    printf '%s\n' "$orphans" | sed 's/^/      /'
+  fi
+
+  if [ -z "$DRY_RUN" ]; then
+    config_write
+    manifest_commit
+  fi
+  printf '\n'
+  if [ "$APPLY_CONFLICTS" -gt 0 ]; then
+    ui_warn "$APPLY_CONFLICTS file(s) kept as you had them. Review each *.harness-new, merge what you want, delete it."
+    ui_note "Or run 'harness update --force' to take harness's version everywhere."
+  fi
+}
+
+next_steps() {
+  [ -z "$DRY_RUN" ] || return 0
+  ui_ok "Harness applied to $TARGET"
+  printf '\n'
+  ui_info "${C_BOLD}Next steps${C_RESET}"
+  ui_info "  1. Review and commit:  git add -A && git commit -m 'chore: set up agent harness'"
+  ui_info "  2. Write project-specific guidance above the managed block in CLAUDE.md"
+  if list_has "$HV_MODULES" ci; then
+    ui_info "  3. Protect '$HV_DEFAULT_BRANCH': require PR review + the CI check (Settings → Branches)"
+  fi
+  if list_has "$HV_MODULES" review; then
+    ui_info "  4. Add the ANTHROPIC_API_KEY repository secret for the Claude workflows"
+  fi
+  ui_info "  Re-run ${C_BOLD}harness configure${C_RESET} to change answers, ${C_BOLD}harness doctor${C_RESET} to check health."
+}
+
+cmd_configure() {
+  resolve_target
+  harness_tmpdir >/dev/null
+  # Start from defaults, then any previous answers, then flags.
+  HV_PROJECT_NAME=$(basename "$TARGET")
+  HV_DEFAULT_BRANCH=$(detect_default_branch "$TARGET")
+  HV_STACK=$(detect_stack "$TARGET")
+  HV_PKG_MANAGER=$(detect_pkg_manager "$TARGET" "$HV_STACK")
+  HV_AGENT_TOOLS=claude HV_CODEOWNERS='' HV_OTEL_ENDPOINT='' HV_DIFF_BUDGET=800
+  export HV_PROJECT_NAME HV_DEFAULT_BRANCH HV_STACK HV_PKG_MANAGER HV_AGENT_TOOLS \
+    HV_CODEOWNERS HV_OTEL_ENDPOINT HV_DIFF_BUDGET
+  stack_defaults
+  preset_load standard
+  local had_config=''
+  if config_load; then had_config=1; fi
+  apply_flag_overrides
+
+  if [ -z "$YES" ]; then
+    if ! { : <"$HARNESS_TTY"; } 2>/dev/null; then
+      harness_die "no terminal for the wizard; pass --yes for non-interactive setup"
+    fi
+    wizard_run
+    ui_clear
+    ui_banner
+  else
+    ui_info "${C_BOLD}harness${C_RESET} $HARNESS_VERSION → $TARGET  ${C_DIM}($HV_STACK, $HV_GUARD_LEVEL${had_config:+, using .harness/config})${C_RESET}"
+  fi
+  do_apply
+  next_steps
+}
+
+cmd_update() {
+  resolve_target
+  harness_tmpdir >/dev/null
+  config_load || harness_die "no .harness/config in $TARGET; run 'harness configure' first"
+  apply_flag_overrides
+  ui_info "${C_BOLD}harness update${C_RESET} $HARNESS_VERSION → $TARGET"
+  do_apply
+  [ -n "$DRY_RUN" ] || ui_ok "Up to date."
+}
+
+cmd_doctor() {
+  resolve_target
+  harness_tmpdir >/dev/null
+  local problems=0 sha path cur hook
+  ui_info "${C_BOLD}harness doctor${C_RESET} → $TARGET"
+  printf '\n'
+  if config_load; then ui_ok ".harness/config found (stack: $HV_STACK, guard: $HV_GUARD_LEVEL)"; else
+    ui_err "no .harness/config; run 'harness configure'"
+    return 1
+  fi
+
+  if [ -f "$(manifest_path)" ]; then
+    while read -r sha path; do
+      if [ ! -e "$TARGET/$path" ]; then
+        ui_warn "missing: $path (run 'harness update' to restore)"
+        problems=$((problems + 1))
+      else
+        cur=$(harness_sha "$TARGET/$path")
+        [ "$cur" = "$sha" ] || ui_note "  edited locally: $path (updates will propose $path.harness-new)"
+      fi
+    done <"$(manifest_path)"
+    ui_ok "manifest checked ($(wc -l <"$(manifest_path)" | tr -d ' ') managed files)"
+  fi
+
+  for hook in "$TARGET"/.claude/hooks/*.sh; do
+    [ -e "$hook" ] || continue
+    if [ ! -x "$hook" ]; then
+      ui_warn "hook not executable: ${hook#"$TARGET"/} (chmod +x it)"
+      problems=$((problems + 1))
+    fi
+  done
+
+  if [ -f "$TARGET/.claude/settings.json" ]; then
+    if command -v jq >/dev/null 2>&1; then
+      if jq empty "$TARGET/.claude/settings.json" 2>/dev/null; then ui_ok ".claude/settings.json is valid JSON"; else
+        ui_err ".claude/settings.json is not valid JSON"
+        problems=$((problems + 1))
+      fi
+    fi
+  fi
+
+  local pending
+  pending=$(cd "$TARGET" && find . -name '*.harness-new' -not -path './.git/*' 2>/dev/null | sed 's|^\./||')
+  if [ -n "$pending" ]; then
+    ui_warn "pending proposals to review:"
+    printf '%s\n' "$pending" | sed 's/^/      /'
+  fi
+
+  if command -v jq >/dev/null 2>&1; then ui_ok "jq available (fast hook parsing)"; else
+    ui_note "  jq not found: hooks fall back to python3/sed parsing"
+  fi
+  if command -v claude >/dev/null 2>&1; then ui_ok "claude CLI available"; else ui_note "  claude CLI not found on PATH"; fi
+  if command -v gh >/dev/null 2>&1; then ui_ok "gh CLI available"; else ui_note "  gh CLI not found (optional)"; fi
+
+  printf '\n'
+  if [ $problems -eq 0 ]; then ui_ok "No problems found."; else
+    ui_warn "$problems problem(s) found."
+    return 1
+  fi
+}
+
+_days_ago() {
+  date -u -d "-$1 days" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-"$1"d +%Y-%m-%dT%H:%M:%SZ
+}
+
+cmd_report() {
+  resolve_target
+  local log=$TARGET/.harness/logs/events.jsonl since=''
+  [ -f "$log" ] || {
+    ui_info "No audit log yet at ${log#"$TARGET"/}. It fills as agents work (audit module)."
+    return 0
+  }
+  [ -z "$OPT_DAYS" ] || since=$(_days_ago "$OPT_DAYS")
+  ui_info "${C_BOLD}Agent activity${C_RESET}${since:+ since $since}  ${C_DIM}(${log#"$TARGET"/})${C_RESET}"
+  printf '\n'
+  awk -v since="$since" '
+    function field(name,    re, v) {
+      re = "\"" name "\":\"([^\"\\\\]|\\\\.)*\""
+      if (!match($0, re)) return ""
+      v = substr($0, RSTART + length(name) + 4, RLENGTH - length(name) - 5)
+      return v
+    }
+    {
+      ts = field("ts"); if (since != "" && ts < since) next
+      kind = field("kind"); tool = field("tool"); sid = field("session_id")
+      total++; kinds[kind]++
+      if (sid != "") sessions[sid] = 1
+      if (kind == "tool" && tool != "") { if (!(tool in tools)) nt++; tools[tool]++ }
+      if (kind == "blocked") blocked[++nb] = ts "  " field("detail")
+      if (kind == "check_failed") failed++
+    }
+    END {
+      ns = 0; for (s in sessions) ns++
+      printf "  Events: %d   Sessions: %d   Turns: %d   Blocked: %d   Failed checks: %d\n\n", total, ns, kinds["turn_end"], nb, failed
+      if (nt > 0) {
+        print "  Tool calls"
+        for (t in tools) printf "    %-14s %d\n", t, tools[t] | "sort -k2 -nr"
+        close("sort -k2 -nr")
+        print ""
+      }
+      if (nb > 0) {
+        print "  Most recent blocked actions"
+        for (i = (nb > 10 ? nb - 9 : 1); i <= nb; i++) print "    " blocked[i]
+      }
+    }' "$log"
+}
+
+cmd_list() {
+  local m p
+  ui_info "${C_BOLD}Modules${C_RESET}"
+  for m in $ALL_MODULES; do printf '  %-12s %s\n' "$m" "$(module_desc "$m")"; done
+  printf '\n'
+  ui_info "${C_BOLD}Presets${C_RESET}"
+  for p in minimal standard strict; do
+    printf '  %-12s %s\n' "$p" "$(sed -n 's/^MODULES=//p' "$HARNESS_ROOT/presets/$p.preset")"
+  done
+}
+
+cmd_self_update() {
+  git -C "$HARNESS_ROOT" pull --ff-only && ui_ok "harness is now $(cat "$HARNESS_ROOT/VERSION")"
+  ui_note "Run 'harness update' in each repo to pick up template changes."
+}
+
+case $CMD in
+  configure | init) cmd_configure ;;
+  update) cmd_update ;;
+  doctor) cmd_doctor ;;
+  report) cmd_report ;;
+  list) cmd_list ;;
+  self-update) cmd_self_update ;;
+  version | --version | -v) echo "harness $HARNESS_VERSION" ;;
+  help | -h | --help) usage ;;
+  *) harness_die "unknown command: $CMD (see: harness help)" ;;
+esac

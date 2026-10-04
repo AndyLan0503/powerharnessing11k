@@ -1,0 +1,4 @@
+# For regulated or high-stakes repos: everything in standard, plus Claude PR
+# review, human-only CI/guardrail paths, and agent-guard failures block merges.
+GUARD_LEVEL=strict
+MODULES=core guardrails quality audit skills collab ci security agent-guard review

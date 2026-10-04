@@ -1,0 +1,192 @@
+# shellcheck shell=bash
+# The interactive configuration wizard (`harness configure`). Every question
+# can be answered with one key; (r) restarts, (q) quits without changes.
+
+WIZ_TOTAL=7
+
+wizard_run() {
+  local rc
+  # Snapshot the starting answers (from .harness/config or detection) so that
+  # re-running the wizard keeps customised commands when the stack is unchanged.
+  WIZ_PREV_STACK=$HV_STACK WIZ_PREV_PM=$HV_PKG_MANAGER WIZ_PREV_INSTALL=$HV_INSTALL_CMD
+  WIZ_PREV_LINT=$HV_LINT_CMD WIZ_PREV_TYPECHECK=$HV_TYPECHECK_CMD WIZ_PREV_TEST=$HV_TEST_CMD
+  WIZ_PREV_FORMAT=$HV_FORMAT_CMD
+  while :; do
+    rc=0
+    _wizard_steps || rc=$?
+    [ $rc -eq 10 ] || return $rc
+  done
+}
+
+_wizard_steps() {
+  local current stacks s i opts
+  current=$WIZ_PREV_STACK
+
+  # 1. Stack -----------------------------------------------------------------
+  stacks="node python go rust generic"
+  opts=()
+  for s in $stacks; do
+    case $s in
+      node) d="JavaScript / TypeScript (npm, pnpm, yarn, bun)" ;;
+      python) d="Python (uv, poetry, pip)" ;;
+      go) d="Go modules" ;;
+      rust) d="Rust / Cargo" ;;
+      generic) d="Anything else; fill in commands yourself" ;;
+    esac
+    [ "$s" != "$current" ] || d="$d  ← current"
+    opts+=("$s|$d")
+  done
+  ui_choose "What kind of project is this?" 1 $WIZ_TOTAL "${opts[@]}" || return
+  i=0
+  for s in $stacks; do
+    i=$((i + 1))
+    [ $i -ne "$UI_CHOICE" ] || HV_STACK=$s
+  done
+  if [ "$HV_STACK" = "$WIZ_PREV_STACK" ]; then
+    HV_PKG_MANAGER=$WIZ_PREV_PM HV_INSTALL_CMD=$WIZ_PREV_INSTALL HV_LINT_CMD=$WIZ_PREV_LINT
+    HV_TYPECHECK_CMD=$WIZ_PREV_TYPECHECK HV_TEST_CMD=$WIZ_PREV_TEST HV_FORMAT_CMD=$WIZ_PREV_FORMAT
+    export HV_INSTALL_CMD HV_LINT_CMD HV_TYPECHECK_CMD HV_TEST_CMD HV_FORMAT_CMD
+  else
+    HV_PKG_MANAGER=$(detect_pkg_manager "$TARGET" "$HV_STACK")
+    stack_defaults
+  fi
+  export HV_STACK HV_PKG_MANAGER
+
+  # 2. Commands --------------------------------------------------------------
+  ui_choose "These commands will be used by hooks, CI, and agent docs. OK?" 2 $WIZ_TOTAL \
+    "Use them|install: ${HV_INSTALL_CMD:-—}   lint: ${HV_LINT_CMD:-—}   typecheck: ${HV_TYPECHECK_CMD:-—}   test: ${HV_TEST_CMD:-—}   format: ${HV_FORMAT_CMD:-—}" \
+    "Edit them|Type each command; Enter keeps the default, '-' clears it" || return
+  if [ "$UI_CHOICE" = 2 ]; then
+    ui_header 2 $WIZ_TOTAL "Edit commands"
+    ui_note "Enter keeps the default shown in brackets. '-' clears a command."
+    ui_note "The format command may use {file} for the edited file's path."
+    printf '\n'
+    _wizard_edit INSTALL_CMD "Install  "
+    _wizard_edit LINT_CMD "Lint     "
+    _wizard_edit TYPECHECK_CMD "Typecheck"
+    _wizard_edit TEST_CMD "Test     "
+    _wizard_edit FORMAT_CMD "Format   "
+  fi
+
+  # 3. Agent tools -----------------------------------------------------------
+  ui_choose "Which coding agents will work in this repo?" 3 $WIZ_TOTAL \
+    "Claude Code only|All agent guidance lives in CLAUDE.md" \
+    "Claude Code + others (Copilot, Codex, Cursor...)|Shared guidance in AGENTS.md; CLAUDE.md imports it with @AGENTS.md" || return
+  if [ "$UI_CHOICE" = 1 ]; then HV_AGENT_TOOLS=claude; else HV_AGENT_TOOLS=multi; fi
+  export HV_AGENT_TOOLS
+
+  # 4. Preset ----------------------------------------------------------------
+  ui_choose "How much harness do you want?" 4 $WIZ_TOTAL \
+    "Minimal|$(preset_desc minimal)" \
+    "Standard (recommended)|$(preset_desc standard)" \
+    "Strict|$(preset_desc strict)" \
+    "Custom|Pick modules and guard level one by one" || return
+  case $UI_CHOICE in
+    1) preset_load minimal ;;
+    2) preset_load standard ;;
+    3) preset_load strict ;;
+    4) _wizard_custom || return ;;
+  esac
+
+  # 5. Code owners -----------------------------------------------------------
+  if list_has "$HV_MODULES" collab; then
+    ui_header 5 $WIZ_TOTAL "Who must review changes? (CODEOWNERS)"
+    ui_note "GitHub users or teams, space-separated, e.g. @acme/platform @alice."
+    ui_note "Leave empty to skip CODEOWNERS."
+    printf '\n'
+    ui_line "Owners" "${HV_CODEOWNERS:-$(_default_owner)}"
+    HV_CODEOWNERS=$UI_LINE
+    [ "$HV_CODEOWNERS" != "-" ] || HV_CODEOWNERS=''
+    export HV_CODEOWNERS
+  fi
+
+  # 6. Telemetry -------------------------------------------------------------
+  ui_choose "Export Claude Code telemetry (cost, tokens, sessions) via OpenTelemetry?" 6 $WIZ_TOTAL \
+    "No|You still get the local audit log and CI agent monitoring" \
+    "Yes|Send metrics to an OTLP collector (Grafana, Datadog, Honeycomb, ...)" || return
+  if [ "$UI_CHOICE" = 2 ]; then
+    ui_header 6 $WIZ_TOTAL "OTLP collector endpoint"
+    ui_note "gRPC endpoint. Auth headers stay out of git (see docs/agents/TELEMETRY.md)."
+    printf '\n'
+    ui_line "Endpoint" "${HV_OTEL_ENDPOINT:-http://localhost:4317}"
+    HV_OTEL_ENDPOINT=$UI_LINE
+    HV_MODULES=$(modules_normalize "$HV_MODULES telemetry")
+  else
+    HV_OTEL_ENDPOINT=''
+  fi
+  export HV_OTEL_ENDPOINT HV_MODULES
+
+  # 7. Confirm ---------------------------------------------------------------
+  derive_vars
+  while :; do
+    ui_header 7 $WIZ_TOTAL "Ready to apply"
+    _wizard_summary
+    printf '  %s  Apply to %s\n' "${C_ACCENT}${C_BOLD}(y)${C_RESET}" "${C_BOLD}$TARGET${C_RESET}"
+    ui_footer
+    printf '  %s ' "${C_BOLD}Choice [yrq]:${C_RESET}"
+    ui_key
+    printf '\n'
+    case $UI_KEY in
+      y | Y) return 0 ;;
+      r | R) return 10 ;;
+      q | Q | n | N) ui_quit ;;
+    esac
+  done
+}
+
+_wizard_edit() { # KEY label
+  local var="HV_$1"
+  ui_line "$2" "${!var:-}"
+  [ "$UI_LINE" != "-" ] || UI_LINE=''
+  printf -v "$var" '%s' "$UI_LINE"
+  export "${var?}"
+}
+
+_wizard_custom() {
+  local m rc picked='core'
+  for m in $ALL_MODULES; do
+    [ "$m" != core ] || continue
+    [ "$m" != telemetry ] || continue # asked separately
+    rc=0
+    ui_yesno "Custom modules" 4 $WIZ_TOTAL "Include ${C_BOLD}$m${C_RESET}?  ${C_DIM}$(module_desc "$m")${C_RESET}" || rc=$?
+    case $rc in
+      0) picked="$picked $m" ;;
+      10) return 10 ;;
+    esac
+  done
+  HV_MODULES=$picked
+  ui_choose "Guard level for hooks and CI" 4 $WIZ_TOTAL \
+    "Relaxed|Block only catastrophic actions (rm -rf ~, pushing to the default branch)" \
+    "Standard|Also block force-push, --no-verify, curl|sh, secret access; lint before finishing" \
+    "Strict|Also make CI/guardrail files human-only; agent-guard findings block merges" || return
+  case $UI_CHOICE in
+    1) HV_GUARD_LEVEL=relaxed ;;
+    2) HV_GUARD_LEVEL=standard ;;
+    3) HV_GUARD_LEVEL=strict ;;
+  esac
+  export HV_MODULES HV_GUARD_LEVEL
+}
+
+_default_owner() {
+  local url owner
+  url=$(git -C "$TARGET" remote get-url origin 2>/dev/null) || return 0
+  owner=${url%/*}
+  owner=${owner##*[:/]}
+  [ -z "$owner" ] || printf '@%s' "$owner"
+}
+
+_wizard_summary() {
+  local m
+  ui_info "${C_BOLD}Project${C_RESET}      $HV_PROJECT_NAME  ${C_DIM}($HV_STACK, $HV_PKG_MANAGER, default branch $HV_DEFAULT_BRANCH)${C_RESET}"
+  ui_info "${C_BOLD}Agents${C_RESET}       $([ "$HV_AGENT_TOOLS" = multi ] && echo 'Claude Code + others (AGENTS.md)' || echo 'Claude Code (CLAUDE.md)')"
+  ui_info "${C_BOLD}Guard level${C_RESET}  $HV_GUARD_LEVEL"
+  [ -z "$HV_CODEOWNERS" ] || ui_info "${C_BOLD}Owners${C_RESET}       $HV_CODEOWNERS"
+  [ -z "$HV_OTEL_ENDPOINT" ] || ui_info "${C_BOLD}Telemetry${C_RESET}    $HV_OTEL_ENDPOINT"
+  printf '\n'
+  for m in $HV_MODULES; do
+    printf '  %s %-12s %s\n' "${C_OK}●${C_RESET}" "$m" "${C_DIM}$(module_desc "$m")${C_RESET}"
+  done
+  printf '\n'
+  ui_note "Files you have edited are never overwritten; harness writes <file>.harness-new instead."
+  printf '\n'
+}

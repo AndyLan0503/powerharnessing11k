@@ -1,0 +1,59 @@
+## Project
+
+- Stack: {{STACK}} (`{{PKG_MANAGER}}`)
+- Default branch: `{{DEFAULT_BRANCH}}`. Never commit to it directly: branch, then open a PR.
+
+## Commands
+
+{{#if INSTALL_CMD}}
+- Install: `{{INSTALL_CMD}}`
+{{/if}}
+{{#if LINT_CMD}}
+- Lint: `{{LINT_CMD}}`
+{{/if}}
+{{#if TYPECHECK_CMD}}
+- Typecheck: `{{TYPECHECK_CMD}}`
+{{/if}}
+{{#if TEST_CMD}}
+- Test: `{{TEST_CMD}}`
+{{/if}}
+{{#unless HAS_COMMANDS}}
+- No commands configured yet. Set them in `.harness/config` and run `harness update`.
+{{/if}}
+
+Run lint and tests before you say a task is done, and report the result honestly.
+
+## Working agreement for agents
+
+1. **Start from intent.** Work from an issue or a clear task statement. Restate the acceptance criteria before writing code; if they are missing, ask.
+2. **Stay in scope.** Keep each change small and focused on the task. Propose unrelated refactors instead of doing them.
+3. **Tests are the contract.** Add or update tests with every behavior change. Never delete, skip, or weaken a test to get CI green.
+4. **Never bypass guardrails.** No `--no-verify`, no force-push, no disabling hooks or CI checks. If a harness hook blocks you, stop and explain what you needed.
+5. **Secrets stay secret.** Never read `.env*` files or print credentials. Use `.env.example` for the shape of configuration.
+6. **Commit hygiene.** Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`). Keep the agent `Co-Authored-By` trailer: it is how CI recognizes agent work.
+7. **Dependencies are decisions.** Don't add one without stating why in the PR description.
+8. **A human owns every merge.** Agents open PRs; humans approve them.
+
+## Guardrails (level: {{GUARD_LEVEL}})
+
+{{#if GUARD_STRICT}}
+Strict mode. In addition to the standard rules, these paths are human-only: `.github/workflows/`, `CODEOWNERS`, `.claude/settings.json`, `.claude/hooks/`, `.harness/`. `git reset --hard` and any force-push are blocked, and the Stop hook runs lint/typecheck before you finish.
+{{/if}}
+{{#unless GUARD_STRICT}}
+Hooks in `.claude/hooks/` block destructive commands (force-push, `--no-verify`, `rm -rf` of root/home, piping downloads into a shell) and edits to secret files.
+{{/if}}
+Blocked actions are logged to `.harness/logs/events.jsonl`.
+
+## Where things live
+
+- `.harness/config`: harness answers. Edit it, then run `harness update`.
+- `.harness/permissions`: extra team permission rules merged into `.claude/settings.json`.
+{{#if MOD_COLLAB}}
+- `CONTRIBUTING.md` and `docs/agents/HANDBOOK.md`: how humans and agents collaborate here.
+{{/if}}
+{{#if MOD_REVIEW}}
+- `REVIEW.md`: the review checklist used by humans and the Claude review workflow.
+{{/if}}
+{{#if MOD_SKILLS}}
+- `.claude/skills/`: repo workflows (`steward` for driving PRs to green, `task-intake` for starting work).
+{{/if}}

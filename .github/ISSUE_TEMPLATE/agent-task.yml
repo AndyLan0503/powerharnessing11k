@@ -1,0 +1,44 @@
+name: Agent task
+description: A well-scoped task intended for a coding agent (Claude Code, @claude, etc.)
+labels: [agent-task]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Agents do their best work with a clear goal, explicit acceptance criteria, and known boundaries.
+        A human owns this task: you review and merge the resulting PR.
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should be true when this is done, and why does it matter?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Concrete, testable statements. The agent restates these before starting.
+      placeholder: "- [ ] ...\n- [ ] Tests cover ..."
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context and pointers
+      description: Relevant files, prior PRs, docs, gotchas.
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Out of scope / do not touch
+      placeholder: "- No new dependencies\n- Don't change the public API of ..."
+  - type: dropdown
+    id: size
+    attributes:
+      label: Expected size
+      options:
+        - "Small (< 100 lines)"
+        - "Medium (100-400 lines)"
+        - "Large: split it before assigning to an agent"
+    validations:
+      required: true

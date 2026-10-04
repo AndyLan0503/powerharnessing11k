@@ -1,0 +1,3 @@
+# Globals cross lib files; literal $ in single quotes is intentional (JSON, regexes).
+disable=SC2016,SC2034,SC2018,SC2019
+external-sources=true

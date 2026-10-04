@@ -1,0 +1,4 @@
+# Recommended for teams: guardrails, quality hooks, collaboration files, CI,
+# security scanning, and agent PR monitoring.
+GUARD_LEVEL=standard
+MODULES=core guardrails quality audit skills collab ci security agent-guard

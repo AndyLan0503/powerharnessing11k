@@ -39,8 +39,8 @@ Agent PRs are labelled `agent-authored` automatically. Review them as you would 
 | Permissions (`.claude/settings.json`) | Pre-approves safe commands; denies reading secrets |
 | Hooks (`.claude/hooks/`) | Block force-push, `--no-verify`, destructive deletes, secret edits |
 | CI (`ci.yml`) | Lint, typecheck, and tests are required to merge |
-| Agent guard (`agent-guard.yml`) | Labels agent PRs; flags test deletion, skipped tests, protected paths, oversized diffs, new dependencies |
-| Weekly digest (`agent-digest.yml`) | Summarises agent PR volume, merge rate, and reverts |
+| PR gate (`pr-gate.yml`) | One required check. Labels agent PRs and flags test deletion, skipped tests, protected paths, oversized diffs, and new dependencies; posts a scorecard; `gate-override` records a human's risk acceptance |
+| Weekly digest (`agent-digest.yml`) | Agent PR volume, merge rate, reverts, gate scores, and AI-review false-positive rates by pattern |
 | Audit log (`.harness/logs/`) | Local record of agent tool use and blocked actions (`.harness/report.sh`) |
 
 ## If a guardrail is in your way

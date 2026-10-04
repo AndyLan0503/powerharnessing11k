@@ -4,5 +4,5 @@ DESC=Apps, services, libraries: PR workflow, CI, security scanning, agent PR mon
 GUARD_LEVEL=standard
 MINIMAL=core guardrails
 RECOMMENDED=core guardrails quality audit skills collab ci security agent-guard
-STRICT=core guardrails quality audit skills collab ci security agent-guard review
+STRICT=core guardrails quality audit skills collab ci security agent-guard review mcp
 STRICT_GUARD=strict

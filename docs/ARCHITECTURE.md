@@ -1,7 +1,8 @@
 # Architecture
 
 ```
-bin/harness          CLI entry point: argument parsing and commands
+setup.sh             the entry point users run (wizard by default; passes commands through)
+bin/harness          CLI: argument parsing and commands
 lib/
   ui.sh              p10k-style terminal UI (one question per screen, single keys)
   wizard.sh          the eight configuration questions

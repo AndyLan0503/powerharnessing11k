@@ -1,0 +1,28 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "findings"],
+  "properties": {
+    "summary": { "type": "string", "description": "Two or three sentences on overall risk. No praise, no restating the diff." },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "line", "severity", "category", "title", "detail", "suggested_fix", "detected_pattern", "confidence", "status"],
+        "properties": {
+          "path": { "type": "string", "description": "Repository-relative file path" },
+          "line": { "type": ["integer", "null"], "description": "Line in the new version of the file; null if not tied to one line" },
+          "severity": { "enum": ["blocking", "nit", "pre-existing"] },
+          "category": { "enum": ["correctness", "security", "tests", "error-handling", "concurrency", "api-contract", "data", "prompt-injection", "eval-coverage", "performance", "docs-accuracy", "other"] },
+          "title": { "type": "string", "description": "One line, specific" },
+          "detail": { "type": "string", "description": "What is wrong, the concrete input or scenario that triggers it, and why it matters" },
+          "suggested_fix": { "type": ["string", "null"] },
+          "detected_pattern": { "type": "string", "description": "Short kebab-case name of the code construct that triggered this, e.g. sql-string-concat" },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "status": { "enum": ["new", "still_present"], "description": "still_present only for an item from the prior-findings list that the new code has not fixed" }
+        }
+      }
+    }
+  }
+}

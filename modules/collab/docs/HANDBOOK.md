@@ -42,8 +42,11 @@ Agent PRs are labelled `agent-authored` automatically. Review them as you would 
 | CI (`ci.yml`) | Lint, typecheck, and tests are required to merge |
 {{/if}}
 {{#if MOD_AGENT_GUARD}}
-| Agent guard (`agent-guard.yml`) | Labels agent PRs; flags test deletion, skipped tests, protected paths, oversized diffs, new dependencies |
-| Weekly digest (`agent-digest.yml`) | Summarises agent PR volume, merge rate, and reverts |
+| PR gate (`pr-gate.yml`) | One required check. Labels agent PRs and flags test deletion, skipped tests, protected paths, oversized diffs, and new dependencies; posts a scorecard; `gate-override` records a human's risk acceptance |
+| Weekly digest (`agent-digest.yml`) | Agent PR volume, merge rate, reverts, gate scores, and AI-review false-positive rates by pattern |
+{{/if}}
+{{#if MOD_REVIEW}}
+| AI review (in the PR gate) | An independent Claude Code instance reviews each file, then the change as a whole, against `.github/review/criteria.md`; blocking findings fail the gate. React 👎 on false positives |
 {{/if}}
 {{#if MOD_AUDIT}}
 | Audit log (`.harness/logs/`) | Local record of agent tool use and blocked actions (`.harness/report.sh`) |

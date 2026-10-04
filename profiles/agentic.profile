@@ -4,5 +4,5 @@ DESC=LLM apps and agents: prompts as code, evals gate changes, tool safety, cost
 GUARD_LEVEL=standard
 MINIMAL=core guardrails agentic
 RECOMMENDED=core guardrails quality audit skills agentic collab ci security agent-guard
-STRICT=core guardrails quality audit skills agentic collab ci security agent-guard review
+STRICT=core guardrails quality audit skills agentic collab ci security agent-guard review mcp
 STRICT_GUARD=strict

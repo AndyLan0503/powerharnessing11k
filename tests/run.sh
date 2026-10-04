@@ -17,15 +17,18 @@ fail() {
   printf '  ✘ %s: %s\n' "$CURRENT" "$*"
 }
 ok() { PASS=$((PASS + 1)); }
-check() { # description command...
-  local d=$1
+check() { # description command...  (on failure, shows the command's output)
+  local _desc=$1 _out
   shift
-  if "$@" >/dev/null 2>&1; then ok; else fail "$d"; fi
+  if _out=$("$@" 2>&1); then ok; else
+    fail "$_desc"
+    [ -z "$_out" ] || printf '%s\n' "$_out" | head -n 5 | sed 's/^/      | /'
+  fi
 }
 check_not() {
-  local d=$1
+  local _desc=$1
   shift
-  if "$@" >/dev/null 2>&1; then fail "$d"; else ok; fi
+  if "$@" >/dev/null 2>&1; then fail "$_desc"; else ok; fi
 }
 contains() { grep -qF -- "$2" "$1"; }
 
@@ -500,6 +503,117 @@ test_profile_claude_code_config() {
   check "multi: profile rules in AGENTS.md" contains "$d/AGENTS.md" 'Data science and ML rules'
   check_not "multi: no duplicate rules file" test -e "$d/.claude/rules/ml.md"
   check "multi: path rules still emitted" test -f "$d/.claude/rules/data.md"
+}
+
+# A stand-in for `claude -p`: flags a SQL f-string as blocking and anything
+# containing "TODO-LOWCONF" as a low-confidence nit. STUB_SHAPE=result puts
+# the JSON in .result instead of .structured_output; STUB_FAIL=1 fails.
+_make_claude_stub() {
+  local bin=$WORK/stubbin
+  mkdir -p "$bin"
+  cat >"$bin/claude" <<'STUB'
+#!/usr/bin/env bash
+[ -z "${STUB_FAIL:-}" ] || exit 1
+prompt=$(cat)
+echo "$prompt" >>"${STUB_LOG:-/dev/null}"
+findings='[]'
+case $prompt in
+  *"Cross-file integration review"*)
+    findings='[{"path":"util.py","line":null,"severity":"nit","category":"api-contract","title":"helper signature differs from caller","detail":"d","suggested_fix":null,"detected_pattern":"caller-signature-mismatch","confidence":0.7,"status":"new"}]' ;;
+  *'f"SELECT'*)
+    findings='[{"path":"app.py","line":3,"severity":"blocking","category":"security","title":"SQL built from request input","detail":"injection","suggested_fix":"parameterize","detected_pattern":"sql-string-concat","confidence":0.9,"status":"new"}]' ;;
+  *TODO-LOWCONF*)
+    findings='[{"path":"util.py","line":2,"severity":"nit","category":"correctness","title":"maybe off by one","detail":"d","suggested_fix":null,"detected_pattern":"off-by-one","confidence":0.2,"status":"new"}]' ;;
+esac
+out=$(printf '{"summary":"stub summary","findings":%s}' "$findings")
+if [ "${STUB_SHAPE:-}" = result ]; then
+  jq -cn --arg r "$out" '{type: "result", is_error: false, result: $r}'
+else
+  jq -cn --argjson s "$out" '{type: "result", is_error: false, result: "done", structured_output: $s}'
+fi
+STUB
+  chmod +x "$bin/claude"
+  printf '%s' "$bin/claude"
+}
+
+test_review_and_gate_scripts() {
+  local d base head stub out
+  stub=$(_make_claude_stub)
+  d=$(new_repo rv pyproject.toml)
+  "$H" configure --yes -C "$d" --tier strict >/dev/null 2>&1
+  check "strict: pr-gate workflow" test -f "$d/.github/workflows/pr-gate.yml"
+  check "strict: gate waits for guard and review" grep -q 'needs: \[guard, review\]' "$d/.github/workflows/pr-gate.yml"
+  check "strict: criteria seeded" test -f "$d/.github/review/criteria.md"
+  check "schema is valid JSON" jq empty "$d/.github/review/findings.schema.json"
+  git -C "$d" add -A && git -C "$d" commit -qm base
+  base=$(git -C "$d" rev-parse HEAD)
+  printf 'import db\ndef get(req):\n    return db.q(f"SELECT * FROM t WHERE id={req.args[\x27id\x27]}")\n' >"$d/app.py"
+  printf 'def helper(a):\n    return a  # TODO-LOWCONF\n' >"$d/util.py"
+  git -C "$d" add -A && git -C "$d" commit -qm "feat: x"
+  head=$(git -C "$d" rev-parse HEAD)
+
+  _review() { # extra env assignments...
+    (cd "$d" && env BASE_SHA="$base" HEAD_SHA="$head" CLAUDE_BIN="$stub" ANTHROPIC_API_KEY=x NO_POST=1 \
+      OUT_DIR="$WORK/rv-out" GITHUB_OUTPUT="$WORK/rv.out" GITHUB_STEP_SUMMARY=/dev/null STUB_LOG="$WORK/rv.log" "$@" \
+      .github/scripts/ai-review.sh >/dev/null 2>&1)
+  }
+  rm -rf "$WORK/rv-out"
+  : >"$WORK/rv.out"
+  _review || fail "ai-review crashed"
+  check "review ok" grep -q '^status=ok$' "$WORK/rv.out"
+  check "one blocking" grep -q '^blocking=1$' "$WORK/rv.out"
+  check "two nits (cross-file + low-conf)" grep -q '^nits=2$' "$WORK/rv.out"
+  check "patterns reported" grep -q '^patterns=.*sql-string-concat' "$WORK/rv.out"
+  check "per-file passes ran" test -f "$WORK/rv-out/prompt-2.txt"
+  check "cross-file pass ran" grep -q 'Cross-file integration review' "$WORK/rv.log"
+  check "criteria in prompt" grep -q 'Report these categories' "$WORK/rv-out/prompt-1.txt"
+  check "inline comment on diff line" jq -e '.comments[] | select(.path == "app.py" and .line == 3 and .side == "RIGHT")' "$WORK/rv-out/review-payload.json"
+  check "low confidence goes to body" jq -e '.body | contains("maybe off by one")' "$WORK/rv-out/review-payload.json"
+  check_not "low confidence not inline" jq -e '.comments[] | select(.path == "util.py")' "$WORK/rv-out/review-payload.json"
+  check "fingerprint marker" jq -e '.comments[0].body | contains("<!-- harness-review:")' "$WORK/rv-out/review-payload.json"
+
+  # Re-run after the findings were posted: count them, don't repost.
+  jq '[.[] | {fp, path, cat: .category, pattern: .detected_pattern, sev: .severity, title}]' \
+    "$WORK/rv-out/findings.json" >"$WORK/prior.json"
+  rm -rf "$WORK/rv-out"
+  : >"$WORK/rv.out"
+  _review PRIOR_FILE="$WORK/prior.json" STUB_SHAPE=result || fail "ai-review re-run crashed"
+  check "re-run still counts blocking" grep -q '^blocking=1$' "$WORK/rv.out"
+  check "re-run posts nothing new" grep -q '^posted=0$' "$WORK/rv.out"
+  check "prior findings passed to model" grep -q 'sql-string-concat' "$WORK/rv-out/prompt-1.txt"
+
+  : >"$WORK/rv.out"
+  _review ANTHROPIC_API_KEY= || fail "ai-review without key crashed"
+  check "no key: skipped" grep -q '^status=skipped$' "$WORK/rv.out"
+  : >"$WORK/rv.out"
+  _review STUB_FAIL=1 || fail "ai-review with failing claude crashed"
+  check "claude failure: error status" grep -q '^status=error$' "$WORK/rv.out"
+
+  # Gate: verdicts, override, reuse of the last review on the same commit.
+  # shellcheck disable=SC2329 # invoked through check/check_not
+  _gate() { (cd "$d" && env HEAD_SHA="$head" GITHUB_STEP_SUMMARY=/dev/null SCORECARD_OUT="$WORK/card.md" "$@" .github/scripts/pr-gate.sh >/dev/null 2>&1); }
+  check "gate passes clean PR" _gate REVIEW_ENABLED=1 REVIEW_STATUS=ok REVIEW_BLOCKING=0 REVIEW_NITS=2
+  check "clean score" grep -q '"score":94' "$WORK/card.md"
+  check_not "gate fails on blocking review finding" _gate REVIEW_ENABLED=1 REVIEW_STATUS=ok REVIEW_BLOCKING=1
+  check "fail scorecard" grep -q 'PR gate: fail' "$WORK/card.md"
+  check "override label passes" _gate REVIEW_ENABLED=1 REVIEW_STATUS=ok REVIEW_BLOCKING=1 PR_LABELS=bug,gate-override
+  check "override recorded" grep -q '"override":true' "$WORK/card.md"
+  check_not "guard blocking fails" _gate GUARD_ENABLED=1 GUARD_AGENT=true GUARD_BLOCKING=true GUARD_BLOCK_COUNT=2
+  local prev
+  prev=$(sed -n 's/^<!-- harness-scorecard \(.*\) -->$/\1/p' "$WORK/card.md")
+  prev=$(jq -c --arg h "$head" '.head_sha = $h | .review = {status: "ok", blocking: 1, nits: 0, preexisting: 0, patterns: "x"}' <<<"$prev")
+  check_not "label event reuses last review on same commit" _gate REVIEW_ENABLED=1 REVIEW_STATUS= PREVIOUS_SCORECARD="$prev"
+  prev=$(jq -c '.head_sha = "other"' <<<"$prev")
+  check "new commit does not reuse stale review" _gate REVIEW_ENABLED=1 REVIEW_STATUS= PREVIOUS_SCORECARD="$prev"
+}
+
+test_mcp_module() {
+  local d
+  d=$WORK/prof-software-strict
+  check "strict: .mcp.json" jq -e '.mcpServers.github.headers.Authorization == "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}"' "$d/.mcp.json"
+  check "strict: MCP doc" contains "$d/docs/agents/MCP.md" 'claude mcp add --scope user'
+  check_not "recommended: no .mcp.json" test -e "$WORK/prof-software-recommended/.mcp.json"
+  check_not "no literal tokens committed" grep -rqE 'ghp_|github_pat_' "$d" --exclude-dir=.git
 }
 
 test_old_config_without_profile() {

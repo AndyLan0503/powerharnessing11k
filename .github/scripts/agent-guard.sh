@@ -111,5 +111,8 @@ fi
 
 {
   echo "agent=$agent"
+  echo "reason=$why"
   echo "blocking=$blocking"
+  echo "block_count=$(grep -c '^block' "$findings" || true)"
+  echo "warn_count=$(grep -c '^warn' "$findings" || true)"
 } >>"$OUTPUT"

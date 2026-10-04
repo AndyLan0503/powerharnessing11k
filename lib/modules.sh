@@ -3,7 +3,7 @@
 # and module_apply(), which calls emit / settings_* (see lib/apply.sh and
 # lib/settings.sh). Order matters only for readability of the summary.
 
-ALL_MODULES="core guardrails quality audit skills ml agentic study research collab ci security agent-guard review telemetry"
+ALL_MODULES="core guardrails quality audit skills ml agentic study research mcp collab ci security agent-guard review telemetry"
 ALL_PROFILES="software ml agentic study research"
 ALL_TIERS="minimal recommended strict"
 
@@ -120,6 +120,12 @@ derive_vars() {
   HV_PROFILE_RULES=''
   case $HV_PROFILE in ml | agentic | study | research) HV_PROFILE_RULES=1 ;; esac
   export HV_HOW_WE_WORK HV_PROFILE_RULES
+
+  # Jobs the PR gate waits for.
+  HV_GATE_NEEDS=''
+  if list_has "$HV_MODULES" agent-guard; then HV_GATE_NEEDS=guard; fi
+  if list_has "$HV_MODULES" review; then HV_GATE_NEEDS="${HV_GATE_NEEDS:+$HV_GATE_NEEDS, }review"; fi
+  export HV_GATE_NEEDS
   export HV_PROFILE HV_PROFILE_TITLE HV_PROFILE_ENGINEERING HV_PROFILE_SOLO HV_PROTECT_RAW_DATA HV_NOTEBOOK_CHECK
 
   for m in $ALL_MODULES; do

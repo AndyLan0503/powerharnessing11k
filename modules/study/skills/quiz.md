@@ -1,6 +1,7 @@
 ---
 name: quiz
 description: Quiz the learner on material from notes/ and the review queue in PROGRESS.md, using retrieval practice and spaced repetition. Use when the learner says "quiz me", "review", or at the start of a study session.
+argument-hint: "[topic, or blank for the review queue]"
 ---
 
 # Quiz

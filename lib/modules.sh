@@ -115,6 +115,11 @@ derive_vars() {
   case $HV_PROFILE in study) HV_PROFILE_SOLO=1 ;; esac
   case $HV_PROFILE in ml | research) HV_PROTECT_RAW_DATA=1 ;; esac
   HV_NOTEBOOK_CHECK=$HV_PROTECT_RAW_DATA
+  HV_HOW_WE_WORK=''
+  case $HV_PROFILE in software | ml | agentic | research) HV_HOW_WE_WORK=1 ;; esac
+  HV_PROFILE_RULES=''
+  case $HV_PROFILE in ml | agentic | study | research) HV_PROFILE_RULES=1 ;; esac
+  export HV_HOW_WE_WORK HV_PROFILE_RULES
   export HV_PROFILE HV_PROFILE_TITLE HV_PROFILE_ENGINEERING HV_PROFILE_SOLO HV_PROTECT_RAW_DATA HV_NOTEBOOK_CHECK
 
   for m in $ALL_MODULES; do

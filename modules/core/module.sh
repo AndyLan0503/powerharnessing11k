@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-MODULE_DESC="CLAUDE.md / AGENTS.md, .claude/settings.json, cloud session-start hook, .gitignore"
+MODULE_DESC="CLAUDE.md / AGENTS.md, .claude/rules, settings.json, /review + /handoff commands, reviewer role, session-start hook"
 
 module_apply() {
   emit block CLAUDE.md.tmpl CLAUDE.md
@@ -10,6 +10,21 @@ module_apply() {
   emit seed editorconfig.tmpl .editorconfig
   emit seed permissions.tmpl .harness/permissions
   emit file harness-readme.md .harness/README.md
+
+  # Shared commands and roles. Study repos get their own tutor-style roles.
+  emit file commands/handoff.md .claude/commands/handoff.md
+  if [ -z "$HV_PROFILE_STUDY" ]; then
+    emit file commands/review.md .claude/commands/review.md
+    emit file agents/reviewer.md .claude/agents/reviewer.md
+  fi
+
+  # Path-scoped rules: loaded only when Claude works on matching files.
+  if [ -n "$HV_PROFILE_ENGINEERING" ]; then
+    emit file rules/testing.md .claude/rules/testing.md
+    emit file rules/github-actions.md .claude/rules/github-actions.md
+  fi
+  if [ -n "$HV_PROTECT_RAW_DATA" ]; then emit file rules/data.md .claude/rules/data.md; fi
+  if [ -n "$HV_NOTEBOOK_CHECK" ]; then emit file rules/notebooks.md .claude/rules/notebooks.md; fi
 
   settings_hook SessionStart "" session-start.sh 600
 

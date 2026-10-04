@@ -1,6 +1,7 @@
 ---
 name: agent-tool
 description: Design, implement, and test a tool that an LLM agent in {{PROJECT_NAME}} can call. Use when adding or changing a tool, function-calling schema, or MCP server.
+argument-hint: "[tool name]"
 ---
 
 # Adding a tool for the agent

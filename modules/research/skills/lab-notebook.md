@@ -1,6 +1,7 @@
 ---
 name: lab-notebook
 description: Add a dated entry to RESEARCH_LOG.md recording goal, method, results, surprises, and next steps. Use at the end of every working session or after any analysis or experiment.
+argument-hint: "[session title]"
 ---
 
 # Lab notebook entry

@@ -29,13 +29,13 @@ See what agents did on your machine (the log is local and git-ignored):
 | `manifest` | Checksums of generated files; lets updates skip files people have edited. Don't edit. |
 | `report.sh` | Local audit-log summary |
 
-To apply a change, or to pick up a newer harness, nothing needs to be installed permanently:
+To apply a change, or to pick up a newer harness (nothing goes on your PATH):
 
 ```sh
-git clone https://github.com/reclan-ai/harness-workflow /tmp/harness
-/tmp/harness/bin/harness update -C .      # re-apply .harness/config
-/tmp/harness/bin/harness doctor -C .      # check for drift
-/tmp/harness/bin/harness configure -C .   # re-run the wizard
+git clone --depth=1 https://github.com/reclan-ai/harness-workflow ~/.harness-workflow   # once; later: git -C ~/.harness-workflow pull
+~/.harness-workflow/setup.sh update      # re-apply .harness/config (run from this repo)
+~/.harness-workflow/setup.sh doctor      # check for drift
+~/.harness-workflow/setup.sh             # re-run the setup wizard
 ```
 
 Commit the result like any other change. Edited files are never overwritten; harness writes `<file>.harness-new` next to them for you to merge.

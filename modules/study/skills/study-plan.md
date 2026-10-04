@@ -1,6 +1,7 @@
 ---
 name: study-plan
 description: Create or adjust the learning plan in LEARNING_PLAN.md (goals, syllabus, weekly schedule) based on progress. Use when starting a new subject, at the start of a week, or when the learner is behind or ahead.
+argument-hint: "[subject or goal]"
 ---
 
 # Study planning

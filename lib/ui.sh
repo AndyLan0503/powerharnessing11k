@@ -117,6 +117,6 @@ ui_yesno() { # title step total question -> returns 0 yes / 1 no / 10 restart
 }
 
 ui_quit() {
-  printf '\n  %s\n' "Nothing was changed. Run ${C_BOLD}harness configure${C_RESET} any time."
+  printf '\n  %s\n' "Nothing was changed. Run ${C_BOLD}$HARNESS_ROOT/setup.sh${C_RESET} any time."
   exit 0
 }

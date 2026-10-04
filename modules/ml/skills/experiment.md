@@ -1,6 +1,7 @@
 ---
 name: experiment
 description: Plan, run, and log an ML or data-science experiment in {{PROJECT_NAME}} reproducibly. Use whenever training a model, comparing approaches, tuning hyperparameters, or reporting a metric.
+argument-hint: "[hypothesis]"
 ---
 
 # Running an experiment

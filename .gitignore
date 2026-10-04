@@ -1,5 +1,6 @@
 # >>> harness:managed
 .harness/logs/
 .claude/settings.local.json
+.claude/handoff/
 *.harness-new
 # <<< harness:managed

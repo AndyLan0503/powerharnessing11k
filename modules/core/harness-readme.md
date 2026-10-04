@@ -35,13 +35,13 @@ See what agents did on your machine (the log is local and git-ignored):
 | `report.sh` | Local audit-log summary |
 {{/if}}
 
-To apply a change, or to pick up a newer harness, nothing needs to be installed permanently:
+To apply a change, or to pick up a newer harness (nothing goes on your PATH):
 
 ```sh
-git clone {{HARNESS_URL}} /tmp/harness
-/tmp/harness/bin/harness update -C .      # re-apply .harness/config
-/tmp/harness/bin/harness doctor -C .      # check for drift
-/tmp/harness/bin/harness configure -C .   # re-run the wizard
+git clone --depth=1 {{HARNESS_URL}} ~/.harness-workflow   # once; later: git -C ~/.harness-workflow pull
+~/.harness-workflow/setup.sh update      # re-apply .harness/config (run from this repo)
+~/.harness-workflow/setup.sh doctor      # check for drift
+~/.harness-workflow/setup.sh             # re-run the setup wizard
 ```
 
 Commit the result like any other change. Edited files are never overwritten; harness writes `<file>.harness-new` next to them for you to merge.

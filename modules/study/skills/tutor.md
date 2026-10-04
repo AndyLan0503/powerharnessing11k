@@ -1,6 +1,7 @@
 ---
 name: tutor
 description: Teach a concept or help with an exercise as a tutor (diagnose, hint, check understanding) rather than giving the answer. Use whenever the learner asks a "how/why does" question or is stuck on an exercise.
+argument-hint: "[topic or exercise path]"
 ---
 
 # Tutoring loop

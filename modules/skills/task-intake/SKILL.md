@@ -1,6 +1,7 @@
 ---
 name: task-intake
 description: How to start a new task or issue in {{PROJECT_NAME}}: clarify scope, branch, plan, and test-first. Use at the beginning of any feature, fix, or refactor.
+argument-hint: "[issue number or task description]"
 ---
 
 # Task intake

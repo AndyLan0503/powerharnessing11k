@@ -1,6 +1,7 @@
 ---
 name: steward
 description: How to drive a pull request in {{PROJECT_NAME}} to a green, mergeable state. Use when CI fails, a reviewer comments, or a PR has a merge conflict.
+argument-hint: "[PR number]"
 ---
 
 # Steward: getting a PR to green

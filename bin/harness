@@ -31,7 +31,7 @@ Commands:
   doctor      Check the harness in a repo: drift, hooks, settings, tools.
   report      Summarise the local agent audit log (.harness/logs).
   list        Show profiles, tiers, and modules.
-  self-update Pull the latest harness release.
+  self-update Pull the latest harness (same as: git -C <harness dir> pull).
   version     Print the version.
 
 Options:
@@ -85,10 +85,25 @@ resolve_target() {
   TARGET=$(cd "$TARGET" && pwd)
   if git -C "$TARGET" rev-parse --show-toplevel >/dev/null 2>&1; then
     TARGET=$(git -C "$TARGET" rev-parse --show-toplevel)
-  else
-    ui_warn "$TARGET is not a git repository; continuing anyway."
   fi
   export TARGET
+}
+
+# The wizard runs inside the project to bootstrap. An empty folder is fine:
+# offer to `git init` it (automatic with --yes). Refuse obviously wrong places.
+ensure_git_repo() {
+  case $TARGET in / | "$HOME") harness_die "refusing to set up $TARGET; cd into a project directory first" ;; esac
+  git -C "$TARGET" rev-parse --show-toplevel >/dev/null 2>&1 && return 0
+  if [ -z "$YES" ]; then
+    printf '  %s is not a git repository. Initialize one here? [y/N] ' "$TARGET"
+    local answer=''
+    IFS= read -r answer <"$HARNESS_TTY" || answer=''
+    case $answer in y | Y | yes) ;; *) harness_die "run setup inside a git repository (or answer y to create one)" ;; esac
+  fi
+  [ -n "$DRY_RUN" ] && return 0
+  git -C "$TARGET" init -q
+  git -C "$TARGET" symbolic-ref HEAD refs/heads/main
+  ui_ok "Initialized an empty git repository in $TARGET (branch main)"
 }
 
 validate_answers() {
@@ -174,11 +189,12 @@ next_steps() {
   if list_has "$HV_MODULES" review; then
     ui_info "  4. Add the ANTHROPIC_API_KEY repository secret for the Claude workflows"
   fi
-  ui_info "  Re-run ${C_BOLD}harness configure${C_RESET} to change answers, ${C_BOLD}harness doctor${C_RESET} to check health."
+  ui_info "  Re-run ${C_BOLD}$HARNESS_ROOT/setup.sh${C_RESET} to change answers; ${C_BOLD}setup.sh doctor${C_RESET} checks health."
 }
 
 cmd_configure() {
   resolve_target
+  ensure_git_repo
   harness_tmpdir >/dev/null
   # Start from defaults, then any previous answers, then flags.
   HV_PROJECT_NAME=$(basename "$TARGET")
@@ -211,7 +227,7 @@ cmd_configure() {
 cmd_update() {
   resolve_target
   harness_tmpdir >/dev/null
-  config_load || harness_die "no .harness/config in $TARGET; run 'harness configure' first"
+  config_load || harness_die "no .harness/config in $TARGET; run setup.sh (the wizard) first"
   apply_flag_overrides
   ui_info "${C_BOLD}harness update${C_RESET} $HARNESS_VERSION → $TARGET"
   do_apply
@@ -225,7 +241,7 @@ cmd_doctor() {
   ui_info "${C_BOLD}harness doctor${C_RESET} → $TARGET"
   printf '\n'
   if config_load; then ui_ok ".harness/config found (stack: $HV_STACK, guard: $HV_GUARD_LEVEL)"; else
-    ui_err "no .harness/config; run 'harness configure'"
+    ui_err "no .harness/config; run setup.sh (the wizard) first"
     return 1
   fi
 
@@ -307,7 +323,7 @@ cmd_list() {
 
 cmd_self_update() {
   if ! git -C "$HARNESS_ROOT" symbolic-ref --quiet HEAD >/dev/null; then
-    harness_die "$HARNESS_ROOT is pinned to a release tag; re-run install.sh with HARNESS_REF=<new tag>"
+    harness_die "$HARNESS_ROOT is pinned to a release tag; check out another tag with: git -C $HARNESS_ROOT checkout <tag>"
   fi
   ui_info "Pulling from $(harness_url)"
   git -C "$HARNESS_ROOT" pull --ff-only && ui_ok "harness is now $(cat "$HARNESS_ROOT/VERSION")"

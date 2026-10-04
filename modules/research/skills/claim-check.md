@@ -1,6 +1,9 @@
 ---
 name: claim-check
 description: Audit a draft (paper, report, slides, README) for unsupported, overstated, or mis-cited claims. Use before sharing or submitting anything that makes claims.
+argument-hint: "[draft path]"
+context: fork
+allowed-tools: Read, Grep, Glob
 ---
 
 # Claim check

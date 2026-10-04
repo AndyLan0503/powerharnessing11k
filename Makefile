@@ -1,4 +1,4 @@
-SHELL_SOURCES := bin/harness lib/*.sh tests/run.sh install.sh
+SHELL_SOURCES := bin/harness lib/*.sh tests/run.sh setup.sh
 
 .PHONY: lint test check
 

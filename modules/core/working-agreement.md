@@ -51,21 +51,33 @@ Run lint and tests before you say a task is done, and report the result honestly
 7. **Dependencies are decisions.** Don't add one without stating why in the PR description.
 8. **A human owns every merge.** Agents open PRs; humans approve them.
 {{/if}}
+{{#if HOW_WE_WORK}}
+
+{{> how-we-work.md}}
+{{/if}}
+{{#if MULTI_AGENT}}
 {{#if MOD_ML}}
 
-{{> agreements/ml.md}}
+{{> ../ml/rules/profile.md}}
 {{/if}}
 {{#if MOD_AGENTIC}}
 
-{{> agreements/agentic.md}}
+{{> ../agentic/rules/profile.md}}
 {{/if}}
 {{#if MOD_STUDY}}
 
-{{> agreements/study.md}}
+{{> ../study/rules/profile.md}}
 {{/if}}
 {{#if MOD_RESEARCH}}
 
-{{> agreements/research.md}}
+{{> ../research/rules/profile.md}}
+{{/if}}
+{{/if}}
+{{#unless MULTI_AGENT}}
+{{#if PROFILE_RULES}}
+
+Profile-specific rules are in `.claude/rules/` and load automatically, some only when you work on matching files.
+{{/if}}
 {{/if}}
 
 ## Guardrails (level: {{GUARD_LEVEL}})

@@ -337,32 +337,31 @@ _make_fork() {
   printf '%s' "$fork"
 }
 
-test_install_from_fork() {
-  local fork home=$WORK/inst/home bin=$WORK/inst/bin out
+# p10k-style: clone harness anywhere, cd into the project, run setup.sh.
+test_setup_from_clone() {
+  local fork home=$WORK/inst/.harness-workflow proj=$WORK/inst/project out
   fork=$(_make_fork)
   rm -rf "$WORK/inst"
-  out=$(HOME=$WORK/inst HARNESS_REPO=$fork HARNESS_HOME=$home HARNESS_BIN=$bin bash "$ROOT/install.sh" 2>&1) ||
-    fail "install from fork failed: $out"
-  check "symlink installed" test -x "$bin/harness"
-  check "cloned onto a branch" git -C "$home" symbolic-ref --quiet HEAD
+  mkdir -p "$proj"
+  git clone -q "$fork" "$home"
 
-  # Re-running the installer updates in place and keeps a tracking branch.
-  out=$(HOME=$WORK/inst HARNESS_REPO=$fork HARNESS_HOME=$home HARNESS_BIN=$bin bash "$ROOT/install.sh" 2>&1) ||
-    fail "re-install failed: $out"
-  check "re-install keeps tracking branch" git -C "$home" rev-parse --abbrev-ref '@{upstream}'
-  check "self-update pulls from fork" "$bin/harness" self-update
+  # An empty, non-git folder: --yes initializes git, then runs the wizard defaults.
+  out=$(cd "$proj" && "$home/setup.sh" --yes 2>&1) || fail "setup.sh in empty dir failed: $out"
+  check "git initialized" git -C "$proj" rev-parse --git-dir
+  check "on branch main" test "$(git -C "$proj" symbolic-ref --short HEAD)" = main
+  check "harness applied" test -f "$proj/.harness/config"
+  check "setup.sh passes commands through" bash -c "cd '$proj' && '$home/setup.sh' doctor"
+  check_not "refuses HOME" env HOME="$WORK/inst" bash -c "cd '$WORK/inst' && '$home/setup.sh' --yes"
+  check_not "no PATH entry needed" command -v harness
 
-  # Installing from inside a checkout uses that checkout, without cloning.
-  out=$(HOME=$WORK/inst HARNESS_BIN=$WORK/inst/bin2 bash "$home/install.sh" 2>&1) || fail "local install failed: $out"
-  check "local install links checkout" test "$(readlink "$WORK/inst/bin2/harness")" = "$home/bin/harness"
+  check "self-update pulls from fork" "$home/setup.sh" self-update
 
-  # Generated CONTRIBUTING.md links to wherever harness came from.
-  local d
-  d=$(new_repo forklink package.json)
+  # Generated docs link to wherever harness came from, credentials stripped.
   git -C "$home" remote set-url origin "https://bot:t0ken@github.acme.internal/eng/harness-workflow.git"
-  "$bin/harness" configure --yes -C "$d" >/dev/null 2>&1
-  check "CONTRIBUTING links to fork" contains "$d/CONTRIBUTING.md" '(https://github.acme.internal/eng/harness-workflow)'
-  check_not "no credentials leaked" grep -rq 't0ken' "$d" --exclude-dir=.git
+  (cd "$proj" && "$home/setup.sh" update >/dev/null 2>&1)
+  check "CONTRIBUTING links to fork" contains "$proj/CONTRIBUTING.md" '(https://github.acme.internal/eng/harness-workflow)'
+  check ".harness/README.md links to fork" contains "$proj/.harness/README.md" 'git clone --depth=1 https://github.acme.internal/eng/harness-workflow'
+  check_not "no credentials leaked" grep -rq 't0ken' "$proj" --exclude-dir=.git
 }
 
 _set_config() { # dir KEY value
@@ -401,7 +400,7 @@ test_profile_specifics() {
   # Study: tutor agreement, Learning style, exercises protected, solo pushes OK.
   d=$WORK/prof-study-recommended
   check "study: Learning output style" jq -e '.outputStyle == "Learning"' "$d/.claude/settings.json"
-  check "study: tutor agreement" contains "$d/CLAUDE.md" 'How to help me learn'
+  check "study: tutor rules" contains "$d/.claude/rules/study.md" 'How to help me learn'
   check_not "study: no PR agreement" contains "$d/CLAUDE.md" 'Working agreement for agents'
   check "study: plan seeded" test -f "$d/LEARNING_PLAN.md"
   check "study: quiz skill" test -f "$d/.claude/skills/quiz/SKILL.md"
@@ -419,7 +418,7 @@ test_profile_specifics() {
   d=$WORK/prof-ml-recommended
   [ "$(_guard "$d" guard-paths.sh Write file_path "$d/data/raw/train.csv")" = 2 ] || fail "ml: raw data edit allowed"
   [ "$(_guard "$d" guard-paths.sh Write file_path "$d/data/processed/train.csv")" = 0 ] || fail "ml: processed edit blocked"
-  check "ml: agreement" contains "$d/CLAUDE.md" 'Data science and ML rules'
+  check "ml: rules" contains "$d/.claude/rules/ml.md" 'Data science and ML rules'
   check "ml: experiment skill" test -f "$d/.claude/skills/experiment/SKILL.md"
   check "ml: data ignored" git -C "$d" check-ignore -q data/raw/x.csv
   check_not "ml: data/README.md not ignored" git -C "$d" check-ignore -q data/README.md
@@ -429,18 +428,78 @@ test_profile_specifics() {
   d=$WORK/prof-research-recommended
   [ "$(_guard "$d" guard-paths.sh Edit file_path "$d/data/raw/survey.csv")" = 2 ] || fail "research: raw data edit allowed"
   check "research: WebSearch allowed" jq -e '.permissions.allow | index("WebSearch")' "$d/.claude/settings.json"
-  check "research: agreement" contains "$d/CLAUDE.md" 'Never fabricate'
+  check "research: rules" contains "$d/.claude/rules/research.md" 'Never fabricate'
   check "research: bib seeded" test -f "$d/references.bib"
 
   # Agentic: evals workflow appears once EVAL_CMD is set.
   d=$WORK/prof-agentic-recommended
-  check "agentic: agreement" contains "$d/CLAUDE.md" 'Prompts are code'
+  check "agentic: rules" contains "$d/.claude/rules/agentic.md" 'Prompts are code'
   check_not "agentic: no evals.yml without EVAL_CMD" test -e "$d/.github/workflows/evals.yml"
   _set_config "$d" EVAL_CMD 'uv run python -m evals'
   "$H" update -C "$d" >/dev/null 2>&1
   check "agentic: evals.yml generated" contains "$d/.github/workflows/evals.yml" 'uv run python -m evals'
   check "agentic: eval command in CLAUDE.md" contains "$d/CLAUDE.md" 'Evals: `uv run python -m evals`'
   ok
+}
+
+# CCAR-F Domain 3: modular rules, path scoping, commands, skill frontmatter, roles.
+test_profile_claude_code_config() {
+  local d f
+  d=$WORK/prof-software-recommended
+  check "software: testing rule is path-scoped" grep -q '^paths: \[' "$d/.claude/rules/testing.md"
+  check "software: CI rule is path-scoped" grep -q '^paths: \[".github/\*\*"\]' "$d/.claude/rules/github-actions.md"
+  check "software: /review command" grep -q '^description:' "$d/.claude/commands/review.md"
+  check "software: /handoff command" grep -q '^argument-hint:' "$d/.claude/commands/handoff.md"
+  check "software: reviewer role" grep -q '^tools: Read, Grep, Glob, Bash$' "$d/.claude/agents/reviewer.md"
+  check "software: how-we-work in CLAUDE.md" contains "$d/CLAUDE.md" 'Plan before big changes'
+  check "handoffs are git-ignored" git -C "$d" check-ignore -q .claude/handoff/x.md
+  check_not "software: no profile rules file" test -e "$d/.claude/rules/software.md"
+
+  d=$WORK/prof-ml-recommended
+  check "ml: data rule" grep -q '^paths: \["data/\*\*"\]' "$d/.claude/rules/data.md"
+  check "ml: notebook rule" test -f "$d/.claude/rules/notebooks.md"
+  check "ml: leakage-auditor role" test -f "$d/.claude/agents/leakage-auditor.md"
+  check "ml: data-audit runs forked" grep -q '^context: fork$' "$d/.claude/skills/data-audit/SKILL.md"
+  check "ml: reviewer knows leakage" contains "$d/.claude/agents/reviewer.md" 'Data leakage'
+
+  d=$WORK/prof-agentic-recommended
+  check "agentic: prompts rule" grep -q '^paths: \["prompts/\*\*"\]' "$d/.claude/rules/prompts.md"
+  check "agentic: evals rule" test -f "$d/.claude/rules/evals.md"
+  check "agentic: red-teamer role" test -f "$d/.claude/agents/red-teamer.md"
+  check "agentic: stop_reason loop rule" contains "$d/.claude/rules/agentic.md" 'stop_reason'
+
+  d=$WORK/prof-study-recommended
+  check "study: exercises rule" test -f "$d/.claude/rules/exercises.md"
+  check "study: examiner role" test -f "$d/.claude/agents/examiner.md"
+  check_not "study: no /review" test -e "$d/.claude/commands/review.md"
+  check "study: /handoff" test -f "$d/.claude/commands/handoff.md"
+  check_not "study: no how-we-work" contains "$d/CLAUDE.md" 'Plan before big changes'
+
+  d=$WORK/prof-research-recommended
+  check "research: literature rule" test -f "$d/.claude/rules/literature.md"
+  check "research: citation-verifier has web tools" grep -q 'WebSearch, WebFetch' "$d/.claude/agents/citation-verifier.md"
+  check "research: devils-advocate role" test -f "$d/.claude/agents/devils-advocate.md"
+  check "research: claim-check is read-only" grep -q '^allowed-tools: Read, Grep, Glob$' "$d/.claude/skills/claim-check/SKILL.md"
+
+  # Every generated skill, command, and role has the frontmatter it needs.
+  for d in "$WORK"/prof-*-strict; do
+    for f in "$d"/.claude/skills/*/SKILL.md; do
+      [ -e "$f" ] || continue
+      check "$(basename "$(dirname "$f")"): skill has name+description+argument-hint" \
+        sh -c "head -8 '$f' | grep -q '^name:' && head -8 '$f' | grep -q '^description:' && head -8 '$f' | grep -q '^argument-hint:'"
+    done
+    for f in "$d"/.claude/agents/*.md; do
+      [ -e "$f" ] || continue
+      check "$(basename "$f"): role has scoped tools" grep -q '^tools: ' "$f"
+    done
+  done
+
+  # With AGENTS.md, always-on profile rules move there (shared with other agents).
+  d=$(new_repo multi-ml pyproject.toml)
+  "$H" configure --yes -C "$d" --profile ml --agents multi >/dev/null 2>&1
+  check "multi: profile rules in AGENTS.md" contains "$d/AGENTS.md" 'Data science and ML rules'
+  check_not "multi: no duplicate rules file" test -e "$d/.claude/rules/ml.md"
+  check "multi: path rules still emitted" test -f "$d/.claude/rules/data.md"
 }
 
 test_old_config_without_profile() {

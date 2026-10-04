@@ -1,6 +1,7 @@
 ---
 name: prompt-change
 description: Change a prompt, tool description, model, or agent loop in {{PROJECT_NAME}} safely, with evals before and after. Use for any change that alters model behavior.
+argument-hint: "[prompt or tool file]"
 ---
 
 # Changing model behavior

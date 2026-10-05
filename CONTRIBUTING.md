@@ -1,6 +1,6 @@
-# Contributing to harness-workflow
+# Contributing to powerharnessing11k
 
-This repo is built by humans and coding agents together. The rules are the same for both; agents get a few extra checks.
+This repo is built by humans and coding agents together. The rules and the checks are the same for both.
 
 ## Workflow
 

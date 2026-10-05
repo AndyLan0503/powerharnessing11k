@@ -1,7 +1,7 @@
 #
 # One required check for every PR: make "PR gate / gate" (and CI) required in
 # branch protection. Jobs:
-#   guard   detects agent-authored PRs, labels them, flags risky diff patterns
+#   guard   flags risky diff patterns (weakened tests, protected paths, size)
 #   gate    combines the signals into pass/fail and a scorecard comment;
 #           a maintainer's `gate-override` label accepts the risk on record
 #
@@ -32,8 +32,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      agent: ${{ steps.guard.outputs.agent }}
-      reason: ${{ steps.guard.outputs.reason }}
       blocking: ${{ steps.guard.outputs.blocking }}
       block_count: ${{ steps.guard.outputs.block_count }}
       warn_count: ${{ steps.guard.outputs.warn_count }}
@@ -46,27 +44,16 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          git show "$BASE_SHA:.github/scripts/agent-guard.sh" >"$RUNNER_TEMP/agent-guard.sh" 2>/dev/null ||
-            cp .github/scripts/agent-guard.sh "$RUNNER_TEMP/agent-guard.sh"
+          git show "$BASE_SHA:.github/scripts/diff-guard.sh" >"$RUNNER_TEMP/diff-guard.sh" 2>/dev/null ||
+            cp .github/scripts/diff-guard.sh "$RUNNER_TEMP/diff-guard.sh"
       - name: Inspect diff
         id: guard
-        run: bash "$RUNNER_TEMP/agent-guard.sh"
+        run: bash "$RUNNER_TEMP/diff-guard.sh"
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          HEAD_REF: ${{ github.head_ref }}
-          PR_BODY: ${{ github.event.pull_request.body }}
           GUARD_MODE: warn
           DIFF_BUDGET: "800"
-      - name: Label agent-authored PR
-        if: steps.guard.outputs.agent == 'true' && github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-        run: |
-          gh label create agent-authored --color 7057ff \
-            --description "Written by a coding agent; reviewed by a human" 2>/dev/null || true
-          gh pr edit "$PR" --add-label agent-authored
 
   gate:
     needs: [guard]
@@ -95,8 +82,6 @@ jobs:
           PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
           GUARD_ENABLED: "1"
           GUARD_RESULT: ${{ needs.guard.result }}
-          GUARD_AGENT: ${{ needs.guard.outputs.agent }}
-          GUARD_REASON: ${{ needs.guard.outputs.reason }}
           GUARD_BLOCKING: ${{ needs.guard.outputs.blocking }}
           GUARD_BLOCK_COUNT: ${{ needs.guard.outputs.block_count }}
           GUARD_WARN_COUNT: ${{ needs.guard.outputs.warn_count }}

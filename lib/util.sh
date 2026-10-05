@@ -9,6 +9,12 @@ harness_die() {
   exit 1
 }
 
+# set_var NAME VALUE: assign to a variable whose name is computed. Use this
+# instead of `printf -v`: bash 3.2 leaves NAME unset when VALUE is empty.
+set_var() {
+  eval "$1=\$2"
+}
+
 # sha256 of a file, portable across GNU coreutils and macOS.
 harness_sha() {
   if command -v sha256sum >/dev/null 2>&1; then

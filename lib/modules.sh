@@ -3,7 +3,7 @@
 # and module_apply(), which calls emit / settings_* (see lib/apply.sh and
 # lib/settings.sh). Order matters only for readability of the summary.
 
-ALL_MODULES="core guardrails quality audit devtools skills ml agentic study research artifacts mcp collab ci security agent-guard review telemetry"
+ALL_MODULES="core guardrails quality audit devtools skills ml agentic study research artifacts mcp collab ci security diff-guard review telemetry"
 ALL_PROFILES="software ml agentic study research"
 ALL_TIERS="minimal recommended strict"
 
@@ -92,19 +92,19 @@ derive_vars() {
     strict) HV_GUARD_STRICT=1 ;;
   esac
   export HV_GUARD_RELAXED HV_GUARD_STANDARD
-  HV_AGENT_GUARD_MODE=warn
-  [ "$HV_GUARD_LEVEL" = strict ] && HV_AGENT_GUARD_MODE=block
+  HV_DIFF_GUARD_MODE=warn
+  [ "$HV_GUARD_LEVEL" = strict ] && HV_DIFF_GUARD_MODE=block
   HV_DIFF_BUDGET=${HV_DIFF_BUDGET:-800}
   HV_HAS_COMMANDS=''
   [ -z "$HV_LINT_CMD$HV_TYPECHECK_CMD$HV_TEST_CMD$HV_EVAL_CMD" ] || HV_HAS_COMMANDS=1
-  export HV_HARNESS_VERSION HV_MULTI_AGENT HV_GUARD_STRICT HV_AGENT_GUARD_MODE HV_DIFF_BUDGET HV_HAS_COMMANDS
+  export HV_HARNESS_VERSION HV_MULTI_AGENT HV_GUARD_STRICT HV_DIFF_GUARD_MODE HV_DIFF_BUDGET HV_HAS_COMMANDS
 
   # Profile flags. ENGINEERING: profiles whose work ships through PRs and CI.
   # SOLO: one person, no review flow (pushing to the default branch is fine).
   HV_PROFILE=${HV_PROFILE:-software}
   for m in $ALL_PROFILES; do
     up=$(printf '%s' "$m" | tr 'a-z' 'A-Z')
-    if [ "$HV_PROFILE" = "$m" ]; then printf -v "HV_PROFILE_$up" '1'; else printf -v "HV_PROFILE_$up" ''; fi
+    if [ "$HV_PROFILE" = "$m" ]; then set_var "HV_PROFILE_$up" 1; else set_var "HV_PROFILE_$up" ''; fi
     export "HV_PROFILE_$up"
   done
   HV_PROFILE_TITLE=$(profile_field "$HV_PROFILE" TITLE)
@@ -145,7 +145,7 @@ derive_vars() {
           harness_die "the $(printf '%s' "$k" | tr 'A-Z_' 'a-z-') command '$v' calls make, but harness writes the Makefile here. Give the underlying command instead." ;;
       esac
     fi
-    printf -v "HV_MK_${k}_CMD" '%s' "${v//\$/\$\$}"
+    set_var "HV_MK_${k}_CMD" "${v//\$/\$\$}"
     export "HV_MK_${k}_CMD"
   done
   HV_PY_DIST=$(printf '%s' "$HV_PROJECT_NAME" | tr 'A-Z' 'a-z' | sed 's/[^a-z0-9]\{1,\}/-/g; s/^-//; s/-$//')
@@ -155,24 +155,24 @@ derive_vars() {
 
   # Jobs the PR gate waits for.
   HV_GATE_NEEDS=''
-  if list_has "$HV_MODULES" agent-guard; then HV_GATE_NEEDS=guard; fi
+  if list_has "$HV_MODULES" diff-guard; then HV_GATE_NEEDS=guard; fi
   if list_has "$HV_MODULES" review; then HV_GATE_NEEDS="${HV_GATE_NEEDS:+$HV_GATE_NEEDS, }review"; fi
   export HV_GATE_NEEDS
   export HV_PROFILE HV_PROFILE_TITLE HV_PROFILE_ENGINEERING HV_PROFILE_SOLO HV_PROTECT_RAW_DATA HV_NOTEBOOK_CHECK
 
   for m in $ALL_MODULES; do
     up=$(printf '%s' "$m" | tr 'a-z-' 'A-Z_')
-    if list_has "$HV_MODULES" "$m"; then printf -v "HV_MOD_$up" '1'; else printf -v "HV_MOD_$up" ''; fi
+    if list_has "$HV_MODULES" "$m"; then set_var "HV_MOD_$up" 1; else set_var "HV_MOD_$up" ''; fi
     export "HV_MOD_$up"
   done
   for m in node python go rust generic; do
     up=$(printf '%s' "$m" | tr 'a-z' 'A-Z')
-    if [ "$HV_STACK" = "$m" ]; then printf -v "HV_STACK_$up" '1'; else printf -v "HV_STACK_$up" ''; fi
+    if [ "$HV_STACK" = "$m" ]; then set_var "HV_STACK_$up" 1; else set_var "HV_STACK_$up" ''; fi
     export "HV_STACK_$up"
   done
   for m in npm pnpm yarn bun uv poetry pip; do
     up=$(printf '%s' "$m" | tr 'a-z' 'A-Z')
-    if [ "$HV_PKG_MANAGER" = "$m" ]; then printf -v "HV_PM_$up" '1'; else printf -v "HV_PM_$up" ''; fi
+    if [ "$HV_PKG_MANAGER" = "$m" ]; then set_var "HV_PM_$up" 1; else set_var "HV_PM_$up" ''; fi
     export "HV_PM_$up"
   done
 

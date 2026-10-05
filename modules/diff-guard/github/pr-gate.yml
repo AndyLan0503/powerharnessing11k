@@ -1,8 +1,8 @@
 #
 # One required check for every PR: make "PR gate / gate" (and CI) required in
 # branch protection. Jobs:
-{{#if MOD_AGENT_GUARD}}
-#   guard   detects agent-authored PRs, labels them, flags risky diff patterns
+{{#if MOD_DIFF_GUARD}}
+#   guard   flags risky diff patterns (weakened tests, protected paths, size)
 {{/if}}
 {{#if MOD_REVIEW}}
 #   review  independent Claude Code review (claude -p, JSON-schema findings)
@@ -33,13 +33,11 @@ env:
   CLAUDE_CODE_VERSION: latest
 
 jobs:
-{{#if MOD_AGENT_GUARD}}
+{{#if MOD_DIFF_GUARD}}
   guard:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      agent: ${{ steps.guard.outputs.agent }}
-      reason: ${{ steps.guard.outputs.reason }}
       blocking: ${{ steps.guard.outputs.blocking }}
       block_count: ${{ steps.guard.outputs.block_count }}
       warn_count: ${{ steps.guard.outputs.warn_count }}
@@ -52,27 +50,16 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          git show "$BASE_SHA:.github/scripts/agent-guard.sh" >"$RUNNER_TEMP/agent-guard.sh" 2>/dev/null ||
-            cp .github/scripts/agent-guard.sh "$RUNNER_TEMP/agent-guard.sh"
+          git show "$BASE_SHA:.github/scripts/diff-guard.sh" >"$RUNNER_TEMP/diff-guard.sh" 2>/dev/null ||
+            cp .github/scripts/diff-guard.sh "$RUNNER_TEMP/diff-guard.sh"
       - name: Inspect diff
         id: guard
-        run: bash "$RUNNER_TEMP/agent-guard.sh"
+        run: bash "$RUNNER_TEMP/diff-guard.sh"
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          HEAD_REF: ${{ github.head_ref }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-          GUARD_MODE: {{AGENT_GUARD_MODE}}
+          GUARD_MODE: {{DIFF_GUARD_MODE}}
           DIFF_BUDGET: "{{DIFF_BUDGET}}"
-      - name: Label agent-authored PR
-        if: steps.guard.outputs.agent == 'true' && github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-        run: |
-          gh label create agent-authored --color 7057ff \
-            --description "Written by a coding agent; reviewed by a human" 2>/dev/null || true
-          gh pr edit "$PR" --add-label agent-authored
 {{/if}}
 {{#if MOD_REVIEW}}
 
@@ -155,11 +142,9 @@ jobs:
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
-{{#if MOD_AGENT_GUARD}}
+{{#if MOD_DIFF_GUARD}}
           GUARD_ENABLED: "1"
           GUARD_RESULT: ${{ needs.guard.result }}
-          GUARD_AGENT: ${{ needs.guard.outputs.agent }}
-          GUARD_REASON: ${{ needs.guard.outputs.reason }}
           GUARD_BLOCKING: ${{ needs.guard.outputs.blocking }}
           GUARD_BLOCK_COUNT: ${{ needs.guard.outputs.block_count }}
           GUARD_WARN_COUNT: ${{ needs.guard.outputs.warn_count }}

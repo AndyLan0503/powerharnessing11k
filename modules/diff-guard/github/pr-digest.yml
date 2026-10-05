@@ -1,5 +1,5 @@
-# Weekly summary of agent activity, posted as an issue.
-name: Agent digest
+# Weekly summary of pull-request outcomes and gate results, posted as an issue.
+name: PR digest
 
 on:
   schedule:
@@ -25,21 +25,17 @@ jobs:
           fields=number,title,labels,additions,deletions,mergedAt,closedAt,state
           gh pr list -R "$REPO" --state all --search "updated:>=$since" --limit 500 --json "$fields" > prs.json
           jq -r --arg since "$since" '
-            def agent: any(.labels[]; .name == "agent-authored");
             def recent($f): (.[$f] // "") >= $since;
-            [.[] | select(agent)] as $a
-            | [$a[] | select(.state == "MERGED" and recent("mergedAt"))] as $m
-            | [$a[] | select(.state == "CLOSED" and recent("closedAt"))] as $c
-            | [.[] | select(.state == "MERGED" and recent("mergedAt") and (.title | test("^Revert"; "i")))] as $rv
-            | [.[] | select(.state == "MERGED" and recent("mergedAt"))] as $all
-            | "## Agent activity since \($since)\n\n"
+            [.[] | select(.state == "MERGED" and recent("mergedAt"))] as $m
+            | [.[] | select(.state == "CLOSED" and recent("closedAt"))] as $c
+            | [$m[] | select(.title | test("^Revert"; "i"))] as $rv
+            | "## Pull requests since \($since)\n\n"
             + "| Metric | Value |\n|---|---|\n"
-            + "| Agent PRs merged | \($m | length) of \($all | length) merged PRs |\n"
-            + "| Agent PRs closed without merge | \($c | length) |\n"
-            + "| Agent PRs still open | \([$a[] | select(.state == "OPEN")] | length) |\n"
-            + "| Lines changed by merged agent PRs | \([$m[] | .additions + .deletions] | add // 0) |\n"
-            + "| Reverts merged (all authors) | \($rv | length) |\n\n"
-            + (if ($m | length) > 0 then "### Merged agent PRs\n" + ([$m[] | "- #\(.number) \(.title)"] | join("\n")) + "\n" else "" end)
+            + "| Merged | \($m | length) |\n"
+            + "| Closed without merge | \($c | length) |\n"
+            + "| Still open | \([.[] | select(.state == "OPEN")] | length) |\n"
+            + "| Lines changed by merged PRs | \([$m[] | .additions + .deletions] | add // 0) |\n"
+            + "| Reverts merged | \($rv | length) |\n\n"
           ' prs.json > digest.md
       - name: Gate scores and AI-review feedback
         env:
@@ -61,11 +57,13 @@ jobs:
             if length == 0 then "" else
               . as $s
               | def avg(f): if length == 0 then "n/a" else ((map(f) | add) / length * 10 | round / 10 | tostring) end;
-              "### PR gate\n\n| | Agent PRs | Human PRs |\n|---|---|---|\n"
-              + "| PRs scored | \([$s[] | select(.agent)] | length) | \([$s[] | select(.agent | not)] | length) |\n"
-              + "| Average score | \([$s[] | select(.agent)] | avg(.score)) | \([$s[] | select(.agent | not)] | avg(.score)) |\n"
-              + "| Currently failing | \([$s[] | select(.agent and .verdict == "fail")] | length) | \([$s[] | select((.agent | not) and .verdict == "fail")] | length) |\n"
-              + "| Overrides (`gate-override`) | \([$s[] | select(.agent and .override)] | length) | \([$s[] | select((.agent | not) and .override)] | length) |\n\n"
+              "### PR gate\n\n| Metric | Value |\n|---|---|\n"
+              + "| PRs scored | \($s | length) |\n"
+              + "| Average score | \($s | avg(.score)) |\n"
+              + "| Currently failing | \([$s[] | select(.verdict == "fail")] | length) |\n"
+              + "| Diff-guard blocking-class findings | \([$s[] | .guard.block // 0] | add // 0) |\n"
+              + "| Diff-guard warnings | \([$s[] | .guard.warn // 0] | add // 0) |\n"
+              + "| Overrides (`gate-override`) | \([$s[] | select(.override)] | length) |\n\n"
             end' >> digest.md
           jq -R 'fromjson? // empty' review-comments.jsonl | jq -rs '
             if length == 0 then "" else
@@ -80,6 +78,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
-          gh label create agent-digest --color c5def5 2>/dev/null -R "$REPO" || true
-          gh issue create -R "$REPO" --title "Agent digest: week of $(date -u +%Y-%m-%d)" \
-            --label agent-digest --body-file digest.md
+          gh label create pr-digest --color c5def5 2>/dev/null -R "$REPO" || true
+          gh issue create -R "$REPO" --title "PR digest: week of $(date -u +%Y-%m-%d)" \
+            --label pr-digest --body-file digest.md

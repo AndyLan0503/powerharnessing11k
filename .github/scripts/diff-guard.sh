@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Agent guard: inspects a PR diff for the failure modes coding agents are most
-# prone to.
+# Diff guard: inspects a PR diff for risky patterns (weakened tests, edits to
+# protected paths, oversized changes). Every PR gets the same checks, whoever
+# or whatever wrote it.
 #
-# Env: BASE_SHA HEAD_SHA [HEAD_REF] [PR_BODY] [GUARD_MODE=warn|block] [DIFF_BUDGET=800]
+# Env: BASE_SHA HEAD_SHA [GUARD_MODE=warn|block] [DIFF_BUDGET=800]
 # Writes a Markdown report to $GITHUB_STEP_SUMMARY (or stdout) and sets the
-# step outputs agent=true|false and blocking=true|false.
+# step outputs blocking=true|false, block_count, and warn_count.
 set -euo pipefail
 
 : "${BASE_SHA:?}" "${HEAD_SHA:?}"
@@ -20,19 +21,6 @@ ASSERT='assert|expect\(|\.should|require\.|t\.(Error|Fatal)'
 PROTECTED='^(\.github/workflows/|\.github/scripts/|\.github/CODEOWNERS$|CODEOWNERS$|\.claude/settings\.json$|\.claude/hooks/)'
 MANIFESTS='(^|/)(package\.json|pyproject\.toml|requirements[^/]*\.txt|go\.mod|Cargo\.toml|Gemfile|pom\.xml|build\.gradle(\.kts)?)$'
 LOCKFILES='(^|/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|uv\.lock|poetry\.lock|go\.sum|Cargo\.lock|Gemfile\.lock)$'
-AGENT_TRAILER='^Co-Authored-By:.*(Claude|anthropic\.com|Copilot|Cursor|Codex|Devin|Jules|Aider)'
-AGENT_BRANCH='^(claude|copilot|codex|cursor|devin|agent)/'
-
-# ---- Is this agent work? ---------------------------------------------------
-agent=false
-why=''
-if grep -Eiq "$AGENT_TRAILER|^noreply@anthropic\.com$" <<<"$(git log --format='%B%n%ae' "$BASE_SHA..$HEAD_SHA")"; then
-  agent=true why='agent co-author trailer in commits'
-elif grep -Eq "$AGENT_BRANCH" <<<"${HEAD_REF:-}"; then
-  agent=true why="agent branch name (${HEAD_REF})"
-elif grep -Eiq '\[x\][[:space:]]*Agent-authored' <<<"${PR_BODY:-}"; then
-  agent=true why='PR template box "Agent-authored" is checked'
-fi
 
 # ---- Findings ---------------------------------------------------------------
 findings=$(mktemp)
@@ -79,18 +67,14 @@ EOF
 
 # ---- Report -----------------------------------------------------------------
 blocking=false
-if [ "$agent" = true ] && [ "$MODE" = block ] && grep -q '^block' "$findings"; then
+if [ "$MODE" = block ] && grep -q '^block' "$findings"; then
   blocking=true
 fi
 
 {
-  echo "## Agent guard"
+  echo "## Diff guard"
   echo
-  if [ "$agent" = true ]; then
-    echo "**Agent-authored PR** ($why). Mode: \`$MODE\`."
-  else
-    echo "Not detected as agent-authored; findings are informational."
-  fi
+  echo "Mode: \`$MODE\`. The same checks apply to every PR."
   echo
   if [ ! -s "$findings" ]; then
     echo "No findings. ✅"
@@ -99,19 +83,17 @@ fi
     echo "|---|---|---|"
     while IFS="$(printf '\t')" read -r sev check detail; do
       icon='⚠️'
-      if [ "$sev" = block ] && [ "$agent" = true ]; then icon='⛔'; fi
+      if [ "$sev" = block ] && [ "$MODE" = block ]; then icon='⛔'; fi
       echo "| $icon | $check | $detail |"
     done <"$findings"
     echo
-    if [ "$agent" = true ] && [ "$MODE" != block ]; then
+    if [ "$MODE" != block ]; then
       echo "_Warn mode: nothing blocks the merge, but reviewers should look at each finding._"
     fi
   fi
 } >>"$SUMMARY"
 
 {
-  echo "agent=$agent"
-  echo "reason=$why"
   echo "blocking=$blocking"
   echo "block_count=$(grep -c '^block' "$findings" || true)"
   echo "warn_count=$(grep -c '^warn' "$findings" || true)"

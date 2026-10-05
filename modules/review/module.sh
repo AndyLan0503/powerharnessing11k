@@ -7,9 +7,9 @@ module_apply() {
   emit seed github/criteria.md .github/review/criteria.md
   emit file github/claude.yml .github/workflows/claude.yml
   emit file REVIEW.md REVIEW.md
-  # The gate workflow normally comes with agent-guard; provide it if that's off.
-  if [ -z "$HV_MOD_AGENT_GUARD" ]; then
-    emit exec ../agent-guard/github/pr-gate.sh .github/scripts/pr-gate.sh
-    emit file ../agent-guard/github/pr-gate.yml .github/workflows/pr-gate.yml
+  # The gate workflow normally comes with diff-guard; provide it if that's off.
+  if [ -z "$HV_MOD_DIFF_GUARD" ]; then
+    emit exec ../diff-guard/github/pr-gate.sh .github/scripts/pr-gate.sh
+    emit file ../diff-guard/github/pr-gate.yml .github/workflows/pr-gate.yml
   fi
 }

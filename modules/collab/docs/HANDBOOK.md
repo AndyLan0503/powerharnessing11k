@@ -23,11 +23,11 @@ Poor fits: ambiguous product decisions, security-sensitive code without an exper
 - Say what is out of scope.
 - If it would be more than ~400 lines, split it.
 
-## Reviewing agent PRs
+## Reviewing PRs
 
-Agent PRs are labelled `agent-authored` automatically. Review them as you would a new teammate's PR, with extra attention to:
+Every PR passes the same gate and gets the same review, whoever or whatever wrote it. Nobody is asked to declare how a change was produced. Look closely at:
 
-- **Tests:** were any deleted, skipped, or weakened? The agent-guard check flags this.
+- **Tests:** were any deleted, skipped, or weakened? The diff-guard check flags this.
 - **Scope:** does the diff stay within the task?
 - **Dependencies:** any new packages? Are they justified and maintained?
 - **Confident-sounding claims:** verify "I ran the tests" against CI.
@@ -41,9 +41,9 @@ Agent PRs are labelled `agent-authored` automatically. Review them as you would 
 {{#if MOD_CI}}
 | CI (`ci.yml`) | Lint, typecheck, and tests are required to merge |
 {{/if}}
-{{#if MOD_AGENT_GUARD}}
-| PR gate (`pr-gate.yml`) | One required check. Labels agent PRs and flags test deletion, skipped tests, protected paths, oversized diffs, and new dependencies; posts a scorecard; `gate-override` records a human's risk acceptance |
-| Weekly digest (`agent-digest.yml`) | Agent PR volume, merge rate, reverts, gate scores, and AI-review false-positive rates by pattern |
+{{#if MOD_DIFF_GUARD}}
+| PR gate (`pr-gate.yml`) | One required check for every PR. Flags test deletion, skipped tests, protected paths, oversized diffs, and new dependencies; posts a scorecard; `gate-override` records a human's risk acceptance |
+| Weekly digest (`pr-digest.yml`) | PR volume, merge rate, reverts, gate scores and findings, and AI-review false-positive rates by pattern |
 {{/if}}
 {{#if MOD_REVIEW}}
 | AI review (in the PR gate) | An independent Claude Code instance reviews each file, then the change as a whole, against `.github/review/criteria.md`; blocking findings fail the gate. React 👎 on false positives |

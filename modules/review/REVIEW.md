@@ -10,7 +10,7 @@
 4. **Security.** No secrets, no injection (SQL, shell, template), and authz is checked on new endpoints. Untrusted input is validated.
 5. **Dependencies.** New ones are justified, maintained, and appropriately licensed.
 6. **Operability.** Errors are handled and logged usefully; there are no silent catches.
-7. **Agent PRs** (`agent-authored`): check the agent-guard summary, and verify any claim like "tests pass" against CI.
+7. **Claims.** Check the diff-guard summary, and verify any claim like "tests pass" against CI.
 
 ## Severity
 

@@ -464,27 +464,24 @@ test_profile_claude_code_config() {
   d=$WORK/prof-ml-recommended
   check "ml: data rule" grep -q '^paths: \["data/\*\*"\]' "$d/.claude/rules/data.md"
   check "ml: notebook rule" test -f "$d/.claude/rules/notebooks.md"
-  check "ml: leakage-auditor role" test -f "$d/.claude/agents/leakage-auditor.md"
   check "ml: data-audit runs forked" grep -q '^context: fork$' "$d/.claude/skills/data-audit/SKILL.md"
   check "ml: reviewer knows leakage" contains "$d/.claude/agents/reviewer.md" 'Data leakage'
 
   d=$WORK/prof-agentic-recommended
   check "agentic: prompts rule" grep -q '^paths: \["prompts/\*\*"\]' "$d/.claude/rules/prompts.md"
   check "agentic: evals rule" test -f "$d/.claude/rules/evals.md"
-  check "agentic: red-teamer role" test -f "$d/.claude/agents/red-teamer.md"
   check "agentic: stop_reason loop rule" contains "$d/.claude/rules/agentic.md" 'stop_reason'
 
   d=$WORK/prof-study-recommended
   check "study: exercises rule" test -f "$d/.claude/rules/exercises.md"
-  check "study: examiner role" test -f "$d/.claude/agents/examiner.md"
+  check_not "study: no roles" test -d "$d/.claude/agents"
   check_not "study: no /review" test -e "$d/.claude/commands/review.md"
   check "study: /handoff" test -f "$d/.claude/commands/handoff.md"
   check_not "study: no how-we-work" contains "$d/CLAUDE.md" 'Plan before big changes'
 
   d=$WORK/prof-research-recommended
   check "research: literature rule" test -f "$d/.claude/rules/literature.md"
-  check "research: citation-verifier has web tools" grep -q 'WebSearch, WebFetch' "$d/.claude/agents/citation-verifier.md"
-  check "research: devils-advocate role" test -f "$d/.claude/agents/devils-advocate.md"
+  check "research: shared reviewer only" test "$(ls "$d/.claude/agents")" = reviewer.md
   check "research: claim-check is read-only" grep -q '^allowed-tools: Read, Grep, Glob$' "$d/.claude/skills/claim-check/SKILL.md"
 
   # Every generated skill, command, and role has the frontmatter it needs.
@@ -497,6 +494,10 @@ test_profile_claude_code_config() {
     for f in "$d"/.claude/agents/*.md; do
       [ -e "$f" ] || continue
       check "$(basename "$f"): role has scoped tools" grep -q '^tools: ' "$f"
+      case $(basename "$f") in
+        reviewer.md | test-writer.md) ok ;;
+        *) fail "$(basename "$f"): only the common roles ship with harness" ;;
+      esac
     done
   done
 

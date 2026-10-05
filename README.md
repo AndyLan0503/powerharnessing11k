@@ -60,19 +60,19 @@ Eight single-key questions: profile, stack (auto-detected), commands, which agen
 | **Path rules** | `testing.md` (test files anywhere), `github-actions.md` (`.github/**`) | `data.md`, `notebooks.md`, `prompts.md`, `evals.md`, `exercises.md`, `literature.md`, loaded only when Claude touches matching files |
 | **Commands** | `/review` (independent review), `/handoff` (summary for a fresh session) | n/a |
 | **Skills** | `steward`, `task-intake` (engineering profiles) | see the table below |
-| **Roles** (subagents, scoped tools) | `reviewer` (fresh-context, profile-aware), `test-writer` | see the table below |
+| **Roles** (subagents, scoped tools) | `reviewer` (fresh-context, profile-aware; all but study), `test-writer` (engineering profiles) | none: harness ships only these two near-universal roles; add domain roles in your own repo |
 | **Hooks** | guard-bash, guard-paths, format-on-edit, stop-checks, audit-log, session-start | `data/raw/` read-only (ml, research); `exercises/` read-only (study) |
 | **Tools** | permissions (allow your lint/test commands; deny secrets); `.mcp.json` with the GitHub MCP server (strict tier) | WebSearch pre-approved (research); Learning output style (study) |
 
 ### Profiles
 
-| Profile | Rules focus | Skills | Roles | Seeded files |
-|---|---|---|---|---|
-| **software** | PR workflow, tests are the contract, scope, deps | `steward`, `task-intake` | `reviewer`, `test-writer` | n/a |
-| **ml** | Immutable raw data, no data/models in git, seeds + configs, no leakage, baselines, segment-level metrics, calibration | + `experiment`, `data-audit` (forked, read-only) | + `leakage-auditor` | `EXPERIMENTS.md`, `docs/DATA.md`, `data/README.md` |
-| **agentic** | `stop_reason` loops, explicit subagent context, tool descriptions, structured tool errors, least privilege, hooks for hard rules, schema output, evals gate changes, escalation design, injection, caching | + `prompt-change`, `agent-tool` | + `red-teamer` | `prompts/`, `evals/` (example cases incl. prompt injection) |
-| **study** | Tutor, not ghostwriter: diagnose, hints before answers, check understanding, keep the progress log | `tutor`, `quiz` (spaced repetition), `study-plan` | `examiner` | `LEARNING_PLAN.md`, `PROGRESS.md`, `notes/`, `exercises/` |
-| **research** | Never fabricate; claim→source provenance with dates; conflicts annotated; lab notebook; reproducible analyses | `lab-notebook`, `lit-review`, `claim-check` (forked, read-only) | `reviewer`, `citation-verifier`, `devils-advocate` | `RESEARCH_LOG.md`, `references.bib`, `literature/` |
+| Profile | Rules focus | Skills | Seeded files |
+|---|---|---|---|
+| **software** | PR workflow, tests are the contract, scope, deps | `steward`, `task-intake` | n/a |
+| **ml** | Immutable raw data, no data/models in git, seeds + configs, no leakage, baselines, segment-level metrics, calibration | + `experiment`, `data-audit` (forked, read-only) | `EXPERIMENTS.md`, `docs/DATA.md`, `data/README.md` |
+| **agentic** | `stop_reason` loops, explicit subagent context, tool descriptions, structured tool errors, least privilege, hooks for hard rules, schema output, evals gate changes, escalation design, injection, caching | + `prompt-change`, `agent-tool` | `prompts/`, `evals/` (example cases incl. prompt injection) |
+| **study** | Tutor, not ghostwriter: diagnose, hints before answers, check understanding, keep the progress log | `tutor`, `quiz` (spaced repetition), `study-plan` | `LEARNING_PLAN.md`, `PROGRESS.md`, `notes/`, `exercises/` |
+| **research** | Never fabricate; claim→source provenance with dates; conflicts annotated; lab notebook; reproducible analyses | `lab-notebook`, `lit-review`, `claim-check` (forked, read-only) | `RESEARCH_LOG.md`, `references.bib`, `literature/` |
 
 Tiers per profile: **minimal** (core, guardrails, profile module; guard relaxed), **recommended** (the profile's defaults), **strict** (adds AI review, MCP, and a stricter guard level). `setup.sh list` prints the exact module lists. `EVAL_CMD` (ml, agentic) is asked for in the commands step.
 

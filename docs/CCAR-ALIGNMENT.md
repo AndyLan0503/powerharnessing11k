@@ -12,7 +12,7 @@ How harness applies the practices in the Claude Certified Architect exam guides:
 | **1.7** Fresh session with a summary vs resuming stale context | `/handoff` writes a structured summary; the guidance prefers it over resuming with stale tool results | `.claude/commands/handoff.md`, "How we work" |
 | **2.1** Tool descriptions as the selection mechanism | Agentic profile rules and the `agent-tool` skill; `prompts.md` path rule | `modules/agentic/` |
 | **2.2 / 5.3** Structured errors, retryable vs not, empty vs failed | Agentic profile rule 6 | `.claude/rules/agentic.md` |
-| **2.3** Scoped tool access per agent (4–5 tools) | Every role declares a minimal `tools:` list; skills restrict `allowed-tools` | `.claude/agents/*`, skill frontmatter |
+| **2.3** Scoped tool access per agent (4–5 tools) | The shared roles declare minimal `tools:` lists; skills restrict `allowed-tools`. Harness ships only the two near-universal roles (`reviewer`, `test-writer`); teams add domain roles in their own repos | `.claude/agents/*`, skill frontmatter |
 | **2.4** MCP in project `.mcp.json` with `${ENV}` expansion; personal servers in user scope | `mcp` module (strict tiers) | `.mcp.json`, `docs/agents/MCP.md` |
 | **2.5** Built-in tools used incrementally | "Grep for entry points, then Read along the flow" | "How we work" |
 | **3.1** CLAUDE.md hierarchy and modular rules | Project `CLAUDE.md` (shared through git) plus `.claude/rules/` topic files; `AGENTS.md` import for multi-agent repos | `modules/core/` |
@@ -30,7 +30,7 @@ How harness applies the practices in the Claude Certified Architect exam guides:
 | **5.1 / 5.4** Context management: scratchpads, `/compact`, subagent delegation | "Long sessions" guidance; Explore delegation; `/handoff` | "How we work" |
 | **5.2** Escalation criteria, not sentiment or self-confidence | Agentic rule 12 | `.claude/rules/agentic.md` |
 | **5.5** Segment-level accuracy; calibrated confidence before automating | ML rules 5 and 8; `evals.md` path rule | `.claude/rules/ml.md`, `evals.md` |
-| **5.6** Provenance: claim→source mappings, conflicts annotated, dates | Research rules 2–4; `lit-review`; `citation-verifier` | `modules/research/` |
+| **5.6** Provenance: claim→source mappings, conflicts annotated, dates | Research rules 2–4; `lit-review`; `claim-check` | `modules/research/` |
 
 ## CCAR-P
 

@@ -5,7 +5,6 @@ module_apply() {
   # Always-on profile rules. With AGENTS.md they live there instead (shared with other agents).
   if [ -z "$HV_MULTI_AGENT" ]; then emit file rules/profile.md .claude/rules/study.md; fi
   emit file rules/exercises.md .claude/rules/exercises.md
-  emit file agents/examiner.md .claude/agents/examiner.md
   emit file skills/tutor.md .claude/skills/tutor/SKILL.md
   emit file skills/quiz.md .claude/skills/quiz/SKILL.md
   emit file skills/study-plan.md .claude/skills/study-plan/SKILL.md

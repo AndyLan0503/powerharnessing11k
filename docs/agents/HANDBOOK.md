@@ -1,4 +1,4 @@
-# Working with coding agents in harness-workflow
+# Working with coding agents in powerharnessing11k
 
 This handbook is the team's policy for agentic work. It belongs to the team: change it through a PR like any other file.
 
@@ -23,11 +23,11 @@ Poor fits: ambiguous product decisions, security-sensitive code without an exper
 - Say what is out of scope.
 - If it would be more than ~400 lines, split it.
 
-## Reviewing agent PRs
+## Reviewing PRs
 
-Agent PRs are labelled `agent-authored` automatically. Review them as you would a new teammate's PR, with extra attention to:
+Every PR passes the same gate and gets the same review, whoever or whatever wrote it. Nobody is asked to declare how a change was produced. Look closely at:
 
-- **Tests:** were any deleted, skipped, or weakened? The agent-guard check flags this.
+- **Tests:** were any deleted, skipped, or weakened? The diff-guard check flags this.
 - **Scope:** does the diff stay within the task?
 - **Dependencies:** any new packages? Are they justified and maintained?
 - **Confident-sounding claims:** verify "I ran the tests" against CI.
@@ -39,8 +39,8 @@ Agent PRs are labelled `agent-authored` automatically. Review them as you would 
 | Permissions (`.claude/settings.json`) | Pre-approves safe commands; denies reading secrets |
 | Hooks (`.claude/hooks/`) | Block force-push, `--no-verify`, destructive deletes, secret edits |
 | CI (`ci.yml`) | Lint, typecheck, and tests are required to merge |
-| PR gate (`pr-gate.yml`) | One required check. Labels agent PRs and flags test deletion, skipped tests, protected paths, oversized diffs, and new dependencies; posts a scorecard; `gate-override` records a human's risk acceptance |
-| Weekly digest (`agent-digest.yml`) | Agent PR volume, merge rate, reverts, gate scores, and AI-review false-positive rates by pattern |
+| PR gate (`pr-gate.yml`) | One required check for every PR. Flags test deletion, skipped tests, protected paths, oversized diffs, and new dependencies; posts a scorecard; `gate-override` records a human's risk acceptance |
+| Weekly digest (`pr-digest.yml`) | PR volume, merge rate, reverts, gate scores and findings, and AI-review false-positive rates by pattern |
 | Audit log (`.claude/logs/`) | Local record of agent tool use and blocked actions (`.claude/scripts/agent-report.sh`) |
 
 ## If a guardrail is in your way

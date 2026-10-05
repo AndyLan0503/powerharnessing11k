@@ -66,7 +66,7 @@ Run lint and tests before you say a task is done, and report the result honestly
 3. **Tests are the contract.** Add or update tests with every behavior change. Never delete, skip, or weaken a test to get CI green.
 4. **Never bypass guardrails.** No `--no-verify`, no force-push, no disabling hooks or CI checks. If a guardrail hook blocks you, stop and explain what you needed.
 5. **Secrets stay secret.** Never read `.env*` files or print credentials. Use `.env.example` for the shape of configuration.
-6. **Commit hygiene.** Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`). Keep the agent `Co-Authored-By` trailer: it is how CI recognizes agent work.
+6. **Commit hygiene.** Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`).
 7. **Dependencies are decisions.** Don't add one without stating why in the PR description.
 8. **A human owns every merge.** Agents open PRs; humans approve them.
 {{/if}}

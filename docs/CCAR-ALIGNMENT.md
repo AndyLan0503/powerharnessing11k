@@ -24,7 +24,7 @@ How harness applies the practices in the Claude Certified Architect exam guides:
 | **4.1** Explicit criteria; disable high-false-positive categories | `criteria.md` lists categories to report and to skip, each with an on/off status, plus severity definitions with code examples | `.github/review/criteria.md` |
 | **4.2** Few-shot examples for format and ambiguous cases | Report / don't-report / nit examples in the criteria | `.github/review/criteria.md` |
 | **4.3** Structured output via schemas | Strict findings schema with enums and nullable fields | `.github/review/findings.schema.json` |
-| **4.4** `detected_pattern` for dismissal analysis | Every finding has a `detected_pattern`; the weekly digest counts 👎 dismissals per pattern | `ai-review.sh`, `agent-digest.yml` |
+| **4.4** `detected_pattern` for dismissal analysis | Every finding has a `detected_pattern`; the weekly digest counts 👎 dismissals per pattern | `ai-review.sh`, `pr-digest.yml` |
 | **4.5** Batch API only for latency-tolerant work | The blocking pre-merge review is synchronous; agentic rules reserve batch for overnight jobs | `.claude/rules/agentic.md` |
 | **4.6** Independent instances; per-file plus cross-file passes; confidence for routing | One pass per file, then one cross-file pass; low-confidence findings go to "needs a human look" instead of inline comments | `ai-review.sh` |
 | **5.1 / 5.4** Context management: scratchpads, `/compact`, subagent delegation | "Long sessions" guidance; Explore delegation; `/handoff` | "How we work" |
@@ -40,9 +40,9 @@ How harness applies the practices in the Claude Certified Architect exam guides:
 | **3** Capability bloat; least privilege; auth gaps | Least-privilege tools and roles; deny rules for secrets; scoped MCP credentials | agentic rule 5, `settings.json`, `.mcp.json` |
 | **3** Observability at scale | OpenTelemetry export, local audit log, PR scorecards, weekly digest | `telemetry`, `audit`, PR gate |
 | **4** Metrics (accuracy, latency, cost, safety); eval datasets; A/B; diagnosis | Evals gate behavior changes, reported by segment; `prompt-change` compares before and after; the eval workflow runs on relevant PRs | `modules/agentic/`, `evals.yml` |
-| **5** Guardrails and safety controls | Guard levels, path protection, PR gate | `guardrails`, `agent-guard` |
+| **5** Guardrails and safety controls | Guard levels, path protection, PR gate | `guardrails`, `diff-guard` |
 | **5** Human-in-the-loop validation | A human approves every merge; `gate-override` is an explicit, recorded human risk acceptance; low-confidence findings go to humans | PR gate, `HANDBOOK.md` |
-| **6** Document decisions and trade-offs; lifecycle support | Handbook, ADRs (this repo), scorecards and digest for monitoring and iteration | `docs/`, `agent-digest.yml` |
+| **6** Document decisions and trade-offs; lifecycle support | Handbook, ADRs (this repo), scorecards and digest for monitoring and iteration | `docs/`, `pr-digest.yml` |
 | **7** Configure Claude tools for teams; improve developer workflows | All of harness | n/a |
 
 ## Not covered (application-level topics)

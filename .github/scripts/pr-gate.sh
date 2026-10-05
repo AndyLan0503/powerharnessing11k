@@ -4,7 +4,7 @@
 #
 # Env (all optional except HEAD_SHA):
 #   HEAD_SHA PR_NUMBER REPO GH_TOKEN PR_AUTHOR
-#   GUARD_ENABLED GUARD_RESULT GUARD_AGENT GUARD_REASON GUARD_BLOCKING GUARD_BLOCK_COUNT GUARD_WARN_COUNT
+#   GUARD_ENABLED GUARD_RESULT GUARD_BLOCKING GUARD_BLOCK_COUNT GUARD_WARN_COUNT
 #   REVIEW_ENABLED REVIEW_RESULT REVIEW_EXPECTED REVIEW_STATUS REVIEW_BLOCKING REVIEW_NITS
 #   REVIEW_PREEXISTING REVIEW_FAILED REVIEW_PATTERNS
 #   REVIEW_BLOCKS (true: blocking review findings fail the gate)
@@ -63,8 +63,6 @@ r_patterns=$(printf '%s' "$r_patterns" | tr -cd 'a-z0-9,-')
 
 # ---- Guard signal -----------------------------------------------------------------
 g_block=$(num "${GUARD_BLOCK_COUNT:-}") g_warn=$(num "${GUARD_WARN_COUNT:-}")
-agent=${GUARD_AGENT:-false}
-[ "$agent" = true ] || agent=false
 g_error=''
 if [ -n "${GUARD_ENABLED:-}" ] && { [ "${GUARD_RESULT:-}" = failure ] || [ "${GUARD_RESULT:-}" = cancelled ]; }; then
   g_error=1
@@ -76,10 +74,10 @@ if [ "${REVIEW_BLOCKS:-true}" = true ] && [ "$r_block" -gt 0 ]; then
   reasons="$reasons- $r_block blocking AI review finding(s)\n"
 fi
 if [ "${GUARD_BLOCKING:-false}" = true ]; then
-  reasons="$reasons- agent-guard blocking finding(s) on an agent-authored PR\n"
+  reasons="$reasons- $g_block diff-guard blocking finding(s)\n"
 fi
 if [ -n "$g_error" ]; then
-  reasons="$reasons- the agent guard job did not complete; re-run the workflow\n"
+  reasons="$reasons- the diff guard job did not complete; re-run the workflow\n"
 fi
 if [ -n "$pending" ]; then
   reasons="$reasons- the AI review has not completed for this commit yet (it runs on push; re-run this workflow once it has finished)\n"
@@ -136,10 +134,10 @@ if [ -z "${GUARD_ENABLED:-}" ]; then guard_cell='not enabled'
 elif [ -n "$g_error" ]; then guard_cell='⚠️ did not complete'
 else guard_cell="$g_block blocking-class · $g_warn warnings"; fi
 
-json=$(jq -cn --arg sha "$HEAD_SHA" --arg verdict "$verdict" --argjson score "$score" --argjson agent "$agent" \
+json=$(jq -cn --arg sha "$HEAD_SHA" --arg verdict "$verdict" --argjson score "$score" \
   --arg rs "$r_status" --argjson rb "$r_block" --argjson rn "$r_nits" --argjson rp "$r_pre" --argjson rf "$r_failed" \
   --arg pat "$r_patterns" --argjson gb "$g_block" --argjson gw "$g_warn" --argjson ov "$override" --arg by "$actor" \
-  '{v: 1, head_sha: $sha, verdict: $verdict, score: $score, agent: $agent,
+  '{v: 1, head_sha: $sha, verdict: $verdict, score: $score,
     review: {status: $rs, blocking: $rb, nits: $rn, preexisting: $rp, failed: $rf, patterns: $pat},
     guard: {block: $gb, warn: $gw}, override: $ov, override_by: (if $ov then $by else null end)}')
 
@@ -148,13 +146,8 @@ body=$(
   echo
   echo "| Signal | Result |"
   echo "|---|---|"
-  if [ "$agent" = true ]; then
-    echo "| Authored by | 🤖 agent ($(printf '%s' "${GUARD_REASON:-detected}" | tr -d '|<>' | cut -c1-80)) |"
-  else
-    echo "| Authored by | human |"
-  fi
   echo "| AI review | $review_cell |"
-  echo "| Agent guard | $guard_cell |"
+  echo "| Diff guard | $guard_cell |"
   echo "| Score | **$score**/100 |"
   if [ -n "$reasons" ]; then
     echo

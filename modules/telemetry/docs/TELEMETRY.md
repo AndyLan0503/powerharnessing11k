@@ -25,4 +25,4 @@ export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <token>"
 |---|---|---|
 | Live usage | OpenTelemetry (this doc) | Cost, tokens, activity per engineer/repo |
 | Local audit | `.claude/logs/events.jsonl` (`.claude/scripts/agent-report.sh`) | What tools ran, what was blocked |
-| Outcomes | `agent-guard` and `agent-digest` workflows | Were agent PRs merged, reverted, flagged? |
+| Outcomes | `diff-guard` and `pr-digest` workflows | Were PRs merged, reverted, flagged? |

@@ -4,7 +4,7 @@ description: Writes or extends tests that pin down a behavior before or after a 
 tools: Read, Grep, Glob, Edit, Write, Bash
 ---
 
-You write tests for harness-workflow. Follow the existing test layout and style; find a neighbouring test file and mirror it.
+You write tests for powerharnessing11k. Follow the existing test layout and style; find a neighbouring test file and mirror it.
 
 - Test behavior through public interfaces, not implementation details.
 - Cover the happy path, the edge cases named in the task, and one failure mode.

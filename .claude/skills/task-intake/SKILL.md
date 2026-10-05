@@ -1,6 +1,6 @@
 ---
 name: task-intake
-description: How to start a new task or issue in harness-workflow: clarify scope, branch, plan, and test-first. Use at the beginning of any feature, fix, or refactor.
+description: How to start a new task or issue in powerharnessing11k: clarify scope, branch, plan, and test-first. Use at the beginning of any feature, fix, or refactor.
 argument-hint: "[issue number or task description]"
 ---
 

@@ -3,7 +3,7 @@
 # and module_apply(), which calls emit / settings_* (see lib/apply.sh and
 # lib/settings.sh). Order matters only for readability of the summary.
 
-ALL_MODULES="core guardrails quality audit devtools skills ml agentic study research artifacts mcp collab ci security agent-guard review telemetry"
+ALL_MODULES="core guardrails quality audit devtools skills ml agentic study research artifacts mcp collab ci security diff-guard review telemetry"
 ALL_PROFILES="software ml agentic study research"
 ALL_TIERS="minimal recommended strict"
 
@@ -92,12 +92,12 @@ derive_vars() {
     strict) HV_GUARD_STRICT=1 ;;
   esac
   export HV_GUARD_RELAXED HV_GUARD_STANDARD
-  HV_AGENT_GUARD_MODE=warn
-  [ "$HV_GUARD_LEVEL" = strict ] && HV_AGENT_GUARD_MODE=block
+  HV_DIFF_GUARD_MODE=warn
+  [ "$HV_GUARD_LEVEL" = strict ] && HV_DIFF_GUARD_MODE=block
   HV_DIFF_BUDGET=${HV_DIFF_BUDGET:-800}
   HV_HAS_COMMANDS=''
   [ -z "$HV_LINT_CMD$HV_TYPECHECK_CMD$HV_TEST_CMD$HV_EVAL_CMD" ] || HV_HAS_COMMANDS=1
-  export HV_HARNESS_VERSION HV_MULTI_AGENT HV_GUARD_STRICT HV_AGENT_GUARD_MODE HV_DIFF_BUDGET HV_HAS_COMMANDS
+  export HV_HARNESS_VERSION HV_MULTI_AGENT HV_GUARD_STRICT HV_DIFF_GUARD_MODE HV_DIFF_BUDGET HV_HAS_COMMANDS
 
   # Profile flags. ENGINEERING: profiles whose work ships through PRs and CI.
   # SOLO: one person, no review flow (pushing to the default branch is fine).
@@ -155,7 +155,7 @@ derive_vars() {
 
   # Jobs the PR gate waits for.
   HV_GATE_NEEDS=''
-  if list_has "$HV_MODULES" agent-guard; then HV_GATE_NEEDS=guard; fi
+  if list_has "$HV_MODULES" diff-guard; then HV_GATE_NEEDS=guard; fi
   if list_has "$HV_MODULES" review; then HV_GATE_NEEDS="${HV_GATE_NEEDS:+$HV_GATE_NEEDS, }review"; fi
   export HV_GATE_NEEDS
   export HV_PROFILE HV_PROFILE_TITLE HV_PROFILE_ENGINEERING HV_PROFILE_SOLO HV_PROTECT_RAW_DATA HV_NOTEBOOK_CHECK

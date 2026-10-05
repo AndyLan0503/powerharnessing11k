@@ -165,7 +165,7 @@ _wizard_steps() {
 
   # 9. Telemetry -------------------------------------------------------------
   ui_choose "Export Claude Code telemetry (cost, tokens, sessions) via OpenTelemetry?" 9 $WIZ_TOTAL \
-    "No|You still get the local audit log and CI agent monitoring" \
+    "No|You still get the local audit log, PR scorecards, and the weekly digest" \
     "Yes|Send metrics to an OTLP collector (Grafana, Datadog, Honeycomb, ...)" || return
   if [ "$UI_CHOICE" = 2 ]; then
     ui_header 9 $WIZ_TOTAL "OTLP collector endpoint"
@@ -227,7 +227,7 @@ _wizard_custom() {
   ui_choose "Guard level for hooks and CI" 5 $WIZ_TOTAL \
     "Relaxed|Block only catastrophic actions (rm -rf ~, pushing to the default branch)" \
     "Standard|Also block force-push, --no-verify, curl|sh, secret access; lint before finishing" \
-    "Strict|Also make CI/guardrail files human-only; agent-guard findings block merges" || return
+    "Strict|Also make CI/guardrail files human-only; diff-guard findings block merges" || return
   case $UI_CHOICE in
     1) HV_GUARD_LEVEL=relaxed ;;
     2) HV_GUARD_LEVEL=standard ;;

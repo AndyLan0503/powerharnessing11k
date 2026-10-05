@@ -262,7 +262,7 @@ test_guard_hooks() {
   ok
 }
 
-test_agent_guard_script() {
+test_diff_guard_script() {
   local d out
   d=$(new_repo ag package.json)
   "$H" configure --yes -C "$d" >/dev/null 2>&1
@@ -272,18 +272,22 @@ test_agent_guard_script() {
   git -C "$d" add -A && git -C "$d" commit -qm base
   local base
   base=$(git -C "$d" rev-parse HEAD)
-  git -C "$d" checkout -qb claude/x
-  git -C "$d" rm -q tests/b.test.js
-  printf 'test.skip("a", () => { expect(1).toBe(1) })\n' >"$d/tests/a.test.js"
-  echo x >"$d/src/x.js"
-  git -C "$d" add -A && git -C "$d" commit -qm "fix: x" -m "Co-Authored-By: Claude <noreply@anthropic.com>"
+  # The same risky change twice: once with every sign of agent work (branch
+  # name, commit trailer, PR checkbox), once with none.
+  _risky_change() { # branch [extra commit message]
+    git -C "$d" checkout -qb "$1" "$base"
+    git -C "$d" rm -q tests/b.test.js
+    printf 'test.skip("a", () => { expect(1).toBe(1) })\n' >"$d/tests/a.test.js"
+    mkdir -p "$d/src"
+    echo x >"$d/src/x.js"
+    git -C "$d" add -A && git -C "$d" commit -qm "fix: x" ${2:+-m "$2"}
+  }
+  _risky_change claude/x "Co-Authored-By: Claude <noreply@anthropic.com>"
   local head
   head=$(git -C "$d" rev-parse HEAD)
 
-  out=$(cd "$d" && BASE_SHA=$base HEAD_SHA=$head GUARD_MODE=block GITHUB_OUTPUT=$WORK/ag.out \
-    GITHUB_STEP_SUMMARY=$WORK/ag.md .github/scripts/agent-guard.sh 2>&1) || fail "agent-guard crashed: $out"
-  check "detects agent" grep -q '^agent=true$' "$WORK/ag.out"
-  check "reports reason" grep -q '^reason=agent co-author trailer' "$WORK/ag.out"
+  out=$(cd "$d" && BASE_SHA=$base HEAD_SHA=$head HEAD_REF=claude/x PR_BODY='- [x] Agent-authored' GUARD_MODE=block \
+    GITHUB_OUTPUT=$WORK/ag.out GITHUB_STEP_SUMMARY=$WORK/ag.md .github/scripts/diff-guard.sh 2>&1) || fail "diff-guard crashed: $out"
   check "counts blocking-class findings" grep -q '^block_count=3$' "$WORK/ag.out"
   check "blocks in block mode" grep -q '^blocking=true$' "$WORK/ag.out"
   check "reports deleted test" contains "$WORK/ag.md" 'Deleted test files'
@@ -292,17 +296,25 @@ test_agent_guard_script() {
 
   : >"$WORK/ag.out"
   (cd "$d" && BASE_SHA=$base HEAD_SHA=$head GUARD_MODE=warn GITHUB_OUTPUT=$WORK/ag.out \
-    GITHUB_STEP_SUMMARY=/dev/null .github/scripts/agent-guard.sh >/dev/null 2>&1)
+    GITHUB_STEP_SUMMARY=/dev/null .github/scripts/diff-guard.sh >/dev/null 2>&1)
   check "warn mode does not block" grep -q '^blocking=false$' "$WORK/ag.out"
 
-  git -C "$d" checkout -qb human "$base"
-  mkdir -p "$d/src"
-  echo y >"$d/src/y.js"
-  git -C "$d" add -A && git -C "$d" commit -qm "feat: y"
-  : >"$WORK/ag.out"
-  (cd "$d" && BASE_SHA=$base HEAD_SHA=$(git rev-parse HEAD) HEAD_REF=human GUARD_MODE=block \
-    GITHUB_OUTPUT=$WORK/ag.out GITHUB_STEP_SUMMARY=/dev/null .github/scripts/agent-guard.sh >/dev/null 2>&1)
-  check "human PR not agent" grep -q '^agent=false$' "$WORK/ag.out"
+  # One standard for every PR: identical outputs and report with no agent signals.
+  _risky_change feature/x
+  (cd "$d" && BASE_SHA=$base HEAD_SHA=$(git rev-parse HEAD) HEAD_REF=feature/x GUARD_MODE=block \
+    GITHUB_OUTPUT=$WORK/ag-plain.out GITHUB_STEP_SUMMARY=$WORK/ag-plain.md .github/scripts/diff-guard.sh >/dev/null 2>&1)
+  check "unsigned change blocks too" grep -q '^blocking=true$' "$WORK/ag-plain.out"
+  (cd "$d" && BASE_SHA=$base HEAD_SHA=$head HEAD_REF=claude/x PR_BODY='- [x] Agent-authored' GUARD_MODE=block \
+    GITHUB_OUTPUT=$WORK/ag-signed.out GITHUB_STEP_SUMMARY=$WORK/ag-signed.md .github/scripts/diff-guard.sh >/dev/null 2>&1)
+  check "same outputs whoever wrote it" cmp "$WORK/ag-plain.out" "$WORK/ag-signed.out"
+  check "same report whoever wrote it" cmp "$WORK/ag-plain.md" "$WORK/ag-signed.md"
+  check_not "no authorship output" grep -qi 'agent' "$WORK/ag-signed.out"
+  check_not "no authorship in the report" grep -qi 'agent\|human' "$WORK/ag-signed.md"
+
+  # Nothing generated asks for, detects, or labels authorship.
+  check_not "no trailer requirement" grep -rqi 'co-authored-by' "$d" --exclude-dir=.git
+  check_not "no authorship label" grep -rq 'agent-authored' "$d" --exclude-dir=.git
+  check_not "PR template does not ask who wrote it" grep -qi 'agent' "$d/.github/pull_request_template.md"
 
   # Only additions to a test file plus a lockfile: no findings, no crash.
   git -C "$d" checkout -qb additive "$base"
@@ -311,8 +323,8 @@ test_agent_guard_script() {
   git -C "$d" add -A && git -C "$d" commit -qm "test: c"
   : >"$WORK/ag.out"
   (cd "$d" && BASE_SHA=$base HEAD_SHA=$(git rev-parse HEAD) GUARD_MODE=block \
-    GITHUB_OUTPUT=$WORK/ag.out GITHUB_STEP_SUMMARY=$WORK/ag2.md .github/scripts/agent-guard.sh >/dev/null 2>&1) ||
-    fail "agent-guard crashed on additive PR"
+    GITHUB_OUTPUT=$WORK/ag.out GITHUB_STEP_SUMMARY=$WORK/ag2.md .github/scripts/diff-guard.sh >/dev/null 2>&1) ||
+    fail "diff-guard crashed on additive PR"
   check "additive PR: no findings" contains "$WORK/ag2.md" 'No findings'
 }
 
@@ -645,7 +657,9 @@ test_review_and_gate_scripts() {
   check "ignored override explained" grep -q 'added by the PR author' "$WORK/card.md"
   check_not "bot cannot override" _gate REVIEW_ENABLED=1 REVIEW_STATUS=ok REVIEW_BLOCKING=1 \
     PR_LABELS=gate-override OVERRIDE_ACTOR='github-actions[bot]' PR_AUTHOR=alice
-  check_not "guard blocking fails" _gate GUARD_ENABLED=1 GUARD_AGENT=true GUARD_BLOCKING=true GUARD_BLOCK_COUNT=2
+  check_not "guard blocking fails" _gate GUARD_ENABLED=1 GUARD_BLOCKING=true GUARD_BLOCK_COUNT=2
+  check "guard failure names the count" grep -q '2 diff-guard blocking finding' "$WORK/card.md"
+  check_not "scorecard has no authorship" grep -qi 'authored\|"agent"' "$WORK/card.md"
   check_not "guard job crash fails" _gate GUARD_ENABLED=1 GUARD_RESULT=failure
   check "review job crash: visible, does not block" _gate REVIEW_ENABLED=1 REVIEW_RESULT=failure
   check "review error shown" grep -q 'errored' "$WORK/card.md"
@@ -675,7 +689,7 @@ test_mcp_module() {
   check_not "no literal tokens committed" grep -rqE '(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})' "$d" --exclude-dir=.git
 }
 
-test_agent_guard_profile_checks() {
+test_diff_guard_profile_checks() {
   local d base out
   d=$(new_repo agp pyproject.toml)
   "$H" configure --yes -C "$d" --profile agentic >/dev/null 2>&1
@@ -686,7 +700,7 @@ test_agent_guard_profile_checks() {
   head -c 6000000 /dev/zero >"$d/blob.bin"
   git -C "$d" add -A && git -C "$d" commit -qm "feat: prompt"
   (cd "$d" && BASE_SHA=$base HEAD_SHA=$(git rev-parse HEAD) GITHUB_OUTPUT=/dev/null \
-    GITHUB_STEP_SUMMARY=$WORK/agp.md .github/scripts/agent-guard.sh >/dev/null 2>&1) || fail "agent-guard crashed (agentic)"
+    GITHUB_STEP_SUMMARY=$WORK/agp.md .github/scripts/diff-guard.sh >/dev/null 2>&1) || fail "diff-guard crashed (agentic)"
   check "prompts without evals flagged" contains "$WORK/agp.md" 'Prompts changed without eval changes'
   check "large file flagged" contains "$WORK/agp.md" 'Large files'
 
@@ -698,7 +712,7 @@ test_agent_guard_profile_checks() {
   printf '{"cells":[{"cell_type":"code","execution_count":null,"outputs":[],"source":"print(1)"}]}\n' >"$d/clean.ipynb"
   git -C "$d" add -A && git -C "$d" commit -qm "feat: eda"
   (cd "$d" && BASE_SHA=$base HEAD_SHA=$(git rev-parse HEAD) GITHUB_OUTPUT=/dev/null \
-    GITHUB_STEP_SUMMARY=$WORK/mlg.md .github/scripts/agent-guard.sh >/dev/null 2>&1) || fail "agent-guard crashed (ml)"
+    GITHUB_STEP_SUMMARY=$WORK/mlg.md .github/scripts/diff-guard.sh >/dev/null 2>&1) || fail "diff-guard crashed (ml)"
   check "notebook with outputs flagged" contains "$WORK/mlg.md" 'eda.ipynb'
   check_not "clean notebook not flagged" contains "$WORK/mlg.md" 'clean.ipynb'
 }
@@ -825,21 +839,21 @@ test_artifacts_module() {
   check_not "software default: no artifacts" test -e "$WORK/prof-software-recommended/artifacts.lock"
 }
 
-_agent_guard_lock() { # dir -> summary file
+_diff_guard_lock() { # dir -> summary file
   local d=$1 base
   git -C "$d" add -A && git -C "$d" commit -qm base
   base=$(git -C "$d" rev-parse HEAD)
   printf 'abc\t1\tdata/x\t2026-01-01T00:00:00Z\tnew\n' >>"$d/artifacts.lock"
   git -C "$d" commit -qam "chore: new data"
   (cd "$d" && BASE_SHA=$base HEAD_SHA=$(git rev-parse HEAD) GITHUB_OUTPUT=/dev/null \
-    GITHUB_STEP_SUMMARY=$WORK/agl.md .github/scripts/agent-guard.sh >/dev/null 2>&1) || fail "agent-guard crashed (lock)"
+    GITHUB_STEP_SUMMARY=$WORK/agl.md .github/scripts/diff-guard.sh >/dev/null 2>&1) || fail "diff-guard crashed (lock)"
 }
 
-test_agent_guard_flags_lock_changes() {
+test_diff_guard_flags_lock_changes() {
   local d
   d=$(new_repo agl pyproject.toml)
   "$H" configure --yes -C "$d" --profile ml --tier strict >/dev/null 2>&1
-  _agent_guard_lock "$d"
+  _diff_guard_lock "$d"
   check "lock change flagged" contains "$WORK/agl.md" 'Pinned artifacts changed'
 }
 
@@ -922,7 +936,9 @@ test_devtools_respects_existing_projects() {
   d=$(new_repo own-makefile go.mod makefile)
   echo 'test:; @echo theirs' >"$d/makefile"
   "$H" configure --yes --force -C "$d" >/dev/null 2>&1
-  check_not "lowercase makefile counts as existing" test -e "$d/Makefile"
+  # Compare directory entries by exact name: on case-insensitive filesystems
+  # (macOS) `test -e Makefile` is also true for `makefile`.
+  check_not "lowercase makefile counts as existing" sh -c "ls '$d' | grep -qx Makefile"
   check "their makefile untouched" contains "$d/makefile" 'theirs'
   check "CI runs raw commands" contains "$d/.github/workflows/ci.yml" 'go test ./...'
   d=$(new_repo own-gnumakefile go.mod GNUmakefile)

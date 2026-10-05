@@ -27,6 +27,8 @@ powerharnessing11k turns the team's agentic-engineering practices into a one-sho
 
 ## v0.2: hardening
 
+- [ ] Provider support: choose the coding agents (Claude Code, Codex CLI, Cursor, Copilot, Gemini CLI), the git host (GitHub, GitLab, none), and the AI review backend. Design: `docs/design/providers.md`, ADR 0005
+
 - [ ] First real GitHub run of the PR gate; confirm `claude -p --json-schema` output shape and inline-comment posting on a live PR
 - [ ] Profile feedback loop: try each profile on a real repo and tune its rules, skills, and roles
 - [ ] p10k-style polish: previews for each choice, an environment check screen, an end-of-setup tour

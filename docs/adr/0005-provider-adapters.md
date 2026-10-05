@@ -1,6 +1,6 @@
 # ADR 0005: Provider adapters for the coding agent, git host, and review backend
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-05
 - Detail: [docs/design/providers.md](../design/providers.md)
 

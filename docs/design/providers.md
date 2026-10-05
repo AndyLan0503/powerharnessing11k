@@ -1,6 +1,6 @@
 # Design: provider support
 
-Status: proposal for review. Nothing here is built yet.
+Status: accepted. Build in progress; see section 9.
 Decision record: [ADR 0005](../adr/0005-provider-adapters.md).
 Research date: 2026-10-05, from each vendor's official documentation.
 
@@ -75,7 +75,7 @@ Two things make this tractable. All five agents now have blocking hooks with a J
 
 **Path-scoped rules.** Each rule has one body and a list of globs. The adapter adds the right frontmatter and path: `paths:` for Claude, `globs:` for Cursor, `applyTo:` for Copilot. Codex and Gemini have no path scoping, so for them each rule is appended to `AGENTS.md` under a heading that names the paths it applies to. That costs always-loaded context for those two agents, which the wizard reports.
 
-**Skills.** One copy in `.agents/skills/<name>/SKILL.md`, which Codex, Cursor, Copilot, and Gemini read. Claude Code reads only `.claude/skills/`. See open question 1 for how Claude gets them.
+**Skills.** One copy in `.agents/skills/<name>/SKILL.md`, which Codex, Cursor, Copilot, and Gemini read. Claude Code reads only `.claude/skills/`, so that path is a symlink to `../.agents/skills`.
 
 **Slash commands.** `/review` and `/handoff` become skills. Skills are the portable form, and Claude Code and Cursor both let a user invoke a skill by name, so nothing is lost.
 
@@ -120,7 +120,7 @@ The wizard's final screen and the generated handbook get a coverage table built 
 
 The research flagged these as not confirmed from documentation. Each gets a contract test against the real CLI before its adapter ships.
 
-- Claude Code: confirm it still reads skills from `.claude/skills/` only, since that drives open question 1.
+- Claude Code: confirm it still reads skills from `.claude/skills/` only, since the symlink in decision 1 depends on it.
 - Gemini and Copilot: the exact payload field that carries the shell command.
 - Cursor, Copilot, Gemini: whether a stop-type hook can send the agent back to work, as Claude's and Codex's can.
 - Codex: the sub-keys of `[permissions.*]` for denying file reads.
@@ -143,7 +143,7 @@ Those calls move behind a small host library with one implementation per host:
 | `host_summary` | `$GITHUB_STEP_SUMMARY` | job log (no equivalent exists) |
 | `host_output` | `$GITHUB_OUTPUT` | dotenv report artifact |
 
-The scripts move from `.github/scripts/` to a neutral `scripts/ci/` so both hosts use the same files (open question 3).
+The scripts move from `.github/scripts/` to a neutral `scripts/ci/` so both hosts use the same files.
 
 ### 5.2 GitHub to GitLab mapping
 
@@ -163,7 +163,7 @@ The scripts move from `.github/scripts/` to a neutral `scripts/ci/` so both host
 
 ### 5.3 GitLab gaps, reported to the user
 
-These follow from GitLab's design or its pricing tiers. The baseline targets the Free tier (open question 4).
+These follow from GitLab's design or its pricing tiers. The baseline targets the Free tier.
 
 - **Scorecard and inline review comments need a token.** The built-in job token cannot write to merge requests. With a `GITLAB_TOKEN` CI variable the gate comments as on GitHub. Without one, the gate still passes or fails and prints the scorecard in the job log.
 - **An MR can edit the pipeline that judges it.** Scripts are read from the target branch, as on GitHub, but `.gitlab-ci.yml` itself comes from the MR. Closing this needs pipeline execution policies (Ultimate) or a separate config project. The handbook explains both.
@@ -217,28 +217,27 @@ Each item below is an end-to-end test in `tests/run.sh`, run on Linux and on mac
 
 ## 9. Delivery
 
-Five PRs, each releasable on its own.
+Each PR is releasable on its own.
 
 | # | Scope | Visible change |
 |:-:|---|---|
-| 1 | Engine: neutral emitters, adapter interface, Claude adapter only. `AGENTS.md` as the single instruction source, commands become skills, hooks move to `.agents/hooks/` | Same protection as today for Claude Code; file layout changes as described |
-| 2 | Agent adapters: Codex and Cursor, then Copilot and Gemini. Multi-select screen and coverage table | Teams on other agents get a harness |
-| 3 | Review backends: Bedrock, Vertex, Codex, Gemini, Copilot | The gate no longer needs an Anthropic API key |
-| 4 | Host adapter: GitLab, and `none` | GitLab repos get CI, the gate, and templates |
-| 5 | README, runbook, and handbook rewritten around the three choices | Docs |
+| 1 | Engine: neutral emitters, adapter interface, Claude adapter only. `AGENTS.md` as the source of truth, commands become skills, skills in `.agents/skills/`, hooks in `.agents/hooks/`, CI scripts in `scripts/ci/` | Same protection as today for Claude Code; file layout changes as described |
+| 2 | Codex adapter. Multi-select agents screen and coverage table | Codex teams get a harness |
+| 3 | Copilot adapter | Copilot teams get a harness |
+| 4 | Review backends: Bedrock, Vertex, Codex, Gemini, Copilot | The gate no longer needs an Anthropic API key |
+| 5 | Host adapter: GitLab, and `none` | GitLab repos get CI, the gate, and templates |
+| 6 | Cursor and Gemini adapters | Later |
+| 7 | README, runbook, and handbook rewritten around the three choices | Docs (each PR also updates the docs it touches) |
 
 PR 1 carries the risk, because it moves files every later step depends on. It lands alone, with the full existing suite passing.
 
-## 10. Open questions
+## 10. Decisions
 
-Decisions needed before PR 1. Each has a recommendation.
+Settled with the maintainer on 2026-10-05.
 
-1. **How does Claude Code get the skills?** Claude reads `.claude/skills/` only; the other four read `.agents/skills/`.
-   - *Recommended:* when Claude Code is one of several agents, make `.claude/skills` a symlink to `../.agents/skills`. One copy, nothing to keep in sync. Git stores symlinks; Windows collaborators need `core.symlinks` enabled.
-   - Alternative: write both copies and add a CI check that fails when they differ.
-   - With Claude Code alone, skills simply go in `.claude/skills/`.
-2. **`AGENTS.md` as the instruction file in every repo**, including Claude-only repos, with `CLAUDE.md` reduced to an import. Recommended: yes. One mode is simpler to maintain and switching agents later needs no restructuring.
-3. **Move CI scripts to `scripts/ci/`** on both hosts. Recommended: yes.
-4. **GitLab baseline tier.** Recommended: Free, with every Premium or Ultimate improvement documented as an optional step.
-5. **Agent order.** Recommended: Codex and Cursor first, since their hook protocols are closest to Claude's; Copilot and Gemini second.
-6. **Model choice within a backend.** Recommended: no default model for Bedrock and Vertex, and the vendor's default for direct API backends, with the pin documented in the workflow.
+1. **Skills for Claude Code:** `.claude/skills` is a symlink to `../.agents/skills`. One copy. Windows collaborators need `core.symlinks` enabled.
+2. **`AGENTS.md` is the source of truth in every repo.** `CLAUDE.md` contains an `@AGENTS.md` import and nothing else that matters.
+3. **CI scripts live in `scripts/ci/`** on every host.
+4. **GitLab baseline is the Free tier.** Premium and Ultimate improvements are documented as optional steps.
+5. **Agent order:** Codex first, then Copilot. Cursor and Gemini follow later.
+6. **Models:** Bedrock and Vertex require an explicit model. Direct API backends use the vendor default, with the pin documented in the workflow.

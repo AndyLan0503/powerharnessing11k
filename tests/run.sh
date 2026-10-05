@@ -12,6 +12,10 @@ if [ -n "${KEEP:-}" ]; then echo "workspace: $WORK"; else trap 'rm -rf "$WORK"' 
 export NO_COLOR=1 HARNESS_NO_CLEAR=1
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com
 export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
+# No background maintenance in the throwaway repos: a detached repack after a
+# commit can race with the local clones some tests make.
+export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=gc.auto GIT_CONFIG_VALUE_0=0
+export GIT_CONFIG_KEY_1=maintenance.auto GIT_CONFIG_VALUE_1=false
 
 fail() {
   FAIL=$((FAIL + 1))
@@ -105,7 +109,7 @@ test_every_stack() {
         check "$name: valid yaml $(basename "$f")" python3 -c "import sys,yaml; yaml.safe_load(open(sys.argv[1]))" "$f"
       done
     fi
-    for f in "$d"/.claude/hooks/*.sh "$d"/.github/scripts/*.sh; do
+    for f in "$d"/.agents/hooks/*.sh "$d"/scripts/ci/*.sh; do
       check "$name: bash syntax $(basename "$f")" bash -n "$f"
       check "$name: executable $(basename "$f")" test -x "$f"
     done
@@ -144,16 +148,16 @@ test_create_only_and_force() {
   check ".gitignore append is idempotent" cmp -s "$WORK/gi.before" "$d/.gitignore"
 
   echo '# my tweak' >>"$d/.github/workflows/ci.yml"
-  printf '\nOur domain notes.\n' >>"$d/CLAUDE.md"
+  printf '\nOur domain notes.\n' >>"$d/AGENTS.md"
   "$H" configure --yes -C "$d" --guard strict >/dev/null 2>&1
   check "edited ci.yml kept" contains "$d/.github/workflows/ci.yml" '# my tweak'
-  check "CLAUDE.md kept" contains "$d/CLAUDE.md" 'Our domain notes.'
-  check_not "hooks not regenerated without --force" contains "$d/.claude/hooks/guard-bash.sh" "LEVEL='strict'"
+  check "AGENTS.md kept" contains "$d/AGENTS.md" 'Our domain notes.'
+  check_not "hooks not regenerated without --force" contains "$d/.agents/hooks/guard-bash.sh" "LEVEL='strict'"
   check_not "no proposal files" sh -c "find '$d' -name '*.harness-new' | grep -q ."
 
   "$H" configure --yes -C "$d" --guard strict --force >/dev/null 2>&1
   check_not "--force overwrites" contains "$d/.github/workflows/ci.yml" '# my tweak'
-  check "--force regenerates hooks" contains "$d/.claude/hooks/guard-bash.sh" "LEVEL='strict'"
+  check "--force regenerates hooks" contains "$d/.agents/hooks/guard-bash.sh" "LEVEL='strict'"
   check "--force keeps user .gitignore lines" grep -q '^node_modules/$' "$d/.gitignore"
 }
 
@@ -174,12 +178,117 @@ test_dry_run() {
   check "dry run writes nothing" test -z "$(git -C "$d" status --porcelain --untracked-files=all | grep -v package.json)"
 }
 
-test_multi_agent() {
-  local d
-  d=$(new_repo multi package.json)
-  "$H" configure --yes -C "$d" --agents multi >/dev/null 2>&1
-  check "AGENTS.md created" contains "$d/AGENTS.md" 'Working agreement'
+# Shared content is written once; the agent adapter only adds what its agent
+# needs to find it (docs/design/providers.md).
+test_single_source_of_truth() {
+  local d f
+  d=$(new_repo ssot package.json)
+  "$H" configure --yes -C "$d" --agents claude --tier strict --owners @acme/x >/dev/null 2>&1 || fail "configure failed"
+
+  # Instructions: AGENTS.md holds everything; CLAUDE.md only imports it.
+  check "AGENTS.md has the working agreement" contains "$d/AGENTS.md" 'Working agreement'
+  check "AGENTS.md has the project context" contains "$d/AGENTS.md" '## Project context'
   check "CLAUDE.md imports AGENTS.md" grep -q '^@AGENTS.md$' "$d/CLAUDE.md"
+  check_not "CLAUDE.md repeats nothing" grep -q 'Working agreement\|Project context\|TODO(team)' "$d/CLAUDE.md"
+  check "AGENTS.md says where each agent's files are" contains "$d/AGENTS.md" '- Claude Code: `CLAUDE.md`'
+
+  # Skills: one copy, reached by Claude Code through a relative link.
+  check "skills live in .agents/skills" test -f "$d/.agents/skills/review/SKILL.md"
+  check ".claude/skills is a link" test -L "$d/.claude/skills"
+  check "the link is relative" test "$(readlink "$d/.claude/skills")" = ../.agents/skills
+  check "skills are reachable through it" test -f "$d/.claude/skills/steward/SKILL.md"
+  git -C "$d" add -A
+  check "git stores it as a link" sh -c "git -C '$d' ls-files -s .claude/skills | grep -q '^120000 '"
+  check_not "no slash-command files" test -e "$d/.claude/commands"
+
+  # Roles: the neutral access level becomes this agent's tool list.
+  check "read-run role" grep -q '^tools: Read, Grep, Glob, Bash$' "$d/.claude/agents/reviewer.md"
+  check "write role" grep -q '^tools: Read, Grep, Glob, Edit, Write, Bash$' "$d/.claude/agents/test-writer.md"
+  for f in "$d"/.claude/agents/*.md; do
+    check_not "$(basename "$f"): no neutral key left" grep -q '^access:' "$f"
+  done
+
+  # Settings: neutral entries rendered in Claude Code's syntax.
+  check "allowed command" jq -e '.permissions.allow | index("Bash(git status:*)")' "$d/.claude/settings.json"
+  check "denied read" jq -e '.permissions.deny | index("Read(./.env)")' "$d/.claude/settings.json"
+  check "denied command" jq -e '.permissions.deny | index("Bash(git push --force:*)")' "$d/.claude/settings.json"
+  check "ask in strict" jq -e '.permissions.ask | index("Bash(git push:*)")' "$d/.claude/settings.json"
+  check "hooks are the shared scripts, told which agent calls" \
+    jq -e '.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[0].command | endswith("/.agents/hooks/guard-bash.sh claude")' "$d/.claude/settings.json"
+  check "every hook script exists and is executable" sh -c "
+    jq -r '.hooks[][].hooks[].command' '$d/.claude/settings.json' | sed 's/.*\\/\\.agents/.agents/; s/ claude\$//' | sort -u |
+      while read -r h; do [ -x '$d'/\"\$h\" ] || exit 1; done"
+
+  # Paths that hold guardrails are protected and owned, wherever they now live.
+  check "CODEOWNERS covers shared and agent paths" sh -c "grep -q '^/.agents/ ' '$d/.github/CODEOWNERS' && grep -q '^/scripts/ci/ ' '$d/.github/CODEOWNERS' && grep -q '^/.claude/ ' '$d/.github/CODEOWNERS'"
+  [ "$(_guard "$d" guard-paths.sh Edit file_path "$d/.agents/hooks/guard-bash.sh")" = 2 ] || fail "strict: hook script edit allowed"
+  [ "$(_guard "$d" guard-paths.sh Edit file_path "$d/scripts/ci/pr-gate.sh")" = 2 ] || fail "strict: gate script edit allowed"
+  [ "$(_guard "$d" guard-paths.sh Edit file_path "$d/.claude/settings.json")" = 2 ] || fail "strict: settings edit allowed"
+  [ "$(_guard "$d" guard-paths.sh Edit file_path "$(cd "$d" && pwd -P)/.claude/settings.json")" = 2 ] || fail "strict: settings edit allowed via the resolved path"
+  [ "$(_guard "$d" guard-paths.sh Edit file_path "$d/src/app.js")" = 0 ] || fail "strict: ordinary edit blocked"
+  ok
+
+  # A path that reaches a protected file another way is still blocked.
+  [ "$(_guard "$d" guard-paths.sh Edit file_path "$d/.claude/skills/../hooks/guard-bash.sh")" = 2 ] || fail "strict: hook edit allowed through the skills link"
+  [ "$(_guard "$d" guard-paths.sh Edit file_path "$d/src/../.claude/settings.json")" = 2 ] || fail "strict: settings edit allowed through .."
+  [ "$(_guard "$d" guard-paths.sh Edit file_path "$d/nowhere/../.claude/settings.json")" = 2 ] || fail "strict: settings edit allowed through a missing directory"
+  [ "$(_guard "$d" guard-paths.sh Edit file_path "$d/src/new/dir/app.js")" = 0 ] || fail "strict: edit in a new directory blocked"
+  ok
+
+  # An existing .claude/skills folder belongs to the team: it is kept, and
+  # each shared skill is linked into it so Claude Code still finds them.
+  d=$(new_repo ssot-existing package.json)
+  mkdir -p "$d/.claude/skills/mine"
+  echo mine >"$d/.claude/skills/mine/SKILL.md"
+  "$H" configure --yes -C "$d" >/dev/null 2>&1
+  check "existing skills folder kept" test "$(cat "$d/.claude/skills/mine/SKILL.md")" = mine
+  check_not "the folder was not replaced by a link" test -L "$d/.claude/skills"
+  check "shipped skills are linked in" test -L "$d/.claude/skills/review"
+  check "and resolve to the shared copy" grep -q '^name: review$' "$d/.claude/skills/review/SKILL.md"
+  check "every shared skill is reachable" sh -c "for s in '$d'/.agents/skills/*/; do [ -f '$d'/.claude/skills/\$(basename \"\$s\")/SKILL.md ] || exit 1; done"
+
+  # A link that points somewhere else: reported, kept, and repointed by --force.
+  d=$(new_repo ssot-wronglink package.json)
+  mkdir -p "$d/.claude" "$d/elsewhere"
+  ln -s ../elsewhere "$d/.claude/skills"
+  f=$("$H" configure --yes -C "$d" 2>&1)
+  check "wrong link kept without --force" test "$(readlink "$d/.claude/skills")" = ../elsewhere
+  check "and the user is told" grep -q 'will not see the skills' <<<"$f"
+  "$H" configure --yes --force -C "$d" >/dev/null 2>&1
+  check "--force repoints the link" test "$(readlink "$d/.claude/skills")" = ../.agents/skills
+  check "its old target is untouched" test -d "$d/elsewhere"
+
+  check_not "unknown agent rejected" "$H" configure --yes -C "$(new_repo ssot-bad)" --agents claude,nope
+  check_not "the old 'multi' value is gone" "$H" configure --yes -C "$(new_repo ssot-multi)" --agents multi
+}
+
+# The checklist widget used to pick coding agents.
+test_ui_checklist() {
+  command -v python3 >/dev/null 2>&1 || { ok; return; }
+  local out=$WORK/checklist.out script=$WORK/checklist.sh
+  cat >"$script" <<EOF
+#!/usr/bin/env bash
+HARNESS_ROOT='$ROOT'
+. '$ROOT/lib/util.sh'
+. '$ROOT/lib/ui.sh'
+ui_init
+ui_checklist "Pick" 1 1 "note" "1" "Alpha" "Beta" "Gamma"
+echo "RESULT=[\$UI_CHECKED] rc=\$?"
+EOF
+  chmod +x "$script"
+  # Enter alone keeps the preselection.
+  printf '%s\n' 'line:' | HARNESS_NO_CLEAR=1 NO_COLOR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$script"
+  check "preselected option is marked" grep -q '\[x\] Alpha' "$out"
+  check "enter confirms the preselection" grep -q 'RESULT=\[1\]' "$out"
+  # Toggle 1 off and 3 on; an empty selection cannot be confirmed.
+  printf '%s\n' key:1 'line:' key:3 key:2 'line:' | HARNESS_NO_CLEAR=1 NO_COLOR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$script"
+  check "empty selection is refused, then toggles apply" grep -q 'RESULT=\[3 2\]' "$out"
+  printf '%s\n' key:9 key:r | HARNESS_NO_CLEAR=1 NO_COLOR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$script"
+  check "out-of-range keys are ignored and r restarts" grep -q 'RESULT=\[1\] rc=10' "$out"
+}
+
+test_minimal_tier() {
+  local d
   d=$(new_repo minimal package.json)
   "$H" configure --yes -C "$d" --preset minimal >/dev/null 2>&1
   check "minimal has no stop hook" jq -e '.hooks.Stop == null' "$d/.claude/settings.json"
@@ -213,7 +322,7 @@ test_cmd_overrides() {
 }
 
 _guard() { # dir hook tool key value -> exit code
-  hook_json "$3" "$4" "$5" | CLAUDE_PROJECT_DIR=$1 "$1/.claude/hooks/$2" >/dev/null 2>&1
+  hook_json "$3" "$4" "$5" | "$1/.agents/hooks/$2" claude >/dev/null 2>&1
   echo $?
 }
 
@@ -237,8 +346,8 @@ test_guard_hooks() {
   d=$(new_repo guard package.json)
   "$H" configure --yes -C "$d" >/dev/null 2>&1
   _guard_suite "$d" "jq"
-  check "blocks are logged" grep -q '"kind":"blocked"' "$d/.claude/logs/events.jsonl"
-  check "logs are git-ignored" git -C "$d" check-ignore -q .claude/logs/events.jsonl
+  check "blocks are logged" grep -q '"kind":"blocked"' "$d/.agents/logs/events.jsonl"
+  check "logs are git-ignored" git -C "$d" check-ignore -q .agents/logs/events.jsonl
 
   # Same suite with neither jq nor python3 on PATH (sed fallback).
   bin=$WORK/minbin
@@ -287,7 +396,7 @@ test_diff_guard_script() {
   head=$(git -C "$d" rev-parse HEAD)
 
   out=$(cd "$d" && BASE_SHA=$base HEAD_SHA=$head HEAD_REF=claude/x PR_BODY='- [x] Agent-authored' GUARD_MODE=block \
-    GITHUB_OUTPUT=$WORK/ag.out GITHUB_STEP_SUMMARY=$WORK/ag.md .github/scripts/diff-guard.sh 2>&1) || fail "diff-guard crashed: $out"
+    GITHUB_OUTPUT=$WORK/ag.out GITHUB_STEP_SUMMARY=$WORK/ag.md scripts/ci/diff-guard.sh 2>&1) || fail "diff-guard crashed: $out"
   check "counts blocking-class findings" grep -q '^block_count=3$' "$WORK/ag.out"
   check "blocks in block mode" grep -q '^blocking=true$' "$WORK/ag.out"
   check "reports deleted test" contains "$WORK/ag.md" 'Deleted test files'
@@ -296,16 +405,16 @@ test_diff_guard_script() {
 
   : >"$WORK/ag.out"
   (cd "$d" && BASE_SHA=$base HEAD_SHA=$head GUARD_MODE=warn GITHUB_OUTPUT=$WORK/ag.out \
-    GITHUB_STEP_SUMMARY=/dev/null .github/scripts/diff-guard.sh >/dev/null 2>&1)
+    GITHUB_STEP_SUMMARY=/dev/null scripts/ci/diff-guard.sh >/dev/null 2>&1)
   check "warn mode does not block" grep -q '^blocking=false$' "$WORK/ag.out"
 
   # One standard for every PR: identical outputs and report with no agent signals.
   _risky_change feature/x
   (cd "$d" && BASE_SHA=$base HEAD_SHA=$(git rev-parse HEAD) HEAD_REF=feature/x GUARD_MODE=block \
-    GITHUB_OUTPUT=$WORK/ag-plain.out GITHUB_STEP_SUMMARY=$WORK/ag-plain.md .github/scripts/diff-guard.sh >/dev/null 2>&1)
+    GITHUB_OUTPUT=$WORK/ag-plain.out GITHUB_STEP_SUMMARY=$WORK/ag-plain.md scripts/ci/diff-guard.sh >/dev/null 2>&1)
   check "unsigned change blocks too" grep -q '^blocking=true$' "$WORK/ag-plain.out"
   (cd "$d" && BASE_SHA=$base HEAD_SHA=$head HEAD_REF=claude/x PR_BODY='- [x] Agent-authored' GUARD_MODE=block \
-    GITHUB_OUTPUT=$WORK/ag-signed.out GITHUB_STEP_SUMMARY=$WORK/ag-signed.md .github/scripts/diff-guard.sh >/dev/null 2>&1)
+    GITHUB_OUTPUT=$WORK/ag-signed.out GITHUB_STEP_SUMMARY=$WORK/ag-signed.md scripts/ci/diff-guard.sh >/dev/null 2>&1)
   check "same outputs whoever wrote it" cmp "$WORK/ag-plain.out" "$WORK/ag-signed.out"
   check "same report whoever wrote it" cmp "$WORK/ag-plain.md" "$WORK/ag-signed.md"
   check_not "no authorship output" grep -qi 'agent' "$WORK/ag-signed.out"
@@ -323,7 +432,7 @@ test_diff_guard_script() {
   git -C "$d" add -A && git -C "$d" commit -qm "test: c"
   : >"$WORK/ag.out"
   (cd "$d" && BASE_SHA=$base HEAD_SHA=$(git rev-parse HEAD) GUARD_MODE=block \
-    GITHUB_OUTPUT=$WORK/ag.out GITHUB_STEP_SUMMARY=$WORK/ag2.md .github/scripts/diff-guard.sh >/dev/null 2>&1) ||
+    GITHUB_OUTPUT=$WORK/ag.out GITHUB_STEP_SUMMARY=$WORK/ag2.md scripts/ci/diff-guard.sh >/dev/null 2>&1) ||
     fail "diff-guard crashed on additive PR"
   check "additive PR: no findings" contains "$WORK/ag2.md" 'No findings'
 }
@@ -332,14 +441,14 @@ test_agent_report() {
   local d out
   d=$(new_repo rep package.json)
   "$H" configure --yes -C "$d" >/dev/null 2>&1
-  mkdir -p "$d/.claude/logs"
-  cat >"$d/.claude/logs/events.jsonl" <<'EOF'
+  mkdir -p "$d/.agents/logs"
+  cat >"$d/.agents/logs/events.jsonl" <<'EOF'
 {"ts":"2026-01-01T00:00:00Z","kind":"tool","session_id":"a","tool":"Bash","detail":"npm test"}
 {"ts":"2026-01-01T00:00:01Z","kind":"tool","session_id":"a","tool":"Edit","detail":"src/x.ts"}
 {"ts":"2026-01-01T00:00:02Z","kind":"blocked","session_id":"b","tool":"Bash","detail":"force-push rewrites shared history"}
 {"ts":"2026-01-01T00:00:03Z","kind":"turn_end","session_id":"b","tool":"","detail":""}
 EOF
-  out=$("$d/.claude/scripts/agent-report.sh" 2>&1)
+  out=$("$d/.agents/scripts/agent-report.sh" 2>&1)
   check "report counts" grep -q 'Events: 4   Sessions: 2   Turns: 1   Blocked: 1' <<<"$out"
   check "report lists block" grep -q 'force-push rewrites' <<<"$out"
 }
@@ -349,7 +458,7 @@ _make_fork() {
   local fork=$WORK/fork.git src=$WORK/fork-src
   rm -rf "$fork" "$src"
   mkdir -p "$src"
-  (cd "$ROOT" && tar cf - --exclude=.git --exclude=.claude/logs . | tar xf - -C "$src")
+  (cd "$ROOT" && tar cf - --exclude=.git --exclude=.agents/logs . | tar xf - -C "$src")
   git -C "$src" init -q -b main
   git -C "$src" add -A
   git -C "$src" commit -qm fork
@@ -386,7 +495,7 @@ test_every_profile_and_tier() {
         fail "$p/$t: configure failed"
       check "$p/$t: settings.json valid" jq empty "$d/.claude/settings.json"
       check_not "$p/$t: unrendered placeholders" grep -rEn '\{\{[#/>]?[A-Z]' "$d" --exclude-dir=.git
-      for f in "$d"/.claude/hooks/*.sh "$d"/.claude/scripts/*.sh "$d"/scripts/*.sh "$d"/.github/scripts/*.sh; do
+      for f in "$d"/.agents/hooks/*.sh "$d"/.agents/scripts/*.sh "$d"/scripts/*.sh "$d"/scripts/ci/*.sh; do
         [ -e "$f" ] || continue
         check "$p/$t: bash syntax $(basename "$f")" bash -n "$f"
         if command -v shellcheck >/dev/null 2>&1; then
@@ -408,10 +517,10 @@ test_profile_specifics() {
   # Study: tutor agreement, Learning style, exercises protected, solo pushes OK.
   d=$WORK/prof-study-recommended
   check "study: Learning output style" jq -e '.outputStyle == "Learning"' "$d/.claude/settings.json"
-  check "study: tutor rules" contains "$d/.claude/rules/study.md" 'How to help me learn'
-  check_not "study: no PR agreement" contains "$d/CLAUDE.md" 'Working agreement for agents'
+  check "study: tutor rules" contains "$d/AGENTS.md" 'How to help me learn'
+  check_not "study: no PR agreement" contains "$d/AGENTS.md" 'Working agreement for agents'
   check "study: plan seeded" test -f "$d/LEARNING_PLAN.md"
-  check "study: quiz skill" test -f "$d/.claude/skills/quiz/SKILL.md"
+  check "study: quiz skill" test -f "$d/.agents/skills/quiz/SKILL.md"
   check_not "study: no collab files" test -e "$d/CONTRIBUTING.md"
   [ "$(_guard "$d" guard-paths.sh Edit file_path "$d/exercises/ch1.py")" = 2 ] || fail "study: exercise edit allowed"
   [ "$(_guard "$d" guard-paths.sh Edit file_path "$d/notes/ch1.md")" = 0 ] || fail "study: notes edit blocked"
@@ -426,8 +535,8 @@ test_profile_specifics() {
   d=$WORK/prof-ml-recommended
   [ "$(_guard "$d" guard-paths.sh Write file_path "$d/data/raw/train.csv")" = 2 ] || fail "ml: raw data edit allowed"
   [ "$(_guard "$d" guard-paths.sh Write file_path "$d/data/processed/train.csv")" = 0 ] || fail "ml: processed edit blocked"
-  check "ml: rules" contains "$d/.claude/rules/ml.md" 'Data science and ML rules'
-  check "ml: experiment skill" test -f "$d/.claude/skills/experiment/SKILL.md"
+  check "ml: rules" contains "$d/AGENTS.md" 'Data science and ML rules'
+  check "ml: experiment skill" test -f "$d/.agents/skills/experiment/SKILL.md"
   check "ml: data ignored" git -C "$d" check-ignore -q data/raw/x.csv
   check_not "ml: data/README.md not ignored" git -C "$d" check-ignore -q data/README.md
   check "ml: checkpoints ignored" git -C "$d" check-ignore -q model.ckpt
@@ -436,16 +545,16 @@ test_profile_specifics() {
   d=$WORK/prof-research-recommended
   [ "$(_guard "$d" guard-paths.sh Edit file_path "$d/data/raw/survey.csv")" = 2 ] || fail "research: raw data edit allowed"
   check "research: WebSearch allowed" jq -e '.permissions.allow | index("WebSearch")' "$d/.claude/settings.json"
-  check "research: rules" contains "$d/.claude/rules/research.md" 'Never fabricate'
+  check "research: rules" contains "$d/AGENTS.md" 'Never fabricate'
   check "research: bib seeded" test -f "$d/references.bib"
 
   # Agentic: evals workflow appears once EVAL_CMD is set.
   d=$WORK/prof-agentic-recommended
-  check "agentic: rules" contains "$d/.claude/rules/agentic.md" 'Prompts are code'
+  check "agentic: rules" contains "$d/AGENTS.md" 'Prompts are code'
   check_not "agentic: no evals.yml without EVAL_CMD" test -e "$d/.github/workflows/evals.yml"
   "$H" configure --yes -C "$d" --profile agentic --force --cmd 'eval=uv run python -m evals' >/dev/null 2>&1
   check "agentic: evals.yml generated" contains "$d/.github/workflows/evals.yml" 'uv run python -m evals'
-  check "agentic: eval command in CLAUDE.md" contains "$d/CLAUDE.md" 'Evals: `uv run python -m evals`'
+  check "agentic: eval command in AGENTS.md" contains "$d/AGENTS.md" 'Evals: `uv run python -m evals`'
   ok
 }
 
@@ -455,39 +564,39 @@ test_profile_claude_code_config() {
   d=$WORK/prof-software-recommended
   check "software: testing rule is path-scoped" grep -q '^paths: \[' "$d/.claude/rules/testing.md"
   check "software: CI rule is path-scoped" grep -q '^paths: \[".github/\*\*"\]' "$d/.claude/rules/github-actions.md"
-  check "software: /review command" grep -q '^description:' "$d/.claude/commands/review.md"
-  check "software: /handoff command" grep -q '^argument-hint:' "$d/.claude/commands/handoff.md"
+  check "software: review skill" grep -q '^name: review$' "$d/.agents/skills/review/SKILL.md"
+  check "software: handoff skill" grep -q '^name: handoff$' "$d/.agents/skills/handoff/SKILL.md"
   check "software: reviewer role" grep -q '^tools: Read, Grep, Glob, Bash$' "$d/.claude/agents/reviewer.md"
-  check "software: how-we-work in CLAUDE.md" contains "$d/CLAUDE.md" 'Plan before big changes'
-  check "handoffs are git-ignored" git -C "$d" check-ignore -q .claude/handoff/x.md
+  check "software: how-we-work in AGENTS.md" contains "$d/AGENTS.md" 'Plan before big changes'
+  check "handoffs are git-ignored" git -C "$d" check-ignore -q .agents/handoff/x.md
   check_not "software: no profile rules file" test -e "$d/.claude/rules/software.md"
 
   d=$WORK/prof-ml-recommended
   check "ml: data rule" grep -q '^paths: \["data/\*\*"\]' "$d/.claude/rules/data.md"
   check "ml: notebook rule" test -f "$d/.claude/rules/notebooks.md"
-  check "ml: data-audit runs forked" grep -q '^context: fork$' "$d/.claude/skills/data-audit/SKILL.md"
+  check "ml: data-audit runs forked" grep -q '^context: fork$' "$d/.agents/skills/data-audit/SKILL.md"
   check "ml: reviewer knows leakage" contains "$d/.claude/agents/reviewer.md" 'Data leakage'
 
   d=$WORK/prof-agentic-recommended
   check "agentic: prompts rule" grep -q '^paths: \["prompts/\*\*"\]' "$d/.claude/rules/prompts.md"
   check "agentic: evals rule" test -f "$d/.claude/rules/evals.md"
-  check "agentic: stop_reason loop rule" contains "$d/.claude/rules/agentic.md" 'stop_reason'
+  check "agentic: stop_reason loop rule" contains "$d/AGENTS.md" 'stop_reason'
 
   d=$WORK/prof-study-recommended
   check "study: exercises rule" test -f "$d/.claude/rules/exercises.md"
   check_not "study: no roles" test -d "$d/.claude/agents"
-  check_not "study: no /review" test -e "$d/.claude/commands/review.md"
-  check "study: /handoff" test -f "$d/.claude/commands/handoff.md"
-  check_not "study: no how-we-work" contains "$d/CLAUDE.md" 'Plan before big changes'
+  check_not "study: no /review" test -e "$d/.agents/skills/review/SKILL.md"
+  check "study: /handoff" test -f "$d/.agents/skills/handoff/SKILL.md"
+  check_not "study: no how-we-work" contains "$d/AGENTS.md" 'Plan before big changes'
 
   d=$WORK/prof-research-recommended
   check "research: literature rule" test -f "$d/.claude/rules/literature.md"
   check "research: shared reviewer only" test "$(ls "$d/.claude/agents")" = reviewer.md
-  check "research: claim-check is read-only" grep -q '^allowed-tools: Read, Grep, Glob$' "$d/.claude/skills/claim-check/SKILL.md"
+  check "research: claim-check is read-only" grep -q '^allowed-tools: Read, Grep, Glob$' "$d/.agents/skills/claim-check/SKILL.md"
 
   # Every generated skill, command, and role has the frontmatter it needs.
   for d in "$WORK"/prof-*-strict; do
-    for f in "$d"/.claude/skills/*/SKILL.md; do
+    for f in "$d"/.agents/skills/*/SKILL.md; do
       [ -e "$f" ] || continue
       check "$(basename "$(dirname "$f")"): skill has name+description+argument-hint" \
         sh -c "head -8 '$f' | grep -q '^name:' && head -8 '$f' | grep -q '^description:' && head -8 '$f' | grep -q '^argument-hint:'"
@@ -502,12 +611,12 @@ test_profile_claude_code_config() {
     done
   done
 
-  # With AGENTS.md, always-on profile rules move there (shared with other agents).
-  d=$(new_repo multi-ml pyproject.toml)
-  "$H" configure --yes -C "$d" --profile ml --agents multi >/dev/null 2>&1
-  check "multi: profile rules in AGENTS.md" contains "$d/AGENTS.md" 'Data science and ML rules'
-  check_not "multi: no duplicate rules file" test -e "$d/.claude/rules/ml.md"
-  check "multi: path rules still emitted" test -f "$d/.claude/rules/data.md"
+  # Always-on profile rules live in AGENTS.md, shared by every agent; only
+  # path-scoped rules get their own files.
+  d=$WORK/prof-ml-recommended
+  check "profile rules in AGENTS.md" contains "$d/AGENTS.md" 'Data science and ML rules'
+  check_not "no always-on rules file" test -e "$d/.claude/rules/ml.md"
+  check "path rules emitted" test -f "$d/.claude/rules/data.md"
 }
 
 # A stand-in for `claude -p`. Findings depend on what the prompt contains:
@@ -567,11 +676,11 @@ test_review_and_gate_scripts() {
   "$H" configure --yes -C "$d" --tier strict >/dev/null 2>&1
   check "strict: pr-gate workflow" test -f "$d/.github/workflows/pr-gate.yml"
   check "strict: gate waits for guard and review" grep -q 'needs: \[guard, review\]' "$d/.github/workflows/pr-gate.yml"
-  check "workflow runs base-branch scripts" grep -q 'git show "$BASE_SHA:.github/scripts/pr-gate.sh"' "$d/.github/workflows/pr-gate.yml"
+  check "workflow runs base-branch scripts" grep -q 'git show "$BASE_SHA:scripts/ci/pr-gate.sh"' "$d/.github/workflows/pr-gate.yml"
   check "checkouts do not persist credentials" test "$(grep -c 'persist-credentials: false' "$d/.github/workflows/pr-gate.yml")" -eq 3
   check "label edits cannot cancel reviews" grep -q "'meta' || 'code'" "$d/.github/workflows/pr-gate.yml"
-  check "strict: criteria seeded" test -f "$d/.github/review/criteria.md"
-  check "schema is valid JSON" jq empty "$d/.github/review/findings.schema.json"
+  check "strict: criteria seeded" test -f "$d/scripts/ci/review/criteria.md"
+  check "schema is valid JSON" jq empty "$d/scripts/ci/review/findings.schema.json"
   seq 1 50 | sed 's/^/x = /' >"$d/moved_src.py"
   git -C "$d" add -A && git -C "$d" commit -qm base
   base=$(git -C "$d" rev-parse HEAD)
@@ -588,7 +697,7 @@ test_review_and_gate_scripts() {
     : >"$WORK/rv.out"
     (cd "$d" && env BASE_SHA="$base" HEAD_SHA="$head" CLAUDE_BIN="$stub" ANTHROPIC_API_KEY=x NO_POST=1 \
       OUT_DIR="$WORK/rv-out" GITHUB_OUTPUT="$WORK/rv.out" GITHUB_STEP_SUMMARY=/dev/null STUB_LOG="$WORK/rv.log" \
-      STUB_ENV_LOG="$WORK/rv-env.log" "$@" .github/scripts/ai-review.sh >/dev/null 2>&1)
+      STUB_ENV_LOG="$WORK/rv-env.log" "$@" scripts/ci/ai-review.sh >/dev/null 2>&1)
   }
   : >"$WORK/rv-env.log"
   _review GH_TOKEN=ghs_supersecret || fail "ai-review crashed (large diff, rename)"
@@ -644,7 +753,7 @@ test_review_and_gate_scripts() {
 
   # ---- Gate ----
   # shellcheck disable=SC2329 # invoked through check/check_not
-  _gate() { (cd "$d" && env HEAD_SHA="$head" GITHUB_STEP_SUMMARY=/dev/null SCORECARD_OUT="$WORK/card.md" "$@" .github/scripts/pr-gate.sh 2>"$WORK/gate.err" >/dev/null); }
+  _gate() { (cd "$d" && env HEAD_SHA="$head" GITHUB_STEP_SUMMARY=/dev/null SCORECARD_OUT="$WORK/card.md" "$@" scripts/ci/pr-gate.sh 2>"$WORK/gate.err" >/dev/null); }
   check "gate passes clean PR" _gate REVIEW_ENABLED=1 REVIEW_STATUS=ok REVIEW_BLOCKING=0 REVIEW_NITS=2
   check "clean score" grep -q '"score":94' "$WORK/card.md"
   check_not "gate fails on blocking review finding" _gate REVIEW_ENABLED=1 REVIEW_STATUS=ok REVIEW_BLOCKING=1
@@ -666,7 +775,7 @@ test_review_and_gate_scripts() {
   check_not "review expected but missing: pending" _gate REVIEW_ENABLED=1 REVIEW_EXPECTED=true REVIEW_RESULT=skipped
   check "pending shown" grep -q 'waiting for the AI review' "$WORK/card.md"
   check "fork/draft: skipped review passes" _gate REVIEW_ENABLED=1 REVIEW_EXPECTED=false REVIEW_RESULT=skipped
-  check "partial review shown" bash -c "cd '$d' && HEAD_SHA=x REVIEW_ENABLED=1 REVIEW_STATUS=partial REVIEW_FAILED=2 SCORECARD_OUT='$WORK/card.md' .github/scripts/pr-gate.sh >/dev/null && grep -q '2 pass(es) failed' '$WORK/card.md'"
+  check "partial review shown" bash -c "cd '$d' && HEAD_SHA=x REVIEW_ENABLED=1 REVIEW_STATUS=partial REVIEW_FAILED=2 SCORECARD_OUT='$WORK/card.md' scripts/ci/pr-gate.sh >/dev/null && grep -q '2 pass(es) failed' '$WORK/card.md'"
   local prev
   prev=$(jq -cn --arg h "$head" '{head_sha: $h, review: {status: "ok", blocking: 1, nits: 0, preexisting: 0, patterns: "x"}}')
   check_not "label event reuses last review on same commit" _gate REVIEW_ENABLED=1 REVIEW_EXPECTED=true PREVIOUS_SCORECARD="$prev"
@@ -700,7 +809,7 @@ test_diff_guard_profile_checks() {
   head -c 6000000 /dev/zero >"$d/blob.bin"
   git -C "$d" add -A && git -C "$d" commit -qm "feat: prompt"
   (cd "$d" && BASE_SHA=$base HEAD_SHA=$(git rev-parse HEAD) GITHUB_OUTPUT=/dev/null \
-    GITHUB_STEP_SUMMARY=$WORK/agp.md .github/scripts/diff-guard.sh >/dev/null 2>&1) || fail "diff-guard crashed (agentic)"
+    GITHUB_STEP_SUMMARY=$WORK/agp.md scripts/ci/diff-guard.sh >/dev/null 2>&1) || fail "diff-guard crashed (agentic)"
   check "prompts without evals flagged" contains "$WORK/agp.md" 'Prompts changed without eval changes'
   check "large file flagged" contains "$WORK/agp.md" 'Large files'
 
@@ -712,7 +821,7 @@ test_diff_guard_profile_checks() {
   printf '{"cells":[{"cell_type":"code","execution_count":null,"outputs":[],"source":"print(1)"}]}\n' >"$d/clean.ipynb"
   git -C "$d" add -A && git -C "$d" commit -qm "feat: eda"
   (cd "$d" && BASE_SHA=$base HEAD_SHA=$(git rev-parse HEAD) GITHUB_OUTPUT=/dev/null \
-    GITHUB_STEP_SUMMARY=$WORK/mlg.md .github/scripts/diff-guard.sh >/dev/null 2>&1) || fail "diff-guard crashed (ml)"
+    GITHUB_STEP_SUMMARY=$WORK/mlg.md scripts/ci/diff-guard.sh >/dev/null 2>&1) || fail "diff-guard crashed (ml)"
   check "notebook with outputs flagged" contains "$WORK/mlg.md" 'eda.ipynb'
   check_not "clean notebook not flagged" contains "$WORK/mlg.md" 'clean.ipynb'
 }
@@ -737,9 +846,9 @@ test_collaborator_needs_nothing() {
     [ -e "$bin/$t" ] || ln -s "$(command -v "$t")" "$bin/$t" 2>/dev/null || true
   done
   [ "$(hook_json Bash command 'git push --force origin x' |
-    env -i PATH="$bin" CLAUDE_PROJECT_DIR="$clone" "$clone/.claude/hooks/guard-bash.sh" >/dev/null 2>&1
+    env -i PATH="$bin" "$clone/.agents/hooks/guard-bash.sh" claude >/dev/null 2>&1
   echo $?)" = 2 ] || fail "guard hook does not work on a bare collaborator machine"
-  out=$(env -i PATH="$bin" "$clone/.claude/scripts/agent-report.sh" 2>&1) || fail "agent-report.sh failed: $out"
+  out=$(env -i PATH="$bin" "$clone/.agents/scripts/agent-report.sh" 2>&1) || fail "agent-report.sh failed: $out"
   check "agent-report.sh standalone" grep -q 'Blocked: 1' <<<"$out"
   ok
 }
@@ -753,19 +862,19 @@ test_custom_stubs() {
   "$H" configure --yes -C "$d" --skills 'run-solver,formulate' --roles model-checker \
     --rules 'solver=src/solver/** benchmarks=benchmarks/**,tests/benchmarks/**' --dirs 'infra experiments/configs' >/dev/null 2>&1 ||
     fail "configure with stubs failed"
-  check "skill stub placed" grep -q '^name: run-solver$' "$d/.claude/skills/run-solver/SKILL.md"
-  check "second skill stub" test -f "$d/.claude/skills/formulate/SKILL.md"
+  check "skill stub placed" grep -q '^name: run-solver$' "$d/.agents/skills/run-solver/SKILL.md"
+  check "second skill stub" test -f "$d/.agents/skills/formulate/SKILL.md"
   check "role stub placed" grep -q '^name: model-checker$' "$d/.claude/agents/model-checker.md"
   check "role stub is read-only by default" grep -q '^tools: Read, Grep, Glob$' "$d/.claude/agents/model-checker.md"
   check "rule globs kept literally" grep -qF 'paths: ["src/solver/**"]' "$d/.claude/rules/solver.md"
   check "rule with two globs" grep -qF 'paths: ["benchmarks/**", "tests/benchmarks/**"]' "$d/.claude/rules/benchmarks.md"
   check "dir README stubs" test -f "$d/infra/README.md" -a -f "$d/experiments/configs/README.md"
-  for f in "$d/.claude/skills/run-solver/SKILL.md" "$d/.claude/agents/model-checker.md" "$d/.claude/rules/solver.md" "$d/infra/README.md"; do
+  for f in "$d/.agents/skills/run-solver/SKILL.md" "$d/.claude/agents/model-checker.md" "$d/.claude/rules/solver.md" "$d/infra/README.md"; do
     check "$(basename "$f"): has TODO(team)" contains "$f" 'TODO(team)'
   done
-  echo 'my skill' >"$d/.claude/skills/run-solver/SKILL.md"
+  echo 'my skill' >"$d/.agents/skills/run-solver/SKILL.md"
   "$H" configure --yes -C "$d" --skills run-solver >/dev/null 2>&1
-  check "filled-in stub kept" test "$(cat "$d/.claude/skills/run-solver/SKILL.md")" = 'my skill'
+  check "filled-in stub kept" test "$(cat "$d/.agents/skills/run-solver/SKILL.md")" = 'my skill'
 
   check_not "bad name rejected" "$H" configure --yes -C "$d" --skills 'Bad_Name'
   check_not "rule without glob rejected" "$H" configure --yes -C "$d" --rules 'solver='
@@ -846,7 +955,7 @@ _diff_guard_lock() { # dir -> summary file
   printf 'abc\t1\tdata/x\t2026-01-01T00:00:00Z\tnew\n' >>"$d/artifacts.lock"
   git -C "$d" commit -qam "chore: new data"
   (cd "$d" && BASE_SHA=$base HEAD_SHA=$(git rev-parse HEAD) GITHUB_OUTPUT=/dev/null \
-    GITHUB_STEP_SUMMARY=$WORK/agl.md .github/scripts/diff-guard.sh >/dev/null 2>&1) || fail "diff-guard crashed (lock)"
+    GITHUB_STEP_SUMMARY=$WORK/agl.md scripts/ci/diff-guard.sh >/dev/null 2>&1) || fail "diff-guard crashed (lock)"
 }
 
 test_diff_guard_flags_lock_changes() {
@@ -874,7 +983,7 @@ test_devtools_python_scaffold() {
   check "markers declared" grep -q '"benchmark: ' "$d/pyproject.toml"
   check "fast tier skips slow tests" contains "$d/Makefile" 'not slow and not benchmark'
   check "nightly full tier" contains "$d/.github/workflows/tests-full.yml" 'make test-all'
-  check "CLAUDE.md lists make targets" contains "$d/CLAUDE.md" '`make check`'
+  check "AGENTS.md lists make targets" contains "$d/AGENTS.md" '`make check`'
   check "agent may run make check" jq -e '.permissions.allow | index("Bash(make check:*)")' "$d/.claude/settings.json"
   if python3 -c 'import tomllib' 2>/dev/null; then
     check "pyproject is valid TOML" python3 -c "import sys,tomllib; tomllib.load(open(sys.argv[1],'rb'))" "$d/pyproject.toml"
@@ -959,42 +1068,42 @@ test_wizard_flow() {
   rm -rf "$WORK/wiz"
   mkdir -p "$d"
   git -C "$d" init -q -b main
-  # profile, stack, commands, agents, tier, artifacts, stubs (one invalid dir first), owners, telemetry, apply
-  printf '%s\n' key:1 key:2 key:1 key:1 key:2 key:1 key:2 \
+  # profile, stack, commands, tier, artifacts, stubs (one invalid dir first), owners, telemetry, apply
+  printf '%s\n' key:1 key:2 key:1 key:2 key:1 key:2 \
     line:formulate line:- line:- 'line:../evil' key:x \
     line:formulate line:- line:- line:infra line: key:1 key:y |
     HARNESS_NO_CLEAR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$H" configure -C "$d"
   check "banner names the tool" grep -q 'powerharnessing11k' "$out"
-  check "ten steps" grep -q '\[10/10\]' "$out"
+  check "nine steps while one agent is available" grep -q '\[9/9\]' "$out"
   check_not "empty folder: no stack marked" grep -q '← detected\|generic.*← ' "$out"
   check "commands one per line" grep -qE '^ +typecheck +uv run mypy$' "$out"
   check "invalid stub re-asked" grep -q "invalid directory '../evil'" "$out"
   check "summary before apply" grep -q 'Skills       formulate' "$out"
-  check "applied" test -f "$d/.claude/skills/formulate/SKILL.md"
+  check "applied" test -f "$d/.agents/skills/formulate/SKILL.md"
   check "artifacts chosen" test -x "$d/scripts/artifacts.sh"
   check "valid dir used" test -f "$d/infra/README.md"
   check_not "invalid dir not created" test -e "$WORK/wiz/evil"
-  check "next steps list TODO files" grep -qE '^ +\.claude/skills/formulate/SKILL\.md$' "$out"
+  check "next steps list TODO files" grep -qE '^ +\.agents/skills/formulate/SKILL\.md$' "$out"
 
   # An existing project: its stack is marked as detected.
   d=$(new_repo wiz-go go.mod)
   printf '%s\n' key:1 key:q | HARNESS_NO_CLEAR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$H" configure -C "$d"
   check "detected stack marked" grep -q 'Go modules  ← detected' "$out"
-  check "quit writes nothing" test ! -e "$d/CLAUDE.md"
+  check "quit writes nothing" test ! -e "$d/AGENTS.md"
 }
 
 test_summary_output() {
   local d out
   d=$(new_repo summ)
   out=$("$H" configure --yes -C "$d" --stack python --artifacts --skills formulate 2>&1)
-  check "grouped by directory" grep -qE '^  \+ \.claude/ +.*hooks/ [0-9]' <<<"$out"
+  check "grouped by directory" grep -qE '^  \+ \.agents/ +.*hooks/ [0-9]' <<<"$out"
   check "root files on one line" grep -qE '^  \+ \./ +CLAUDE\.md, ' <<<"$out"
   check "short output" test "$(grep -c '^  [+~·] ' <<<"$out")" -lt 20
-  check "TODO files listed" grep -qE '^ +\.claude/skills/formulate/SKILL\.md$' <<<"$out"
+  check "TODO files listed" grep -qE '^ +\.agents/skills/formulate/SKILL\.md$' <<<"$out"
   out=$("$H" configure --yes -C "$d" --verbose --force 2>&1)
-  check "--verbose lists every file" grep -qE '^  · unchanged +\.claude/hooks/guard-bash\.sh$' <<<"$out"
+  check "--verbose lists every file" grep -qE '^  · unchanged +\.agents/hooks/guard-bash\.sh$' <<<"$out"
   out=$("$H" configure --yes -C "$d" 2>&1)
-  check "re-run groups kept files" grep -qE '^  · \.claude/ ' <<<"$out"
+  check "re-run groups kept files" grep -qE '^  · \.agents/ ' <<<"$out"
   check "re-run: no TODO list" sh -c "! grep -q 'TODO(team) notes' <<'EOF'
 $out
 EOF"

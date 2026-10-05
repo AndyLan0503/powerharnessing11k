@@ -1,19 +1,19 @@
-<div align="center">
-
-<pre>
-          _   _   _
-   _ __  / | / | | | __
-  | '_ \ | | | | | |/ /
-  | |_) || | | | |   <
-  | .__/ |_| |_| |_|\_\
+```
+           _   _   _
+   _ __   / | / | | | __
+  | '_ \  | | | | | |/ /
+  | |_) | | | | | |   <
+  | .__/  |_| |_| |_|\_\
   |_|
-</pre>
+```
+
+<div align="center">
 
 # powerharnessing11k
 
 **`p10k configure`, but for your repo's AI agents.**
 
-One wizard. Ten questions. A repository that's ready for humans and coding agents to work in together,<br>
+One wizard. Nine questions. A repository that's ready for humans and coding agents to work in together,<br>
 with guardrails, CI, an AI review gate, and monitoring. Then it gets out of your way, for good.
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -34,12 +34,20 @@ with guardrails, CI, an AI review gate, and monitoring. Then it gets out of your
 
 ---
 
+**Install** (once, anywhere on your machine):
+
 ```sh
 git clone --depth=1 https://github.com/AndyLan0503/powerharnessing11k ~/powerharnessing11k
-cd ~/work/my-project && ~/powerharnessing11k/setup.sh
 ```
 
-That's the whole install. Nothing goes on your `PATH`, nothing is added to your project's dependencies, and nobody else on the team installs anything.
+**Run** from inside the project you want to set up. It can be an existing repository or a new, empty folder:
+
+```sh
+cd ~/work/my-project
+~/powerharnessing11k/setup.sh
+```
+
+Nothing goes on your `PATH`, nothing is added to your project's dependencies, and nobody else on the team installs anything.
 
 ## ✨ Why
 
@@ -71,9 +79,9 @@ mkdir opt-engine && cd opt-engine
 ~/powerharnessing11k/setup.sh
 ```
 
-**3. Answer ten questions.** Then fill in the `TODO(team)` notes it lists, commit, and open a PR. Collaborators just pull.
+**3. Answer nine questions.** Then fill in the `TODO(team)` notes it lists, commit, and open a PR. Collaborators just pull.
 
-Prefer no questions? Everything has a flag:
+Prefer no questions? Everything has a flag. Run this from inside the project folder too:
 
 ```sh
 ~/powerharnessing11k/setup.sh --yes --stack python --artifacts \
@@ -84,16 +92,16 @@ Prefer no questions? Everything has a flag:
 ## 🧙 The wizard
 
 ```
-          _   _   _
-   _ __  / | / | | | __
-  | '_ \ | | | | | |/ /
-  | |_) || | | | |   <
-  | .__/ |_| |_| |_|\_\
+           _   _   _
+   _ __   / | / | | | __
+  | '_ \  | | | | | |/ /
+  | |_) | | | | | |   <
+  | .__/  |_| |_| |_|\_\
   |_|
 
   powerharnessing11k  one-shot agentic harness configurator · v0.1.0
 
-  [3/10]  These commands will be used by hooks, CI, and agent docs. OK?
+  [3/9]  These commands will be used by hooks, CI, and agent docs. OK?
 
   (1)  Use them
        install     uv sync
@@ -117,21 +125,23 @@ Prefer no questions? Everything has a flag:
 | 1 | What is this repository for? | One of the five [profiles](#-profiles) |
 | 2 | Language or toolchain? | Node, Python, Go, Rust, or generic; detected from the repo's files |
 | 3 | These commands OK? | Install, lint, typecheck, fast tests, full tests, format (and eval for ml/agentic) |
-| 4 | Which coding agents? | Claude Code only, or also Copilot / Codex / Cursor via a shared `AGENTS.md` |
-| 5 | How much harness? | Minimal, recommended, strict, or pick modules one by one |
-| 6 | Version data or model files? | Local `data/` + `models/` pinned by hash in `artifacts.lock` |
-| 7 | Project-specific stubs? | Skills, subagents, path-scoped rules, folders: blank files with `TODO(team)` notes |
-| 8 | Who reviews changes? | CODEOWNERS entries |
-| 9 | Export telemetry? | Claude Code OpenTelemetry to your collector |
-| 10 | Ready to apply | Every answer and module, one last look |
+| 4 | How much harness? | Minimal, recommended, strict, or pick modules one by one |
+| 5 | Version data or model files? | Local `data/` + `models/` pinned by hash in `artifacts.lock` |
+| 6 | Project-specific stubs? | Skills, subagents, path-scoped rules, folders: blank files with `TODO(team)` notes |
+| 7 | Who reviews changes? | CODEOWNERS entries |
+| 8 | Export telemetry? | Claude Code OpenTelemetry to your collector |
+| 9 | Ready to apply | Every answer and module, one last look |
+
+A "which coding agents?" checklist joins the wizard as soon as a second agent adapter ships (Codex CLI is next; see [docs/design/providers.md](docs/design/providers.md)).
 
 When it's done you get a short summary and your next steps:
 
 ```
   59 file(s) written
 
-  + ./             CLAUDE.md, .gitignore, .editorconfig, Makefile, pyproject.toml, .python-version, ...
-  + .claude/       hooks/ 7, commands/ 2, agents/ 3, rules/ 5, scripts/, skills/ 4, settings.json
+  + ./             CLAUDE.md, .gitignore, AGENTS.md, .editorconfig, Makefile, pyproject.toml, ...
+  + .claude/       skills, agents/ 3, rules/ 5, settings.json
+  + .agents/       hooks/ 7, skills/ 6, scripts/
   + docs/          TESTING.md, ARTIFACTS.md, agents/
   + src/           opt_engine/ 2
   + tests/         conftest.py, unit/
@@ -142,8 +152,8 @@ When it's done you get a short summary and your next steps:
 
   Next steps (everything written is now yours; powerharnessing11k is not needed again)
     1. Fill in the TODO(team) notes in these files (find them again with: grep -rl 'TODO(team)' .)
-         CLAUDE.md
-         .claude/skills/run-solver/SKILL.md
+         AGENTS.md
+         .agents/skills/run-solver/SKILL.md
          ...
     2. make setup && make check     (installs dev tools with uv, then runs every fast check)
     3. Review, commit, and open a PR:  git add -A && git commit -m 'chore: bootstrap agent harness'
@@ -158,25 +168,28 @@ A software-profile, Python, recommended-tier bootstrap with data versioning and 
 
 ```
 opt-engine/
-├── CLAUDE.md                  project context (TODO), commands, working agreement, how we work with Claude
+├── AGENTS.md                  the source of truth: project context (TODO), commands, working agreement
+├── CLAUDE.md                  one line that matters: @AGENTS.md
 ├── Makefile                   setup · lint · fmt · typecheck · test · test-all · check
 ├── pyproject.toml             uv · ruff · mypy --strict · pytest markers · hypothesis · coverage
 ├── artifacts.lock             sha256 of every data/model file, committed
-├── .claude/
-│   ├── settings.json          permissions (allow your commands, deny secrets) + hook wiring
+├── .agents/                   shared by every coding agent
+│   ├── skills/                steward · task-intake · review · handoff · formulate (yours) · run-solver (yours)
 │   ├── hooks/                 guard-bash · guard-paths · format-on-edit · stop-checks · audit-log
-│   ├── rules/                 testing · github-actions · data · artifacts · solver (yours)
-│   ├── skills/                steward · task-intake · formulate (yours) · run-solver (yours)
-│   ├── agents/                reviewer · test-writer · model-checker (yours)
-│   ├── commands/              /review · /handoff
 │   └── scripts/               agent-report.sh
+├── .claude/                   Claude Code's own files
+│   ├── settings.json          permissions (allow your commands, deny secrets) + hook wiring
+│   ├── rules/                 testing · github-actions · data · artifacts · solver (yours)
+│   ├── agents/                reviewer · test-writer · model-checker (yours)
+│   └── skills -> ../.agents/skills
 ├── .github/
-│   ├── workflows/             ci · tests-full (nightly) · pr-gate · pr-digest · codeql · ...
-│   └── scripts/               diff-guard.sh · pr-gate.sh
+│   └── workflows/             ci · tests-full (nightly) · pr-gate · pr-digest · codeql · ...
+├── scripts/
+│   ├── ci/                    diff-guard.sh · pr-gate.sh (the PR gate's scripts)
+│   └── artifacts.sh           snapshot · verify · status · list · hash
 ├── src/opt_engine/            package skeleton
 ├── tests/                     conftest (real-data fixture) + unit smoke test
 ├── data/  models/             git-ignored, except their READMEs
-├── scripts/artifacts.sh       snapshot · verify · status · list · hash
 ├── docs/                      TESTING.md · ARTIFACTS.md · agents/HANDBOOK.md
 └── infra/README.md            (yours)
 ```
@@ -187,10 +200,9 @@ opt-engine/
 
 | | Shared (every profile) | Profile-specific |
 |---|---|---|
-| **Context** | `CLAUDE.md` (project context, commands, working agreement, "how we work with Claude"); `AGENTS.md` for multi-agent repos | `.claude/rules/<profile>.md`, always loaded |
-| **Path rules** | `testing.md` (test files anywhere), `github-actions.md` (`.github/**`) | `data.md`, `notebooks.md`, `prompts.md`, `evals.md`, `exercises.md`, `literature.md`, loaded only when Claude touches matching files |
-| **Commands** | `/review` (independent review), `/handoff` (summary for a fresh session) | n/a |
-| **Skills** | `steward`, `task-intake` (engineering profiles) | see [Profiles](#-profiles) |
+| **Context** | `AGENTS.md` (project context, commands, working agreement, "how we work with coding agents"), read by every agent; `CLAUDE.md` imports it | the profile's always-on rules, inside `AGENTS.md` |
+| **Path rules** | `testing.md` (test files anywhere), `github-actions.md` (`.github/**`) | `data.md`, `notebooks.md`, `prompts.md`, `evals.md`, `exercises.md`, `literature.md`, loaded only when the agent touches matching files |
+| **Skills** | `review` (independent review), `handoff` (summary for a fresh session), `steward`, `task-intake` (engineering profiles) | see [Profiles](#-profiles) |
 | **Roles** (subagents, scoped tools) | `reviewer` (fresh-context, profile-aware; all but study), `test-writer` (engineering profiles) | none: only these two near-universal roles ship; add domain roles as stubs |
 | **Hooks** | guard-bash, guard-paths, format-on-edit, stop-checks, audit-log, session-start | `data/raw/` read-only (ml, research, artifacts); `exercises/` read-only (study) |
 | **Tools** | permissions (allow your lint/test commands; deny secrets); `.mcp.json` with the GitHub MCP server (strict tier) | WebSearch pre-approved (research); Learning output style (study) |
@@ -213,12 +225,12 @@ powerharnessing11k doesn't know your domain (your solver, your data sources, you
 
 | Option | Creates |
 |---|---|
-| `--skills formulate,run-solver` | `.claude/skills/<name>/SKILL.md` with frontmatter and a step-by-step template |
-| `--roles model-checker` | `.claude/agents/<name>.md`, read-only tools by default |
-| `--rules "solver=src/solver/** bench=benchmarks/**"` | `.claude/rules/<name>.md`, loaded only for matching paths |
+| `--skills formulate,run-solver` | `.agents/skills/<name>/SKILL.md` with frontmatter and a step-by-step template |
+| `--roles model-checker` | a subagent for each selected agent (`.claude/agents/<name>.md`), read-only by default |
+| `--rules "solver=src/solver/** bench=benchmarks/**"` | a path-scoped rule for each selected agent (`.claude/rules/<name>.md`), loaded only for matching paths |
 | `--dirs "infra experiments"` | `<dir>/README.md` |
 
-Every `CLAUDE.md` also gets a **Project context** section to fill in: domain terms, key libraries, architecture, invariants, gotchas.
+Every `AGENTS.md` also gets a **Project context** section to fill in: domain terms, key libraries, architecture, invariants, gotchas.
 
 ### 🧪 The software path
 
@@ -253,7 +265,7 @@ Every PR gets one required check, **PR gate**:
 
 - **Diff guard** checks every PR the same way, whoever or whatever wrote it. Nobody has to declare or sign agent work. It flags deleted or skipped tests, removed assertions, protected-path edits, oversized diffs, new dependencies, large files, re-pinned artifacts, notebooks with outputs, and prompt changes without eval changes.
 - **AI review** (strict tier, or add the `review` module; needs `ANTHROPIC_API_KEY`): a fresh Claude Code instance (`claude -p`, read-only tools) reviews each changed file, then does one cross-file pass.
-  - Findings follow a JSON schema and your team's `.github/review/criteria.md`: categories to report or skip, severity definitions, and examples.
+  - Findings follow a JSON schema and your team's `scripts/ci/review/criteria.md`: categories to report or skip, severity definitions, and examples.
   - Findings are posted inline; low-confidence ones go to "needs a human look".
   - Every finding is fingerprinted, so later runs report only what's new.
 - **Gate:** blocking findings fail the check. A maintainer can add `gate-override` to accept the risk, and the override is recorded. A sticky **scorecard** shows every signal and a transparent score.
@@ -294,7 +306,7 @@ Rules that must always hold are hooks and gates; `CLAUDE.md` only guides. Every 
 ## 📈 Monitoring
 
 1. **Live usage** (`telemetry`): Claude Code OpenTelemetry metrics (cost, tokens, sessions, tool decisions) sent to your collector.
-2. **Local audit** (`audit`): `.claude/logs/events.jsonl` (git-ignored) records each tool call, blocked action, and failed check; `.claude/scripts/agent-report.sh --days 7` summarises it.
+2. **Local audit** (`audit`): `.agents/logs/events.jsonl` (git-ignored) records each tool call, blocked action, and failed check; `.agents/scripts/agent-report.sh --days 7` summarises it.
 3. **Outcomes** (PR gate): a scorecard on every PR, and the weekly digest.
 
 ## ⌨️ Command reference
@@ -317,7 +329,7 @@ setup.sh version | help
 | `--stack NAME` | `node` · `python` · `go` · `rust` · `generic` (default: detected) |
 | `--modules LIST` | comma-separated modules, overriding the tier |
 | `--guard LEVEL` | `relaxed` · `standard` · `strict` |
-| `--agents KIND` | `claude` · `multi` (adds `AGENTS.md`) |
+| `--agents LIST` | coding agents to set up, comma-separated (available now: `claude`) |
 | `--owners LIST` | CODEOWNERS entries, e.g. `"@acme/platform"` |
 | `--otel URL` | OTLP endpoint; enables telemetry |
 | `--artifacts` / `--no-artifacts` | local data/model versioning on or off |
@@ -350,7 +362,14 @@ No. It only creates files that don't exist, and `.gitignore` only gains the line
 <details>
 <summary><b>Does it work with agents other than Claude Code?</b></summary>
 
-Choose "Claude Code + others" (or `--agents multi`) and the shared guidance goes in `AGENTS.md`, which Copilot, Codex, Cursor, and others read; `CLAUDE.md` imports it. Hooks, skills, and subagents are Claude Code features; CI checks and the PR gate apply to every PR whoever wrote it.
+Partly today, fully soon. `AGENTS.md` is always written and is the source of truth, and skills live in `.agents/skills/`: Codex CLI, Cursor, GitHub Copilot, and Gemini CLI read both without any extra setup. The guard hooks, permissions, path-scoped rules, and subagents are currently wired up for Claude Code only. Adapters for the other agents are being added one at a time, Codex CLI first; [docs/design/providers.md](docs/design/providers.md) has the plan and what each agent will and won't get. CI checks and the PR gate apply to every PR whoever wrote it.
+
+</details>
+
+<details>
+<summary><b>Does it work on Windows?</b></summary>
+
+The tool itself needs bash, so run it from WSL or Git Bash. The repo it produces works anywhere, with one thing to know: `.claude/skills` is a symbolic link to `.agents/skills`. Windows collaborators need symlinks enabled in git (`git config --global core.symlinks true`, with Developer Mode on) before cloning, or Claude Code will not find the skills.
 
 </details>
 

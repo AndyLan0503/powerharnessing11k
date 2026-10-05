@@ -7,8 +7,8 @@ module_apply() {
   emit file data-readme.md data/README.md
   emit file models-readme.md models/README.md
   emit file ARTIFACTS.md docs/ARTIFACTS.md
-  emit file rule.md .claude/rules/artifacts.md
+  emit_rule artifacts rule.md
   emit append gitignore.tmpl .gitignore
-  settings_allow 'Bash(scripts/artifacts.sh verify:*)' 'Bash(scripts/artifacts.sh status:*)' \
-    'Bash(scripts/artifacts.sh list:*)' 'Bash(scripts/artifacts.sh hash:*)'
+  settings_allow_cmd 'scripts/artifacts.sh verify' 'scripts/artifacts.sh status' \
+    'scripts/artifacts.sh list' 'scripts/artifacts.sh hash'
 }

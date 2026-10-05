@@ -17,7 +17,7 @@ HARNESS_ROOT=$(cd "$(dirname "$_self")/.." && pwd)
 HARNESS_VERSION=$(cat "$HARNESS_ROOT/VERSION")
 export HARNESS_ROOT HARNESS_VERSION
 
-for _lib in util ui render apply settings detect modules custom wizard; do
+for _lib in util ui render apply settings agents detect modules custom wizard; do
   # shellcheck disable=SC1090
   . "$HARNESS_ROOT/lib/$_lib.sh"
 done
@@ -46,7 +46,8 @@ Options:
       --stack NAME      node | python | go | rust | generic (default: detected)
       --modules LIST    Comma-separated modules (overrides the tier's list)
       --guard LEVEL     relaxed | standard | strict (overrides the tier's level)
-      --agents KIND     claude | multi (multi adds AGENTS.md for other agents)
+      --agents LIST     Comma-separated coding agents (available: claude).
+                        AGENTS.md is always written and is the source of truth
       --owners LIST     CODEOWNERS entries, e.g. "@acme/platform"
       --otel URL        OTLP endpoint; enables the telemetry module
       --artifacts       Version local data/model artifacts (artifacts.lock)
@@ -144,7 +145,7 @@ validate_answers() {
   list_has "$ALL_PROFILES" "${HV_PROFILE:-}" || harness_die "invalid profile: ${HV_PROFILE:-} (${ALL_PROFILES// /, })"
   case $HV_STACK in node | python | go | rust | generic) ;; *) harness_die "invalid stack: $HV_STACK" ;; esac
   case $HV_GUARD_LEVEL in relaxed | standard | strict) ;; *) harness_die "invalid guard level: $HV_GUARD_LEVEL" ;; esac
-  case $HV_AGENT_TOOLS in claude | multi) ;; *) harness_die "invalid agents value: $HV_AGENT_TOOLS" ;; esac
+  agents_validate
   case $HV_DIFF_BUDGET in '' | *[!0-9]*) harness_die "DIFF_BUDGET must be a number" ;; esac
   custom_validate
   HV_MODULES=$(modules_normalize "$HV_MODULES")
@@ -164,7 +165,7 @@ apply_flag_overrides() {
   fi
   if [ -n "$OPT_MODULES" ]; then HV_MODULES=${OPT_MODULES//,/ }; fi
   [ -z "$OPT_GUARD" ] || HV_GUARD_LEVEL=$OPT_GUARD
-  [ -z "$OPT_AGENTS" ] || HV_AGENT_TOOLS=$OPT_AGENTS
+  [ -z "$OPT_AGENTS" ] || HV_AGENTS=${OPT_AGENTS//,/ }
   [ -z "$OPT_OWNERS_SET" ] || HV_CODEOWNERS=$OPT_OWNERS
   if [ -n "$OPT_OTEL" ]; then
     HV_OTEL_ENDPOINT=$OPT_OTEL
@@ -194,23 +195,21 @@ EOF
   if [ -n "$OPT_CUSTOM_SET" ]; then
     HV_SKILLS=${OPT_SKILLS//,/ } HV_ROLES=${OPT_ROLES//,/ } HV_RULES=$OPT_RULES HV_DIRS=${OPT_DIRS//,/ }
   fi
-  export HV_MODULES HV_GUARD_LEVEL HV_AGENT_TOOLS HV_CODEOWNERS HV_OTEL_ENDPOINT \
+  export HV_MODULES HV_GUARD_LEVEL HV_AGENTS HV_CODEOWNERS HV_OTEL_ENDPOINT \
     HV_SKILLS HV_ROLES HV_RULES HV_DIRS
 }
 
 do_apply() {
-  local tmp m
+  local m
   validate_answers
   derive_vars
+  agents_export_vars
   apply_reset
   settings_reset
+  agents_begin
   for m in $HV_MODULES; do module_run "$m"; done
   custom_apply
-
-  tmp=$HARNESS_TMP/settings.json
-  settings_render >"$tmp"
-  MODULE_NAME=core
-  apply_rendered file "$tmp" .claude/settings.json
+  agents_finish
 
   printf '\n'
   [ -z "$DRY_RUN" ] || ui_warn "Dry run: nothing was written."
@@ -259,16 +258,16 @@ cmd_configure() {
   HV_DEFAULT_BRANCH=$(detect_default_branch "$TARGET")
   HV_STACK=$(detect_stack "$TARGET")
   HV_PKG_MANAGER=$(detect_pkg_manager "$TARGET" "$HV_STACK")
-  HV_AGENT_TOOLS=claude HV_CODEOWNERS='' HV_OTEL_ENDPOINT='' HV_DIFF_BUDGET=800 HV_EVAL_CMD=''
+  HV_AGENTS=claude HV_CODEOWNERS='' HV_OTEL_ENDPOINT='' HV_DIFF_BUDGET=800 HV_EVAL_CMD=''
   HV_SKILLS='' HV_ROLES='' HV_RULES='' HV_DIRS=''
-  export HV_PROJECT_NAME HV_DEFAULT_BRANCH HV_STACK HV_PKG_MANAGER HV_AGENT_TOOLS \
+  export HV_PROJECT_NAME HV_DEFAULT_BRANCH HV_STACK HV_PKG_MANAGER HV_AGENTS \
     HV_CODEOWNERS HV_OTEL_ENDPOINT HV_DIFF_BUDGET HV_EVAL_CMD HV_SKILLS HV_ROLES HV_RULES HV_DIRS
   stack_defaults
   profile_load software recommended
   apply_flag_overrides
 
-  if [ -e "$TARGET/.claude/settings.json" ] && [ -z "$FORCE" ]; then
-    ui_warn "This repository already has .claude/settings.json: existing files will be kept and only missing ones created."
+  if [ -e "$TARGET/AGENTS.md" ] && [ -z "$FORCE" ]; then
+    ui_warn "This repository already has AGENTS.md: existing files will be kept and only missing ones created."
   fi
   if [ -z "$YES" ]; then
     if ! { : <"$HARNESS_TTY"; } 2>/dev/null; then

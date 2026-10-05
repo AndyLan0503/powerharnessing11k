@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Summarise the local agent audit log written by the Claude Code hooks.
-# Usage: .claude/scripts/agent-report.sh [--days N] [--log FILE]
+# Summarise the local agent audit log written by the hooks in .agents/hooks/.
+# Usage: .agents/scripts/agent-report.sh [--days N] [--log FILE]
 # Self-contained (bash, awk, date); nothing to install.
 set -eu
 

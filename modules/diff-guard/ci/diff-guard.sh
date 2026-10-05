@@ -18,7 +18,7 @@ OUTPUT=${GITHUB_OUTPUT:-/dev/null}
 TEST_PATH='(^|/)(tests?|__tests__|spec|specs)/|[._-](test|spec)\.[[:alnum:]]+$|_test\.go$|(^|/)test_[^/]*\.py$'
 SKIP_MARK='\.(skip|only)\(|(^|[^[:alnum:]_])x(it|describe|test)\(|it\.todo\(|@pytest\.mark\.(skip|xfail)|@unittest\.skip|t\.Skip(Now|f)?\(|#\[ignore\]|@Disabled'
 ASSERT='assert|expect\(|\.should|require\.|t\.(Error|Fatal)'
-PROTECTED='^(\.github/workflows/|\.github/scripts/|\.github/CODEOWNERS$|CODEOWNERS$|\.claude/settings\.json$|\.claude/hooks/)'
+PROTECTED='^(\.github/workflows/|scripts/ci/|\.github/CODEOWNERS$|CODEOWNERS$|\.agents/hooks/{{PROTECTED_REGEX}})'
 MANIFESTS='(^|/)(package\.json|pyproject\.toml|requirements[^/]*\.txt|go\.mod|Cargo\.toml|Gemfile|pom\.xml|build\.gradle(\.kts)?)$'
 LOCKFILES='(^|/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|uv\.lock|poetry\.lock|go\.sum|Cargo\.lock|Gemfile\.lock)$'
 

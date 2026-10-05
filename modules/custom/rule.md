@@ -6,7 +6,7 @@ paths: [{{ITEM_PATHS}}]
 
 <!-- TODO(team): write the conventions for these files, then delete this comment.
 
-This rule loads only when Claude works on files matching the paths above, so
+This rule loads only when the agent works on files matching the paths above, so
 it can be specific without costing context elsewhere. Useful content:
 
 - Conventions that differ from the rest of the repo (structure, naming, units).

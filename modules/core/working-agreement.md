@@ -74,7 +74,6 @@ Run lint and tests before you say a task is done, and report the result honestly
 
 {{> how-we-work.md}}
 {{/if}}
-{{#if MULTI_AGENT}}
 {{#if MOD_ML}}
 
 {{> ../ml/rules/profile.md}}
@@ -91,13 +90,6 @@ Run lint and tests before you say a task is done, and report the result honestly
 
 {{> ../research/rules/profile.md}}
 {{/if}}
-{{/if}}
-{{#unless MULTI_AGENT}}
-{{#if PROFILE_RULES}}
-
-Profile-specific rules are in `.claude/rules/` and load automatically, some only when you work on matching files.
-{{/if}}
-{{/if}}
 
 ## Guardrails (level: {{GUARD_LEVEL}})
 
@@ -105,10 +97,10 @@ Profile-specific rules are in `.claude/rules/` and load automatically, some only
 Hooks block only catastrophic actions: recursive deletes of `/` or `~`{{#unless PROFILE_SOLO}}, pushing straight to `{{DEFAULT_BRANCH}}`{{/if}}, and edits to secret files.
 {{/if}}
 {{#if GUARD_STANDARD}}
-Hooks in `.claude/hooks/` block destructive commands (force-push, `--no-verify`, `rm -rf` of root/home, piping downloads into a shell{{#unless PROFILE_SOLO}}, pushing straight to `{{DEFAULT_BRANCH}}`{{/if}}) and edits to secret files.
+Hooks in `.agents/hooks/` block destructive commands (force-push, `--no-verify`, `rm -rf` of root/home, piping downloads into a shell{{#unless PROFILE_SOLO}}, pushing straight to `{{DEFAULT_BRANCH}}`{{/if}}) and edits to secret files.
 {{/if}}
 {{#if GUARD_STRICT}}
-Strict mode. In addition to the standard rules, these paths are human-only: `.github/workflows/`, `CODEOWNERS`, `.claude/settings.json`, `.claude/hooks/`. `git reset --hard` and any force-push are blocked, and the Stop hook runs lint/typecheck before you finish.
+Strict mode. In addition to the standard rules, these paths are human-only: `.github/workflows/`, `scripts/ci/`, `CODEOWNERS`, `.agents/hooks/`{{PROTECTED_TEXT}}. `git reset --hard` and any force-push are blocked, and lint/typecheck must pass before you finish.
 {{/if}}
 {{#if PROTECT_RAW_DATA}}
 `data/raw/` is read-only for agents: raw data is immutable. Write derived data to `data/processed/` (or `data/interim/`) with the script that produced it.
@@ -117,23 +109,26 @@ Strict mode. In addition to the standard rules, these paths are human-only: `.gi
 `exercises/` is the learner's own work: agents may read it and comment, but never edit it.
 {{/if}}
 {{#if MOD_AUDIT}}
-Blocked actions are logged to `.claude/logs/events.jsonl` (git-ignored).
+Blocked actions are logged to `.agents/logs/events.jsonl` (git-ignored).
 {{/if}}
 
 ## Where things live
 
-- `.claude/`: the team's agent setup: `settings.json` (permissions and hook wiring), `hooks/`, `rules/`, `skills/`, `agents/`, `commands/`. It is ordinary code: change it through a PR like anything else.
+- `AGENTS.md` (this file): the source of truth for project context and rules, for every coding agent.
+- `.agents/skills/`: procedures any agent can follow on demand. `.agents/hooks/`: the guard scripts every agent's hooks call.
+{{AGENT_LAYOUT}}
+- All of it is ordinary code: change it through a PR like anything else.
 {{#if MOD_AUDIT}}
-- `.claude/scripts/agent-report.sh`: summary of local agent activity and blocked actions.
+- `.agents/scripts/agent-report.sh`: summary of local agent activity and blocked actions.
 {{/if}}
 {{#if MOD_COLLAB}}
 - `CONTRIBUTING.md` and `docs/agents/HANDBOOK.md`: how humans and agents collaborate here.
 {{/if}}
 {{#if MOD_REVIEW}}
-- `REVIEW.md`: the review checklist used by humans and the Claude review workflow.
+- `REVIEW.md`: the review checklist used by humans and the AI review in the PR gate.
 {{/if}}
 {{#if MOD_SKILLS}}
-- `.claude/skills/steward`, `.claude/skills/task-intake`: driving PRs to green, starting work well.
+- Skills `steward` and `task-intake`: driving PRs to green, starting work well.
 {{/if}}
 {{#if MOD_ML}}
 - `EXPERIMENTS.md`: experiment log. `docs/DATA.md`: dataset cards. Skills: `experiment`, `data-audit`.

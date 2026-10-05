@@ -3,9 +3,9 @@
 # data sources, your review checklist), so instead of guessing it creates
 # blank, correctly placed files that tell the team what to write:
 #
-#   HV_SKILLS  "name name"            -> .claude/skills/<name>/SKILL.md
-#   HV_ROLES   "name name"            -> .claude/agents/<name>.md
-#   HV_RULES   "name=glob[,glob] ..." -> .claude/rules/<name>.md (path-scoped)
+#   HV_SKILLS  "name name"            -> .agents/skills/<name>/SKILL.md
+#   HV_ROLES   "name name"            -> a subagent, per selected agent
+#   HV_RULES   "name=glob[,glob] ..." -> a path-scoped rule, per selected agent
 #   HV_DIRS    "dir dir/sub"          -> <dir>/README.md
 #
 # Templates live in modules/custom/. Every stub contains "TODO(team)".
@@ -51,12 +51,12 @@ custom_apply() {
   for item in ${HV_SKILLS:-}; do
     HV_ITEM_NAME=$item
     export HV_ITEM_NAME
-    emit file skill.md ".claude/skills/$item/SKILL.md"
+    emit_skill "$item" skill.md
   done
   for item in ${HV_ROLES:-}; do
     HV_ITEM_NAME=$item
     export HV_ITEM_NAME
-    emit file role.md ".claude/agents/$item.md"
+    emit_role "$item" role.md
   done
   set -f
   for item in ${HV_RULES:-}; do
@@ -66,7 +66,7 @@ custom_apply() {
     for g in ${globs//,/ }; do paths="${paths:+$paths, }$(printf '"%s"' "$g")"; done
     HV_ITEM_NAME=$name HV_ITEM_PATHS=$paths
     export HV_ITEM_NAME HV_ITEM_PATHS
-    emit file rule.md ".claude/rules/$name.md"
+    emit_rule "$name" rule.md
   done
   set +f
   for item in ${HV_DIRS:-}; do

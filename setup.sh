@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # harness setup: the one entry point. Nothing to install, nothing on PATH.
 #
-#   git clone --depth=1 https://github.com/reclan-ai/harness-workflow ~/.harness-workflow
+#   git clone --depth=1 https://github.com/AndyLan0503/powerharnessing11k ~/.harness-workflow
 #   cd ~/work/my-project            # an empty or existing repository
 #   ~/.harness-workflow/setup.sh    # runs the setup wizard here
 #

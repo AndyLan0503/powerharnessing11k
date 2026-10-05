@@ -3,7 +3,7 @@
 **A repeatable agentic harness for any git repository.** Think `p10k configure`, but instead of a zsh prompt it sets up everything a team needs to work well with coding agents: agent context and rules, skills, roles, guardrail hooks, CI with AI review and a quality gate, and monitoring of what agents actually do. The practices follow Anthropic's Claude Certified Architect exam guides ([how](docs/CCAR-ALIGNMENT.md)).
 
 ```sh
-git clone --depth=1 https://github.com/reclan-ai/harness-workflow ~/.harness-workflow
+git clone --depth=1 https://github.com/AndyLan0503/powerharnessing11k ~/.harness-workflow
 cd ~/work/my-project            # an empty folder or an existing repo
 ~/.harness-workflow/setup.sh    # the setup wizard
 ```

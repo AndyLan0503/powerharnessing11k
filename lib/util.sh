@@ -64,7 +64,7 @@ web_url() {
 }
 
 # Where this copy of harness came from, so a company fork links to itself.
-HARNESS_UPSTREAM_DEFAULT=https://github.com/reclan-ai/harness-workflow
+HARNESS_UPSTREAM_DEFAULT=https://github.com/AndyLan0503/powerharnessing11k
 harness_url() {
   local remote
   if remote=$(git -C "$HARNESS_ROOT" remote get-url origin 2>/dev/null) && web_url "$remote"; then

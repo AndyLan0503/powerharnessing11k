@@ -201,7 +201,7 @@ _wizard_edit() { # KEY label
   local var="HV_$1"
   ui_line "$2" "${!var:-}"
   [ "$UI_LINE" != "-" ] || UI_LINE=''
-  printf -v "$var" '%s' "$UI_LINE"
+  set_var "$var" "$UI_LINE"
   export "${var?}"
 }
 

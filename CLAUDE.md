@@ -7,7 +7,7 @@ This repo **is** powerharnessing11k ("harness" for short in code and docs): a ba
 - **What this is:** a one-shot, p10k-style setup wizard. It writes plain files into a target repo and is never needed there again; the target team owns and maintains everything it wrote.
 - **Layout:** `bin/harness` (CLI); `lib/` (engine: ui, wizard, detect, render, apply, settings, modules, custom); `modules/<name>/` (`module.sh` with `MODULE_DESC` and `module_apply`, plus templates that end up in *other* repos); `modules/custom/` (TODO(team) stubs for `--skills/--roles/--rules/--dirs`); `profiles/` (what a repo is for, plus tiers); `tests/run.sh`; `docs/ARCHITECTURE.md` (read it before changing the engine or adding a module).
 - **Constraints and invariants:**
-  - **bash 3.2 compatible**: no associative arrays, `mapfile`, `${var,,}`, or `declare -n`. POSIX awk only. CI runs the tests on macOS with `/bin/bash`.
+  - **bash 3.2 compatible**: no associative arrays, `mapfile`, `${var,,}`, `declare -n`, or `printf -v` (use `set_var`; 3.2 leaves the variable unset for an empty value). POSIX awk only. Homebrew's bash hides these: run `PATH=<dir with bash -> /bin/bash>:$PATH tests/run.sh` on a Mac before pushing engine changes. CI runs the tests on macOS with `/bin/bash`.
   - Generated hooks must work without `jq` (see `modules/core/hooks/lib.sh`).
   - Generated files never reference harness, `.harness/`, or this repo's URL: target repos must not depend on us (`test_no_harness_footprint`).
   - Bootstrap is create-only: existing files are skipped unless `--force`; `.gitignore` is only appended to.

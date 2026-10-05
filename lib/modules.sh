@@ -104,7 +104,7 @@ derive_vars() {
   HV_PROFILE=${HV_PROFILE:-software}
   for m in $ALL_PROFILES; do
     up=$(printf '%s' "$m" | tr 'a-z' 'A-Z')
-    if [ "$HV_PROFILE" = "$m" ]; then printf -v "HV_PROFILE_$up" '1'; else printf -v "HV_PROFILE_$up" ''; fi
+    if [ "$HV_PROFILE" = "$m" ]; then set_var "HV_PROFILE_$up" 1; else set_var "HV_PROFILE_$up" ''; fi
     export "HV_PROFILE_$up"
   done
   HV_PROFILE_TITLE=$(profile_field "$HV_PROFILE" TITLE)
@@ -145,7 +145,7 @@ derive_vars() {
           harness_die "the $(printf '%s' "$k" | tr 'A-Z_' 'a-z-') command '$v' calls make, but harness writes the Makefile here. Give the underlying command instead." ;;
       esac
     fi
-    printf -v "HV_MK_${k}_CMD" '%s' "${v//\$/\$\$}"
+    set_var "HV_MK_${k}_CMD" "${v//\$/\$\$}"
     export "HV_MK_${k}_CMD"
   done
   HV_PY_DIST=$(printf '%s' "$HV_PROJECT_NAME" | tr 'A-Z' 'a-z' | sed 's/[^a-z0-9]\{1,\}/-/g; s/^-//; s/-$//')
@@ -162,17 +162,17 @@ derive_vars() {
 
   for m in $ALL_MODULES; do
     up=$(printf '%s' "$m" | tr 'a-z-' 'A-Z_')
-    if list_has "$HV_MODULES" "$m"; then printf -v "HV_MOD_$up" '1'; else printf -v "HV_MOD_$up" ''; fi
+    if list_has "$HV_MODULES" "$m"; then set_var "HV_MOD_$up" 1; else set_var "HV_MOD_$up" ''; fi
     export "HV_MOD_$up"
   done
   for m in node python go rust generic; do
     up=$(printf '%s' "$m" | tr 'a-z' 'A-Z')
-    if [ "$HV_STACK" = "$m" ]; then printf -v "HV_STACK_$up" '1'; else printf -v "HV_STACK_$up" ''; fi
+    if [ "$HV_STACK" = "$m" ]; then set_var "HV_STACK_$up" 1; else set_var "HV_STACK_$up" ''; fi
     export "HV_STACK_$up"
   done
   for m in npm pnpm yarn bun uv poetry pip; do
     up=$(printf '%s' "$m" | tr 'a-z' 'A-Z')
-    if [ "$HV_PKG_MANAGER" = "$m" ]; then printf -v "HV_PM_$up" '1'; else printf -v "HV_PM_$up" ''; fi
+    if [ "$HV_PKG_MANAGER" = "$m" ]; then set_var "HV_PM_$up" 1; else set_var "HV_PM_$up" ''; fi
     export "HV_PM_$up"
   done
 

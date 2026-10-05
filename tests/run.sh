@@ -1001,6 +1001,20 @@ EOF"
   check "version names the tool" sh -c "'$H' version | grep -q '^powerharnessing11k '"
 }
 
+# Constructs that behave differently on bash 3.2 (stock macOS) stay out.
+test_bash32_portability() {
+  # `printf -v VAR ''` leaves VAR unset on bash 3.2; use set_var instead.
+  check_not "no printf -v in the engine" grep -rnE '^[^#]*printf -v ' "$ROOT/bin" "$ROOT/lib" "$ROOT/modules"
+  check "set_var assigns an empty value" bash -c "set -u; . '$ROOT/lib/util.sh'; set_var HV_X ''; [ -z \"\$HV_X\" ]"
+  check "set_var keeps special characters" bash -c ". '$ROOT/lib/util.sh'; set_var HV_X 'a \$b \"c\" \\d'; [ \"\$HV_X\" = 'a \$b \"c\" \\d' ]"
+  if [ -x /bin/bash ]; then
+    local d
+    d=$(new_repo sysbash)
+    check "bootstrap runs under /bin/bash" /bin/bash "$H" configure --yes -C "$d" --stack python --artifacts
+    check "and writes the harness" test -f "$d/.claude/settings.json"
+  fi
+}
+
 test_cli_errors() {
   check_not "unknown command fails" "$H" frobnicate
   check_not "unknown module fails" "$H" configure --yes -C "$(new_repo err)" --modules core,nope

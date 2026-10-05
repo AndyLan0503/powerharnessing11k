@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# harness: one-shot agentic-harness bootstrap for a git repository.
+# powerharnessing11k: one-shot agentic-harness bootstrap for a git repository.
 # https://github.com/AndyLan0503/powerharnessing11k
 #
-# harness runs once per repository. It creates the files a team needs to work
+# It runs once per repository. It creates the files a team needs to work
 # with coding agents and then steps away: nothing it writes refers back to it,
 # and the team owns and maintains every file from then on.
 set -eu
@@ -24,14 +24,14 @@ done
 
 usage() {
   cat <<EOF
-harness $HARNESS_VERSION: one-shot agentic harness bootstrap for a git repository
+$HARNESS_NAME $HARNESS_VERSION: one-shot agentic harness bootstrap for a git repository
 
-Usage: harness [configure] [options]     run the setup wizard (default)
-       harness list                      show profiles, tiers, and modules
-       harness version | help
+Usage: setup.sh [configure] [options]    run the setup wizard (default)
+       setup.sh list                     show profiles, tiers, and modules
+       setup.sh version | help
 
-harness creates missing files and never touches existing ones (unless
---force). After the bootstrap the repository owns every file; harness is not
+It creates missing files and never touches existing ones (unless --force).
+After the bootstrap the repository owns every file; $HARNESS_NAME is not
 needed again.
 
 Options:
@@ -39,6 +39,7 @@ Options:
   -y, --yes             Non-interactive: accept detected defaults
   -n, --dry-run         Show what would be written without writing anything
   -f, --force           Overwrite files that already exist
+      --verbose         List every file written, not a summary
       --profile NAME    software | ml | agentic | study | research (default: software)
       --tier NAME       minimal | recommended | strict (default: recommended;
                         --preset is an alias, and "standard" means recommended)
@@ -70,9 +71,9 @@ case ${1:-} in
   -v | --version) CMD=version; shift ;;
   -h | --help) CMD=help; shift ;;
   '' | -*) ;;
-  *) harness_die "unknown command: $1 (see: harness help)" ;;
+  *) harness_die "unknown command: $1 (see: setup.sh help)" ;;
 esac
-TARGET=. YES='' DRY_RUN='' FORCE='' OPT_PROFILE='' OPT_TIER='' OPT_STACK='' OPT_MODULES=''
+TARGET=. YES='' DRY_RUN='' FORCE='' VERBOSE='' OPT_PROFILE='' OPT_TIER='' OPT_STACK='' OPT_MODULES=''
 OPT_GUARD='' OPT_AGENTS='' OPT_OWNERS='' OPT_OWNERS_SET='' OPT_OTEL='' OPT_ARTIFACTS=''
 OPT_SKILLS='' OPT_ROLES='' OPT_RULES='' OPT_DIRS='' OPT_CUSTOM_SET='' OPT_CMDS=''
 while [ $# -gt 0 ]; do
@@ -81,6 +82,7 @@ while [ $# -gt 0 ]; do
     -y | --yes) YES=1 ;;
     -n | --dry-run) DRY_RUN=1 ;;
     -f | --force) FORCE=1 ;;
+    --verbose) VERBOSE=1 ;;
     --profile) OPT_PROFILE=${2:?}; shift ;;
     --tier | --preset) OPT_TIER=${2:?}; shift ;;
     --stack) OPT_STACK=${2:?}; shift ;;
@@ -98,14 +100,14 @@ while [ $# -gt 0 ]; do
     --cmd)
       case ${2-} in
         install=* | lint=* | typecheck=* | test=* | full-test=* | format=* | eval=*) ;;
-        *) harness_die "invalid --cmd '${2-}' (expected KEY=CMD; see: harness help)" ;;
+        *) harness_die "invalid --cmd '${2-}' (expected KEY=CMD; see: setup.sh help)" ;;
       esac
       OPT_CMDS="$OPT_CMDS$2
 "
       shift
       ;;
     -h | --help) CMD=help ;;
-    *) harness_die "unknown option: $1 (see: harness help)" ;;
+    *) harness_die "unknown option: $1 (see: setup.sh help)" ;;
   esac
   shift
 done
@@ -212,10 +214,10 @@ do_apply() {
 
   printf '\n'
   [ -z "$DRY_RUN" ] || ui_warn "Dry run: nothing was written."
-  apply_summary
+  if [ -n "$VERBOSE" ]; then apply_summary_full; else apply_summary; fi
   printf '\n'
   if [ "$APPLY_SKIPPED" -gt 0 ]; then
-    ui_warn "$APPLY_SKIPPED file(s) already existed and were left as they are. Use --force to overwrite them."
+    ui_warn "Existing files were left as they are. Use --force to overwrite them."
   fi
 }
 
@@ -224,9 +226,16 @@ next_steps() {
   local n=1
   ui_ok "Bootstrapped $TARGET"
   printf '\n'
-  ui_info "${C_BOLD}Next steps${C_RESET} (everything written is now yours; harness is not needed again)"
-  ui_info "  $n. Fill in the TODOs: the Project context in CLAUDE.md$(custom_has_stubs && printf ', and the stubs listed above')"
-  n=$((n + 1))
+  ui_info "${C_BOLD}Next steps${C_RESET} (everything written is now yours; $HARNESS_NAME is not needed again)"
+  local todos f
+  todos=$(apply_todo_files)
+  if [ -n "$todos" ]; then
+    ui_info "  $n. Fill in the TODO(team) notes in these files (find them again with: grep -rl 'TODO(team)' .)"
+    while IFS= read -r f; do ui_info "       ${C_DIM}$f${C_RESET}"; done <<EOF
+$todos
+EOF
+    n=$((n + 1))
+  fi
   if [ -n "$HV_SCAFFOLD_PYTHON" ]; then
     ui_info "  $n. make setup && make check     (installs dev tools with uv, then runs every fast check)"
     n=$((n + 1))
@@ -269,7 +278,7 @@ cmd_configure() {
     ui_clear
     ui_banner
   else
-    ui_info "${C_BOLD}harness${C_RESET} $HARNESS_VERSION → $TARGET  ${C_DIM}($HV_PROFILE, $HV_STACK, $HV_GUARD_LEVEL)${C_RESET}"
+    ui_info "${C_BOLD}$HARNESS_NAME${C_RESET} $HARNESS_VERSION → $TARGET  ${C_DIM}($HV_PROFILE, $HV_STACK, $HV_GUARD_LEVEL)${C_RESET}"
   fi
   do_apply
   next_steps
@@ -296,6 +305,6 @@ cmd_list() {
 case $CMD in
   configure | init) cmd_configure ;;
   list) cmd_list ;;
-  version) echo "harness $HARNESS_VERSION" ;;
+  version) echo "$HARNESS_NAME $HARNESS_VERSION" ;;
   help) usage ;;
 esac

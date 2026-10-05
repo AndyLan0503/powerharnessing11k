@@ -1,6 +1,6 @@
-# harness-workflow
+# powerharnessing11k
 
-This repo **is** harness: a bash CLI (`bin/harness`, entry point `setup.sh`) that bootstraps an agentic harness into other repos, once. It also uses a harness itself, bootstrapped by `bin/harness` and maintained by hand since.
+This repo **is** powerharnessing11k ("harness" for short in code and docs): a bash CLI (`bin/harness`, entry point `setup.sh`) that bootstraps an agentic harness into other repos, once. It also uses a harness itself, bootstrapped by `bin/harness` and maintained by hand since.
 
 ## Project context
 

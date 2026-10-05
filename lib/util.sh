@@ -2,8 +2,10 @@
 # Shared helpers. Must stay bash 3.2 compatible (stock macOS): no associative
 # arrays, no ${var,,}, no mapfile, no `declare -n`.
 
+HARNESS_NAME=powerharnessing11k
+
 harness_die() {
-  printf '%s\n' "harness: $*" >&2
+  printf '%s\n' "$HARNESS_NAME: $*" >&2
   exit 1
 }
 

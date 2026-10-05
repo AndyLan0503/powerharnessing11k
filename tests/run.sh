@@ -936,6 +936,55 @@ test_devtools_respects_existing_projects() {
   check_not "self-calling make rejected" "$H" configure --yes -C "$(new_repo mk-self go.mod)" --cmd 'test=make test'
 }
 
+# The interactive wizard, end to end through a pseudo-terminal.
+test_wizard_flow() {
+  command -v python3 >/dev/null 2>&1 || { ok; return; }
+  local d=$WORK/wiz/opt-engine out=$WORK/wiz.out
+  rm -rf "$WORK/wiz"
+  mkdir -p "$d"
+  git -C "$d" init -q -b main
+  # profile, stack, commands, agents, tier, artifacts, stubs (one invalid dir first), owners, telemetry, apply
+  printf '%s\n' key:1 key:2 key:1 key:1 key:2 key:1 key:2 \
+    line:formulate line:- line:- 'line:../evil' key:x \
+    line:formulate line:- line:- line:infra line: key:1 key:y |
+    HARNESS_NO_CLEAR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$H" configure -C "$d"
+  check "banner names the tool" grep -q 'powerharnessing11k' "$out"
+  check "ten steps" grep -q '\[10/10\]' "$out"
+  check_not "empty folder: no stack marked" grep -q '← detected\|generic.*← ' "$out"
+  check "commands one per line" grep -qE '^ +typecheck +uv run mypy$' "$out"
+  check "invalid stub re-asked" grep -q "invalid directory '../evil'" "$out"
+  check "summary before apply" grep -q 'Skills       formulate' "$out"
+  check "applied" test -f "$d/.claude/skills/formulate/SKILL.md"
+  check "artifacts chosen" test -x "$d/scripts/artifacts.sh"
+  check "valid dir used" test -f "$d/infra/README.md"
+  check_not "invalid dir not created" test -e "$WORK/wiz/evil"
+  check "next steps list TODO files" grep -qE '^ +\.claude/skills/formulate/SKILL\.md$' "$out"
+
+  # An existing project: its stack is marked as detected.
+  d=$(new_repo wiz-go go.mod)
+  printf '%s\n' key:1 key:q | HARNESS_NO_CLEAR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$H" configure -C "$d"
+  check "detected stack marked" grep -q 'Go modules  ← detected' "$out"
+  check "quit writes nothing" test ! -e "$d/CLAUDE.md"
+}
+
+test_summary_output() {
+  local d out
+  d=$(new_repo summ)
+  out=$("$H" configure --yes -C "$d" --stack python --artifacts --skills formulate 2>&1)
+  check "grouped by directory" grep -qE '^  \+ \.claude/ +.*hooks/ [0-9]' <<<"$out"
+  check "root files on one line" grep -qE '^  \+ \./ +CLAUDE\.md, ' <<<"$out"
+  check "short output" test "$(grep -c '^  [+~·] ' <<<"$out")" -lt 20
+  check "TODO files listed" grep -qE '^ +\.claude/skills/formulate/SKILL\.md$' <<<"$out"
+  out=$("$H" configure --yes -C "$d" --verbose --force 2>&1)
+  check "--verbose lists every file" grep -qE '^  · unchanged +\.claude/hooks/guard-bash\.sh$' <<<"$out"
+  out=$("$H" configure --yes -C "$d" 2>&1)
+  check "re-run groups kept files" grep -qE '^  · \.claude/ ' <<<"$out"
+  check "re-run: no TODO list" sh -c "! grep -q 'TODO(team) notes' <<'EOF'
+$out
+EOF"
+  check "version names the tool" sh -c "'$H' version | grep -q '^powerharnessing11k '"
+}
+
 test_cli_errors() {
   check_not "unknown command fails" "$H" frobnicate
   check_not "unknown module fails" "$H" configure --yes -C "$(new_repo err)" --modules core,nope

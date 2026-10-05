@@ -1,6 +1,6 @@
 # Roadmap
 
-harness turns the team's agentic-engineering practices into a one-shot bootstrap: any repo adopts them in one command, then owns and maintains them itself.
+powerharnessing11k turns the team's agentic-engineering practices into a one-shot bootstrap: any repo adopts them in one command, then owns and maintains them itself.
 
 ## v0.1: foundation (this release)
 
@@ -17,6 +17,7 @@ harness turns the team's agentic-engineering practices into a one-shot bootstrap
 - [x] Project-specific TODO(team) stubs: `--skills`, `--roles`, `--rules name=glob`, `--dirs`, and a Project context section in `CLAUDE.md`
 - [x] `devtools`: Makefile as the single command surface, tiered testing guide, working Python/uv skeleton in empty repos, nightly full-tier workflow, `--cmd KEY=CMD`
 - [x] `artifacts`: local data/model versioning with a committed `artifacts.lock` of hashes, `scripts/artifacts.sh`, agent-guard warning on re-pins, documented migration to DVC/object storage
+- [x] Named powerharnessing11k: p11k banner, grouped write summary (`--verbose` for every file), TODO(team) files listed in the next steps, wizard covered by a pseudo-terminal test
 - [x] p10k-style setup: `git clone` once, `setup.sh` from the project (empty folder → `git init`); nothing on PATH
 - [x] CCAR-aligned Claude Code configuration (see `docs/CCAR-ALIGNMENT.md`): `.claude/rules/` with path scoping, `/review` and `/handoff`, skill frontmatter (`context: fork`, `allowed-tools`, `argument-hint`), scoped roles per profile, "how we work with Claude"
 - [x] PR gate: agent guard + independent AI review (`claude -p`, JSON-schema findings, per-file + cross-file passes, fingerprint dedupe, confidence routing) + scorecard + recorded human override

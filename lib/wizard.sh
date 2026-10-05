@@ -20,14 +20,15 @@ wizard_run() {
 }
 
 _wizard_steps() {
-  local current stacks s i opts p
+  local current detected stacks s i opts p
   current=$WIZ_PREV_STACK
+  detected=$(detect_stack "$TARGET")
 
   # 1. Profile ---------------------------------------------------------------
   opts=()
   for p in $ALL_PROFILES; do
     d=$(profile_field "$p" DESC)
-    [ "$p" != "$WIZ_PREV_PROFILE" ] || d="$d  ← current"
+    [ "$p" != "$WIZ_PREV_PROFILE" ] || d="$d  ← default"
     opts+=("$(profile_field "$p" TITLE)|$d")
   done
   ui_choose "What is this repository for?" 1 $WIZ_TOTAL "${opts[@]}" || return
@@ -49,7 +50,15 @@ _wizard_steps() {
       rust) d="Rust / Cargo" ;;
       generic) d="Anything else; fill in commands yourself" ;;
     esac
-    [ "$s" != "$current" ] || d="$d  ← current"
+    # Mark the starting answer only when something chose it: the repo's files
+    # or --stack. An empty folder detects nothing, so nothing is marked.
+    if [ "$s" = "$current" ]; then
+      if [ "$s" != "$detected" ]; then
+        d="$d  ← from --stack"
+      elif [ "$s" != generic ]; then
+        d="$d  ← detected"
+      fi
+    fi
     opts+=("$s|$d")
   done
   ui_choose "What language or toolchain does it use?" 2 $WIZ_TOTAL "${opts[@]}" || return
@@ -70,10 +79,13 @@ _wizard_steps() {
   export HV_STACK HV_PKG_MANAGER
 
   # 3. Commands --------------------------------------------------------------
-  local evals=''
-  case $HV_PROFILE in ml | agentic) evals="   eval: ${HV_EVAL_CMD:-—}" ;; esac
+  local evals='' nl=$'\n' cmds
+  case $HV_PROFILE in ml | agentic) evals=1 ;; esac
+  cmds="install     ${HV_INSTALL_CMD:-—}${nl}lint        ${HV_LINT_CMD:-—}${nl}typecheck   ${HV_TYPECHECK_CMD:-—}"
+  cmds="$cmds${nl}test        ${HV_TEST_CMD:-—}${nl}full tests  ${HV_FULL_TEST_CMD:-—}${nl}format      ${HV_FORMAT_CMD:-—}"
+  [ -z "$evals" ] || cmds="$cmds${nl}eval        ${HV_EVAL_CMD:-—}"
   ui_choose "These commands will be used by hooks, CI, and agent docs. OK?" 3 $WIZ_TOTAL \
-    "Use them|install: ${HV_INSTALL_CMD:-—}   lint: ${HV_LINT_CMD:-—}   typecheck: ${HV_TYPECHECK_CMD:-—}   test: ${HV_TEST_CMD:-—}   full tests: ${HV_FULL_TEST_CMD:-—}   format: ${HV_FORMAT_CMD:-—}$evals" \
+    "Use them|$cmds" \
     "Edit them|Type each command; Enter keeps the default, '-' clears it" || return
   if [ "$UI_CHOICE" = 2 ]; then
     ui_header 3 $WIZ_TOTAL "Edit commands"
@@ -253,7 +265,7 @@ _wizard_stubs() {
       return 0
     fi
     printf '\n'
-    ui_warn "${err#harness: }"
+    ui_warn "${err#"$HARNESS_NAME": }"
     ui_note "Press any key to try again."
     ui_key
   done
@@ -289,6 +301,6 @@ _wizard_summary() {
   else
     ui_note "Existing files are never overwritten; only missing ones are created."
   fi
-  ui_note "After this, every file belongs to the team; harness is not needed again."
+  ui_note "After this, every file belongs to the team; $HARNESS_NAME is not needed again."
   printf '\n'
 }

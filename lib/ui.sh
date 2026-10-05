@@ -18,15 +18,18 @@ ui_clear() {
 }
 
 ui_banner() {
-  printf '%s\n' "${C_ACCENT}${C_BOLD}"
-  printf '%s\n' '   _                                    '
-  printf '%s\n' '  | |__   __ _ _ __ _ __   ___  ___ ___ '
-  printf '%s\n' "  | '_ \\ / _\` | '__| '_ \\ / _ \\/ __/ __|"
-  # shellcheck disable=SC1003
-  printf '%s\n' '  | | | | (_| | |  | | | |  __/\__ \__ \'
-  printf '%s\n' '  |_| |_|\__,_|_|  |_| |_|\___||___/___/'
+  printf '%s' "${C_ACCENT}${C_BOLD}"
+  cat <<'EOF'
+
+          _   _   _
+   _ __  / | / | | | __
+  | '_ \ | | | | | |/ /
+  | |_) || | | | |   <
+  | .__/ |_| |_| |_|\_\
+  |_|
+EOF
   printf '%s\n' "${C_RESET}"
-  printf '  %s\n\n' "${C_DIM}agentic harness configurator  v$(cat "$HARNESS_ROOT/VERSION")${C_RESET}"
+  printf '  %s\n\n' "${C_BOLD}$HARNESS_NAME${C_RESET}  ${C_DIM}one-shot agentic harness configurator · v$(cat "$HARNESS_ROOT/VERSION")${C_RESET}"
 }
 
 ui_header() { # step total title
@@ -76,7 +79,8 @@ ui_choose() {
       label=${opt%%|*}
       desc=${opt#*|}
       printf '  %s  %s\n' "${C_ACCENT}${C_BOLD}($n)${C_RESET}" "${C_BOLD}$label${C_RESET}"
-      [ "$desc" = "$opt" ] || printf '       %s\n' "${C_DIM}$desc${C_RESET}"
+      # A description may span lines; keep them all indented under the label.
+      [ "$desc" = "$opt" ] || printf '       %s\n' "${C_DIM}${desc//$'\n'/$'\n'       }${C_RESET}"
       printf '\n'
     done
     ui_footer

@@ -92,20 +92,81 @@ _apply_append() { # tmp dest
   _status appended "$dest" "$(wc -l <"$missing" | tr -d ' ') line(s)"
 }
 
-apply_summary() {
-  local kind path note sym color skipped=0
+# Per-file list (--verbose). Sets APPLY_SKIPPED.
+apply_summary_full() {
+  local kind path note sym color
   while IFS="$(printf '\t')" read -r kind path note; do
     case $kind in
-      created) sym='+' color=$C_OK ;;
-      appended) sym='+' color=$C_OK ;;
+      created | appended) sym='+' color=$C_OK ;;
       overwritten) sym='~' color=$C_WARN ;;
-      unchanged) sym='=' color=$C_DIM ;;
-      skipped) sym='·' color=$C_DIM skipped=$((skipped + 1)) ;;
+      unchanged | skipped) sym='·' color=$C_DIM ;;
       *) sym='?' color='' ;;
     esac
     printf '  %s%s %-11s%s %s' "$color" "$sym" "$kind" "$C_RESET" "$path"
     [ -z "$note" ] || printf '  %s' "${C_DIM}($note)${C_RESET}"
     printf '\n'
   done <"$HARNESS_TMP/status"
-  APPLY_SKIPPED=$skipped
+  APPLY_SKIPPED=$(grep -c '^skipped' "$HARNESS_TMP/status" || true)
+}
+
+# Grouped summary: per class (written, kept), root files on one line and one
+# line per top-level directory with its contents and counts. Overwritten
+# files are listed individually, since those are the ones to look at.
+# Sets APPLY_SKIPPED.
+apply_summary() {
+  awk -F '\t' -v ok="$C_OK" -v warn="$C_WARN" -v dim="$C_DIM" -v bold="$C_BOLD" -v reset="$C_RESET" '
+    function add(list, item) { return list == "" ? item : list ", " item }
+    function record(cls, path, label,    n, parts, top, key, sub_) {
+      total[cls]++
+      n = split(path, parts, "/")
+      if (n == 1) {
+        if (!((cls, path) in rootseen)) { rootseen[cls, path] = 1; roots[cls] = add(roots[cls], path label) }
+        return
+      }
+      top = parts[1] "/"
+      if (!((cls, top) in tops)) { tops[cls, top] = 1; order[cls, ++ntop[cls]] = top }
+      sub_ = (n == 2) ? parts[2] : parts[2] "/"
+      key = cls SUBSEP top SUBSEP sub_
+      if (!(key in subcount)) subs[cls, top] = subs[cls, top] SUBSEP sub_
+      subcount[key]++
+    }
+    function show(cls, sym, color,    i, j, m, list, top, detail, c) {
+      if (roots[cls] != "") printf "  %s%s%s %-14s %s\n", color, sym, reset, "./", roots[cls]
+      for (i = 1; i <= ntop[cls]; i++) {
+        top = order[cls, i]
+        m = split(substr(subs[cls, top], 2), list, SUBSEP)
+        detail = ""
+        for (j = 1; j <= m; j++) {
+          c = subcount[cls SUBSEP top SUBSEP list[j]]
+          detail = add(detail, list[j] ((list[j] ~ /\/$/ && c > 1) ? " " c : ""))
+        }
+        printf "  %s%s%s %-14s %s%s%s\n", color, sym, reset, top, dim, detail, reset
+      }
+    }
+    $1 == "created" { record("w", $2, ""); next }
+    $1 == "appended" { record("w", $2, " (appended)"); next }
+    $1 == "overwritten" { over = over "  " warn "~" reset " " $2 "\n"; nover++; next }
+    $1 == "skipped" { record("k", $2, ""); next }
+    $1 == "unchanged" { nsame++; next }
+    END {
+      printf "  %s%d file(s) written%s", bold, total["w"] + 0, reset
+      if (nover) printf ", %d overwritten", nover
+      if (total["k"]) printf ", %d already there and kept", total["k"]
+      if (nsame) printf ", %d unchanged", nsame
+      printf "\n\n"
+      show("w", "+", ok)
+      if (nover) printf "%s", over
+      if (total["k"]) { if (total["w"] || nover) printf "\n"; show("k", "·", dim) }
+    }' "$HARNESS_TMP/status"
+  APPLY_SKIPPED=$(grep -c '^skipped' "$HARNESS_TMP/status" || true)
+}
+
+# Files written in this run that still contain TODO(team), one per line.
+apply_todo_files() {
+  local kind path
+  while IFS="$(printf '\t')" read -r kind path _; do
+    case $kind in created | appended | overwritten) ;; *) continue ;; esac
+    [ -f "$TARGET/$path" ] || continue
+    if grep -q 'TODO(team)' "$TARGET/$path" 2>/dev/null; then printf '%s\n' "$path"; fi
+  done <"$HARNESS_TMP/status" | awk '!seen[$0]++'
 }

@@ -20,4 +20,4 @@ This repo is built by humans and coding agents together. The rules are the same 
 
 - Read [docs/agents/HANDBOOK.md](docs/agents/HANDBOOK.md) before delegating work to an agent.
 - **Nothing to install.** The agent harness (`CLAUDE.md`, `.claude/`, `.harness/`) is committed here, and Claude Code picks it up when you clone.
-- Agent configuration is code: changes go through PR review like anything else. To change a guardrail or permission, see [.harness/README.md](.harness/README.md). Maintainers regenerate it with [harness](https://github.com/reclan-ai/harness-workflow).
+- Agent configuration is code: changes go through PR review like anything else. To change a guardrail or permission, see [.harness/README.md](.harness/README.md). Maintainers regenerate it with [harness](https://github.com/AndyLan0503/powerharnessing11k).

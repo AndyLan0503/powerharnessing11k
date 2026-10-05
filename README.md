@@ -27,6 +27,7 @@ with guardrails, CI, an AI review gate, and monitoring. Then it gets out of your
 [What you get](#-what-you-get) •
 [Profiles](#-profiles) •
 [PR gate](#-the-pr-gate) •
+[Runbook](docs/RUNBOOK.md) •
 [FAQ](#-faq)
 
 </div>
@@ -170,8 +171,8 @@ opt-engine/
 │   ├── commands/              /review · /handoff
 │   └── scripts/               agent-report.sh
 ├── .github/
-│   ├── workflows/             ci · tests-full (nightly) · pr-gate · agent-digest · codeql · ...
-│   └── scripts/               agent-guard.sh · pr-gate.sh
+│   ├── workflows/             ci · tests-full (nightly) · pr-gate · pr-digest · codeql · ...
+│   └── scripts/               diff-guard.sh · pr-gate.sh
 ├── src/opt_engine/            package skeleton
 ├── tests/                     conftest (real-data fixture) + unit smoke test
 ├── data/  models/             git-ignored, except their READMEs
@@ -250,13 +251,13 @@ The `artifacts` module (ml; research from recommended; anywhere with `--artifact
 
 Every PR gets one required check, **PR gate**:
 
-- **Agent guard** detects agent-authored PRs (co-author trailer, branch prefix, or PR checkbox), labels them, and flags deleted or skipped tests, removed assertions, protected-path edits, oversized diffs, new dependencies, large files, re-pinned artifacts, notebooks with outputs, and prompt changes without eval changes.
+- **Diff guard** checks every PR the same way, whoever or whatever wrote it. Nobody has to declare or sign agent work. It flags deleted or skipped tests, removed assertions, protected-path edits, oversized diffs, new dependencies, large files, re-pinned artifacts, notebooks with outputs, and prompt changes without eval changes.
 - **AI review** (strict tier, or add the `review` module; needs `ANTHROPIC_API_KEY`): a fresh Claude Code instance (`claude -p`, read-only tools) reviews each changed file, then does one cross-file pass.
   - Findings follow a JSON schema and your team's `.github/review/criteria.md`: categories to report or skip, severity definitions, and examples.
   - Findings are posted inline; low-confidence ones go to "needs a human look".
   - Every finding is fingerprinted, so later runs report only what's new.
 - **Gate:** blocking findings fail the check. A maintainer can add `gate-override` to accept the risk, and the override is recorded. A sticky **scorecard** shows every signal and a transparent score.
-- **Weekly digest:** agent PR volume, merge rate and reverts; gate scores for agent vs human PRs; AI-review findings by pattern with 👎 dismissal counts, which show which criteria need sharpening.
+- **Weekly digest:** PR volume, merge rate and reverts; gate scores, findings, and overrides; AI-review findings by pattern with 👎 dismissal counts, which show which criteria need sharpening.
 
 Plus a stack-aware `ci.yml` (fast tier on every PR), a nightly full-tier workflow, Conventional Commit PR titles, CodeQL, dependency review, Dependabot, `@claude` mentions, and an eval workflow for agentic repos. Make **CI** and **PR gate / gate** required in branch protection.
 
@@ -284,7 +285,7 @@ Protect `.github/` with CODEOWNERS, and pin `CLAUDE_CODE_VERSION` in `pr-gate.ym
 | Lint and typecheck must pass before the agent finishes (Stop hook) | | ✅ | ✅ |
 | Block `--force-with-lease`, `reset --hard`, `git clean -f`, `gh pr merge` | | | ✅ |
 | CI workflows, CODEOWNERS, `.claude/settings.json`, and hooks are human-only | | | ✅ |
-| `git push` asks for confirmation; agent-guard findings fail the gate | | | ✅ |
+| `git push` asks for confirmation; diff-guard findings fail the gate | | | ✅ |
 
 Rules that must always hold are hooks and gates; `CLAUDE.md` only guides. Every block is logged and explained to the agent:
 
@@ -394,6 +395,8 @@ make test   # tests/run.sh: every profile × tier, the wizard (via a pseudo-term
 ```
 
 `HARNESS_TEST_UV=1 make test` also runs `make setup && make check` inside a generated Python project (needs uv and network access).
+
+New to agent harnesses? Read [docs/RUNBOOK.md](docs/RUNBOOK.md): the ideas, then a step-by-step setup for your own project.
 
 Start with [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) to add a module or profile. [docs/CCAR-ALIGNMENT.md](docs/CCAR-ALIGNMENT.md) explains the practices behind it, [docs/adr/](docs/adr/) the key decisions, and [docs/ROADMAP.md](docs/ROADMAP.md) what's next. This repo uses a harness itself, bootstrapped once and maintained by hand.
 

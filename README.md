@@ -100,7 +100,7 @@ The `devtools` module (software, ml, agentic; research from recommended):
 - in an **empty Python repo**, a working **uv** skeleton: `pyproject.toml` (ruff, mypy strict, pytest with `integration` / `regression` / `slow` / `benchmark` markers, hypothesis, coverage), `src/<package>/`, `tests/`. `make setup && make check` passes out of the box;
 - a nightly **Full tests** workflow when there is a full-tier command (`make test-all`).
 
-Existing `Makefile` or `pyproject.toml` files are left alone; CI then calls the raw commands instead. Override any detected command with `--cmd KEY=CMD` (`install`, `lint`, `typecheck`, `test`, `full-test`, `format`, `eval`).
+An existing `Makefile` (or `makefile`, `GNUmakefile`) or `pyproject.toml` is left alone, even with `--force`; CI then calls the raw commands instead. For an existing Python project, harness proposes only the checks its configuration supports (mypy only with `[tool.mypy]`, the fast/full split only with a `slow` marker). Override any detected command with `--cmd KEY=CMD` (`install`, `lint`, `typecheck`, `test`, `full-test`, `format`, `eval`).
 
 ### Data and model versioning (local first)
 

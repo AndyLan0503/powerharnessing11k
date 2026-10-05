@@ -22,7 +22,8 @@ LOCK=${ARTIFACTS_LOCK:-artifacts.lock}
 DEFAULT_ROOTS="data models"
 
 die() { echo "artifacts: $*" >&2; exit 2; }
-sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | awk '{print $1}'; }
+# Hash stdin, so unusual file names can't change the output format.
+sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum <"$1"; else shasum -a 256 <"$1"; fi | awk '{print $1}'; }
 bytes() { wc -c <"$1" | tr -d ' '; }
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 header() {
@@ -31,6 +32,26 @@ header() {
   printf '%s\n' "# sha256	bytes	path	recorded_at	note"
 }
 entries() { [ -f "$LOCK" ] && grep -v '^#' "$LOCK" | grep -v '^[[:space:]]*$' || true; }
+# A root as the lock spells paths: no leading ./, no trailing /.
+norm() {
+  local r=$1
+  while :; do
+    case $r in ./*) r=${r#./} ;; */) r=${r%/} ;; *) break ;; esac
+  done
+  case $r in '' | . | /* | .. | ../* | */.. | */../*) die "not a path inside the repo: $1" ;; esac
+  printf '%s' "$r"
+}
+# Callers run this in $(...), so they must check its status: `|| exit 2`.
+norm_all() {
+  local r n out=''
+  for r in "$@"; do
+    n=$(norm "$r") || exit 2
+    out="$out $n"
+  done
+  printf '%s' "$out"
+}
+# The lock entry for one path (P in the environment, so no escape processing).
+entry_for() { entries | P=$1 awk -F '\t' '$3 == ENVIRON["P"]'; }
 # Files under the given roots, excluding documentation placeholders.
 files_under() {
   local r
@@ -59,10 +80,11 @@ cmd_snapshot() {
     esac
     shift
   done
-  [ -n "$roots" ] || roots=$DEFAULT_ROOTS
-  [ -f "$LOCK" ] || header >"$LOCK"
   case $note in *'	'* | *'
 '*) die "the note cannot contain tabs or newlines" ;; esac
+  # shellcheck disable=SC2086
+  if [ -n "$roots" ]; then roots=$(norm_all $roots) || exit 2; else roots=$DEFAULT_ROOTS; fi
+  [ -s "$LOCK" ] || header >"$LOCK"
   tmp=$(mktemp)
   # Keep entries outside the snapshotted roots untouched.
   # shellcheck disable=SC2086
@@ -71,13 +93,13 @@ cmd_snapshot() {
   done >"$tmp.keep"
   {
     header
-    entries | awk -F '\t' 'NR == FNR { keep[$0] = 1; next } ($3 in keep)' "$tmp.keep" -
+    entries | awk -F '\t' 'FILENAME == ARGV[1] { keep[$0] = 1; next } ($3 in keep)' "$tmp.keep" -
     # shellcheck disable=SC2086
     files_under $roots | while IFS= read -r f; do
       case $f in *'	'*) die "path contains a tab: $f" ;; esac
       h=$(sha "$f")
       b=$(bytes "$f")
-      old=$(entries | awk -F '\t' -v p="$f" '$3 == p')
+      old=$(entry_for "$f")
       if [ -n "$old" ] && [ "$(printf '%s' "$old" | cut -f1)" = "$h" ]; then
         printf '%s\n' "$old" # unchanged: keep its original date and note
       else
@@ -86,9 +108,9 @@ cmd_snapshot() {
     done
   } >"$tmp"
   # Summarise against the previous lock.
-  n_new=$(awk -F '\t' 'NR == FNR { if ($0 !~ /^#/) old[$3] = $1; next } $0 !~ /^#/ && !($3 in old)' "${LOCK}" "$tmp" 2>/dev/null | wc -l | tr -d ' ') || n_new=0
-  n_changed=$(awk -F '\t' 'NR == FNR { if ($0 !~ /^#/) old[$3] = $1; next } $0 !~ /^#/ && ($3 in old) && old[$3] != $1' "${LOCK}" "$tmp" 2>/dev/null | wc -l | tr -d ' ') || n_changed=0
-  n_removed=$(awk -F '\t' 'NR == FNR { if ($0 !~ /^#/) now[$3] = 1; next } $0 !~ /^#/ && !($3 in now)' "$tmp" "${LOCK}" 2>/dev/null | wc -l | tr -d ' ') || n_removed=0
+  n_new=$(awk -F '\t' 'FILENAME == ARGV[1] { if ($0 !~ /^#/) old[$3] = $1; next } $0 !~ /^#/ && !($3 in old)' "${LOCK}" "$tmp" 2>/dev/null | wc -l | tr -d ' ') || n_new=0
+  n_changed=$(awk -F '\t' 'FILENAME == ARGV[1] { if ($0 !~ /^#/) old[$3] = $1; next } $0 !~ /^#/ && ($3 in old) && old[$3] != $1' "${LOCK}" "$tmp" 2>/dev/null | wc -l | tr -d ' ') || n_changed=0
+  n_removed=$(awk -F '\t' 'FILENAME == ARGV[1] { if ($0 !~ /^#/) now[$3] = 1; next } $0 !~ /^#/ && !($3 in now)' "$tmp" "${LOCK}" 2>/dev/null | wc -l | tr -d ' ') || n_removed=0
   mv "$tmp" "$LOCK"
   rm -f "$tmp.keep"
   echo "artifacts.lock: $n_new new, $n_changed changed, $n_removed removed ($(entries | wc -l | tr -d ' ') recorded)"
@@ -97,6 +119,12 @@ cmd_snapshot() {
 cmd_verify() {
   local h b f bad=0 n=0
   [ -f "$LOCK" ] || die "no $LOCK yet; run: scripts/artifacts.sh snapshot"
+  local rs
+  if [ $# -gt 0 ]; then
+    rs=$(norm_all "$@") || exit 2
+    # shellcheck disable=SC2086
+    set -- $rs
+  fi
   while IFS='	' read -r h b f _ _; do
     [ -n "$f" ] || continue
     if [ $# -gt 0 ] && ! under "$f" "$@"; then continue; fi
@@ -119,11 +147,14 @@ EOF
 }
 
 cmd_status() {
-  local roots=${*:-$DEFAULT_ROOTS} f
-  cmd_verify || true
+  local roots f
+  # shellcheck disable=SC2086
+  if [ $# -gt 0 ]; then roots=$(norm_all "$@") || exit 2; else roots=$DEFAULT_ROOTS; fi
+  # shellcheck disable=SC2086
+  if [ -f "$LOCK" ]; then cmd_verify $roots || true; fi
   # shellcheck disable=SC2086
   files_under $roots | while IFS= read -r f; do
-    entries | awk -F '\t' -v p="$f" '$3 == p { found = 1 } END { exit !found }' || echo "NEW      $f"
+    [ -n "$(entry_for "$f")" ] || echo "NEW      $f"
   done
 }
 
@@ -131,8 +162,12 @@ cmd_list() { entries | awk -F '\t' '{ printf "%s  %10s  %s  %s\n", substr($1, 1,
 
 cmd_hash() {
   [ $# -eq 1 ] || die "usage: scripts/artifacts.sh hash PATH"
-  entries | awk -F '\t' -v p="$1" '$3 == p { print substr($1, 1, 12); found = 1 } END { exit !found }' ||
-    die "$1 is not recorded in $LOCK"
+  local e
+  local p
+  p=$(norm "$1") || exit 2
+  e=$(entry_for "$p")
+  [ -n "$e" ] || die "$1 is not recorded in $LOCK"
+  printf '%s\n' "$e" | awk -F '\t' '{ print substr($1, 1, 12) }'
 }
 
 cmd=${1:-}

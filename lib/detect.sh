@@ -27,10 +27,10 @@ detect_pkg_manager() { # dir stack
       else echo npm; fi
       ;;
     python)
-      # uv is the default for new projects; pip only for requirements-only repos.
+      # uv for new projects; an existing project keeps what its files say.
       if [ -f "$d/uv.lock" ]; then echo uv
       elif [ -f "$d/poetry.lock" ]; then echo poetry
-      elif [ -f "$d/requirements.txt" ] && [ ! -f "$d/pyproject.toml" ]; then echo pip
+      elif [ -f "$d/pyproject.toml" ] || [ -f "$d/requirements.txt" ] || [ -f "$d/setup.py" ]; then echo pip
       else echo uv; fi
       ;;
     go) echo go ;;
@@ -71,12 +71,23 @@ stack_defaults() {
       case $pm in
         uv)
           HV_INSTALL_CMD='uv sync'
-          HV_LINT_CMD='uv run ruff check . && uv run ruff format --check .'
-          HV_TYPECHECK_CMD='uv run mypy'
-          # Fast tier on every change; the full tier (slow, regression,
-          # benchmark) runs nightly and on demand.
-          HV_TEST_CMD='uv run pytest -m "not slow and not benchmark"'
-          HV_FULL_TEST_CMD='uv run pytest'
+          local py=${TARGET:-.}/pyproject.toml
+          # A new project gets the devtools scaffold, which configures all of
+          # these; an existing one gets only what its pyproject supports.
+          if [ ! -e "$py" ] || grep -q '^\[tool\.ruff' "$py"; then
+            HV_LINT_CMD='uv run ruff check . && uv run ruff format --check .'
+          else
+            HV_LINT_CMD='uv run ruff check .'
+          fi
+          if [ ! -e "$py" ] || grep -q '^\[tool\.mypy\]' "$py"; then HV_TYPECHECK_CMD='uv run mypy'; fi
+          if [ ! -e "$py" ] || grep -q '"slow:' "$py"; then
+            # Fast tier on every change; the full tier (slow, regression,
+            # benchmark) runs nightly and on demand.
+            HV_TEST_CMD='uv run pytest -m "not slow and not benchmark"'
+            HV_FULL_TEST_CMD='uv run pytest'
+          else
+            HV_TEST_CMD='uv run pytest'
+          fi
           HV_FORMAT_CMD='uv run ruff format {file}'
           ;;
         poetry)

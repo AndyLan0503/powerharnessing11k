@@ -121,13 +121,33 @@ derive_vars() {
   export HV_HOW_WE_WORK HV_PROFILE_RULES
 
   # devtools: a Makefile unless the repo has one; a Python skeleton only in a
-  # Python/uv repo that has no pyproject.toml yet (both overridable by --force).
+  # Python/uv repo that has no pyproject.toml yet. --force never changes this:
+  # it refreshes harness files, never the project's own build or code.
   HV_USE_MAKE='' HV_SCAFFOLD_PYTHON=''
   if list_has "$HV_MODULES" devtools; then
-    if [ ! -e "$TARGET/Makefile" ] || [ -n "${FORCE:-}" ]; then HV_USE_MAKE=1; fi
-    if [ "$HV_STACK" = python ] && [ "$HV_PKG_MANAGER" = uv ] &&
-      { [ ! -e "$TARGET/pyproject.toml" ] || [ -n "${FORCE:-}" ]; }; then HV_SCAFFOLD_PYTHON=1; fi
+    if [ ! -e "$TARGET/Makefile" ] && [ ! -e "$TARGET/makefile" ] && [ ! -e "$TARGET/GNUmakefile" ]; then
+      HV_USE_MAKE=1
+    elif [ -n "${FORCE:-}" ] && [ -f "$TARGET/Makefile" ] && grep -q '^check: lint typecheck test ## Everything a PR must pass' "$TARGET/Makefile"; then
+      HV_USE_MAKE=1 # ours, from an earlier bootstrap
+    fi
+    if [ "$HV_STACK" = python ] && [ "$HV_PKG_MANAGER" = uv ] && [ ! -e "$TARGET/pyproject.toml" ]; then
+      HV_SCAFFOLD_PYTHON=1
+    fi
   fi
+  # Commands as Makefile recipe lines: make expands $, so double it. A command
+  # that calls make would have the generated Makefile call itself.
+  local k v
+  for k in INSTALL LINT TYPECHECK TEST FULL_TEST; do
+    eval "v=\${HV_${k}_CMD:-}"
+    if [ -n "$HV_USE_MAKE" ]; then
+      case " $v" in
+        *" make "* | *" make" | *'$(MAKE)'* | *'${MAKE}'*)
+          harness_die "the $(printf '%s' "$k" | tr 'A-Z_' 'a-z-') command '$v' calls make, but harness writes the Makefile here. Give the underlying command instead." ;;
+      esac
+    fi
+    printf -v "HV_MK_${k}_CMD" '%s' "${v//\$/\$\$}"
+    export "HV_MK_${k}_CMD"
+  done
   HV_PY_DIST=$(printf '%s' "$HV_PROJECT_NAME" | tr 'A-Z' 'a-z' | sed 's/[^a-z0-9]\{1,\}/-/g; s/^-//; s/-$//')
   HV_PY_PACKAGE=$(printf '%s' "$HV_PY_DIST" | tr '-' '_')
   case $HV_PY_PACKAGE in '' ) HV_PY_PACKAGE=app HV_PY_DIST=app ;; [0-9]*) HV_PY_PACKAGE="pkg_$HV_PY_PACKAGE" ;; esac

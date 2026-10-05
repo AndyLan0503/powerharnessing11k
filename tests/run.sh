@@ -115,7 +115,6 @@ test_every_stack() {
   check "go: codeql autobuild" contains "$WORK/stack-go/.github/workflows/codeql.yml" 'build-mode: autobuild'
   check "generic: placeholder CI step" contains "$WORK/stack-generic/.github/workflows/ci.yml" 'Configure me'
   check "python uv: CI runs make targets" contains "$WORK/stack-python/.github/workflows/ci.yml" 'make test'
-  check "python uv: nightly full tier" contains "$WORK/stack-python/.github/workflows/tests-full.yml" 'make test-all'
   check_not "node: no full tier without a command" test -e "$WORK/stack-node/.github/workflows/tests-full.yml"
 }
 
@@ -798,6 +797,25 @@ test_artifacts_module() {
   check_not "verify catches a missing file" "$d/scripts/artifacts.sh" verify models
   check_not "unknown command fails" "$d/scripts/artifacts.sh" frobnicate
 
+  # Roots are normalised, so ./data/ and data are the same thing.
+  mkdir -p "$d/data/sub"
+  echo k >"$d/data/sub/k.bin"
+  echo s >"$d/data/sp ace.csv"
+  "$d/scripts/artifacts.sh" snapshot >/dev/null 2>&1
+  rm "$d/data/sub/k.bin"
+  "$d/scripts/artifacts.sh" snapshot ./data/ >/dev/null 2>&1
+  check "subset snapshot drops removed files" test "$(grep -c 'data/sub/k.bin' "$d/artifacts.lock")" -eq 0
+  check "no duplicate entries" test "$(grep -v '^#' "$d/artifacts.lock" | cut -f3 | sort | uniq -d | wc -l)" -eq 0
+  check "paths with spaces" "$d/scripts/artifacts.sh" verify 'data/sp ace.csv'
+  check "status is scoped to its roots" sh -c "! '$d/scripts/artifacts.sh' status data | grep -q models/"
+  check_not "roots outside the repo rejected" "$d/scripts/artifacts.sh" verify ../etc
+  check_not "the whole repo is not a root" "$d/scripts/artifacts.sh" snapshot .
+  rm -f "$d/artifacts.lock"
+  check_not "bad note leaves no lock behind" "$d/scripts/artifacts.sh" snapshot -m "$(printf 'a\tb')"
+  check_not "...really none" test -e "$d/artifacts.lock"
+  : >"$d/artifacts.lock"
+  check "empty lock: counts are right" sh -c "'$d/scripts/artifacts.sh' snapshot | grep -q '^artifacts.lock: [1-9][0-9]* new'"
+
   d=$(new_repo art-ml pyproject.toml)
   "$H" configure --yes -C "$d" --profile ml >/dev/null 2>&1
   check "ml includes artifacts" test -x "$d/scripts/artifacts.sh"
@@ -841,6 +859,7 @@ test_devtools_python_scaffold() {
   check "python ignores" git -C "$d" check-ignore -q .venv/x
   check "markers declared" grep -q '"benchmark: ' "$d/pyproject.toml"
   check "fast tier skips slow tests" contains "$d/Makefile" 'not slow and not benchmark'
+  check "nightly full tier" contains "$d/.github/workflows/tests-full.yml" 'make test-all'
   check "CLAUDE.md lists make targets" contains "$d/CLAUDE.md" '`make check`'
   check "agent may run make check" jq -e '.permissions.allow | index("Bash(make check:*)")' "$d/.claude/settings.json"
   if python3 -c 'import tomllib' 2>/dev/null; then
@@ -870,6 +889,51 @@ test_devtools_python_scaffold() {
   t=$(new_repo mk-node package.json)
   "$H" configure --yes -C "$t" >/dev/null 2>&1
   check "node gets make targets too" grep -q '^check:' "$t/Makefile"
+}
+
+# Existing projects keep their own build and code; only harness files are added.
+test_devtools_respects_existing_projects() {
+  local d
+  d=$(new_repo uv-existing pyproject.toml uv.lock src/r3/__init__.py tests/conftest.py)
+  printf '[project]\nname = "r3"\n' >"$d/pyproject.toml"
+  echo 'def real(): pass' >"$d/src/r3/__init__.py"
+  echo '# real fixtures' >"$d/tests/conftest.py"
+  "$H" configure --yes -C "$d" >/dev/null 2>&1
+  check_not "no mypy without mypy config" contains "$d/Makefile" 'uv run mypy'
+  check "typecheck skipped instead" contains "$d/Makefile" 'typecheck: not configured'
+  check_not "no format check without ruff config" contains "$d/Makefile" 'ruff format --check'
+  check_not "no nightly tier without slow markers" test -e "$d/.github/workflows/tests-full.yml"
+  "$H" configure --yes --force -C "$d" >/dev/null 2>&1
+  check "--force keeps pyproject" test "$(head -1 "$d/pyproject.toml")" = '[project]'
+  check "--force keeps package code" contains "$d/src/r3/__init__.py" 'def real'
+  check "--force keeps fixtures" contains "$d/tests/conftest.py" '# real fixtures'
+  check "--force refreshes our own Makefile" grep -q '^check: lint typecheck test' "$d/Makefile"
+
+  d=$(new_repo uv-mypy pyproject.toml uv.lock)
+  printf '[project]\nname = "x"\n\n[tool.mypy]\nstrict = true\n' >"$d/pyproject.toml"
+  "$H" configure --yes -C "$d" >/dev/null 2>&1
+  check "mypy when configured" contains "$d/Makefile" 'uv run mypy'
+
+  d=$(new_repo py-nolock pyproject.toml)
+  "$H" configure --yes -C "$d" >/dev/null 2>&1
+  check "pyproject without a lock is not assumed uv" contains "$d/Makefile" 'pytest'
+  check_not "...so no uv" contains "$d/Makefile" 'uv run'
+
+  d=$(new_repo own-makefile go.mod makefile)
+  echo 'test:; @echo theirs' >"$d/makefile"
+  "$H" configure --yes --force -C "$d" >/dev/null 2>&1
+  check_not "lowercase makefile counts as existing" test -e "$d/Makefile"
+  check "their makefile untouched" contains "$d/makefile" 'theirs'
+  check "CI runs raw commands" contains "$d/.github/workflows/ci.yml" 'go test ./...'
+  d=$(new_repo own-gnumakefile go.mod GNUmakefile)
+  "$H" configure --yes -C "$d" >/dev/null 2>&1
+  check_not "GNUmakefile counts as existing" test -e "$d/Makefile"
+
+  # Commands are recipe lines: $ is escaped, and a command can't call our own make.
+  d=$(new_repo mk-dollar go.mod)
+  "$H" configure --yes -C "$d" --cmd 'lint=echo $HOME' >/dev/null 2>&1
+  check "dollar escaped for make" sh -c "cd '$d' && make lint | grep -qx '$HOME'"
+  check_not "self-calling make rejected" "$H" configure --yes -C "$(new_repo mk-self go.mod)" --cmd 'test=make test'
 }
 
 test_cli_errors() {

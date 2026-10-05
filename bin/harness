@@ -52,7 +52,7 @@ Options:
       --no-artifacts    Don't, even if the profile would
       --cmd KEY=CMD     Override a detected command (repeatable). KEY is one of
                         install, lint, typecheck, test, full-test, format, eval;
-                        an empty CMD clears it. e.g. --cmd "test=make test"
+                        an empty CMD clears it. e.g. --cmd "test=uv run pytest -x"
 
 Project-specific stubs (blank files with instructions for the team to fill in):
       --skills LIST     Skill names, e.g. "model-formulation,solver-tuning"

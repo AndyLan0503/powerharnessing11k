@@ -1,6 +1,6 @@
 # harness
 
-**A repeatable agentic harness for any git repository.** Think `p10k configure`, but instead of a zsh prompt it sets up everything a team needs to work well with coding agents: agent context and rules, skills, roles, guardrail hooks, CI with AI review and a quality gate, and monitoring of what agents actually do. The practices follow Anthropic's Claude Certified Architect exam guides ([how](docs/CCAR-ALIGNMENT.md)).
+**A one-shot agentic harness bootstrap for any git repository.** Think `p10k configure`, but instead of a zsh prompt it sets up everything a team needs to work well with coding agents: agent context and rules, skills, roles, guardrail hooks, CI with AI review and a quality gate, and monitoring of what agents actually do. The practices follow Anthropic's Claude Certified Architect exam guides ([how](docs/CCAR-ALIGNMENT.md)).
 
 ```sh
 git clone --depth=1 https://github.com/AndyLan0503/powerharnessing11k ~/.harness-workflow
@@ -17,7 +17,7 @@ No install and nothing on your PATH: clone it once, like Powerlevel10k, and run 
   | | | | (_| | |  | | | |  __/\__ \__ \
   |_| |_|\__,_|_|  |_| |_|\___||___/___/
 
-  [1/8]  What is this repository for?
+  [1/10]  What is this repository for?
 
   (1)  Software engineering
        Apps, services, libraries: PR workflow, CI, security scanning, agent PR monitoring
@@ -38,19 +38,21 @@ No install and nothing on your PATH: clone it once, like Powerlevel10k, and run 
   (q)  Quit and do nothing.
 ```
 
-Eight single-key questions: profile, stack (auto-detected), commands, which agents, how much harness (minimal / recommended / strict / custom), code owners, telemetry, and confirm. The answers are saved in the project at `.harness/config`, so the setup is **reproducible**, and re-running never clobbers files the team has edited.
+Ten single-key questions: profile, stack (auto-detected), commands, which agents, how much harness (minimal / recommended / strict / custom), data and model versioning, project-specific stubs, code owners, telemetry, and confirm.
 
-## Who does what
+## Once per repo, then it's yours
 
-**The tech lead runs harness once; everyone else just pulls.** Everything harness writes is self-contained in the project repo: plain-bash hooks, settings, rules, skills, workflows, and docs.
+**harness runs once, at bootstrap, and is never needed again.** It writes plain files (bash hooks, settings, rules, skills, workflows, docs) into the project and leaves nothing behind that points back to it: no config file, no manifest, no managed blocks, no `update` command. From then on the team owns and maintains its harness like any other code, and harness takes no responsibility for it.
 
-| | Tech lead / maintainer | Collaborators |
+| | Tech lead | Collaborators |
 |---|---|---|
 | Get harness | `git clone` it once (anywhere) | **Nothing** |
-| Set up the project | `setup.sh`, then commit and open a PR | Pull, as with any change |
+| Bootstrap the project | `setup.sh`, fill in the TODOs, commit, open a PR | Pull, as with any change |
 | Day to day | Nothing | Nothing: Claude Code loads the rules, skills, roles, and hooks automatically |
-| Change a guardrail or permission | Edit `.harness/config` or `.harness/permissions`, run `setup.sh update`, commit | Propose it in a PR or issue (see the generated `.harness/README.md`) |
-| Upgrade | `git -C ~/.harness-workflow pull`, then `setup.sh update`, commit | Pull |
+| Change a guardrail, rule, or workflow | Edit the file in the project, through a PR | Same |
+
+- **Create-only.** Existing files are never touched; only missing ones are created, and `.gitignore` only gains missing lines. `--force` overwrites files with the same paths (it never deletes anything).
+- **Re-running is safe** but is not an upgrade path: it only adds files that are still missing.
 
 ## What a repo gets: a shared layer plus a profile layer
 
@@ -76,6 +78,40 @@ Eight single-key questions: profile, stack (auto-detected), commands, which agen
 
 Tiers per profile: **minimal** (core, guardrails, profile module; guard relaxed), **recommended** (the profile's defaults), **strict** (adds AI review, MCP, and a stricter guard level). `setup.sh list` prints the exact module lists. `EVAL_CMD` (ml, agentic) is asked for in the commands step.
 
+### Project-specific stubs
+
+harness doesn't know your domain (your solver, your data sources, your review checklist), so it doesn't guess. Name what you need and it creates blank, correctly placed files with `TODO(team)` instructions for the team to fill in:
+
+| Option | Creates |
+|---|---|
+| `--skills run-solver,formulate` | `.claude/skills/<name>/SKILL.md` (frontmatter, step-by-step template) |
+| `--roles model-checker` | `.claude/agents/<name>.md` (read-only tools by default) |
+| `--rules "solver=src/solver/** bench=benchmarks/**"` | `.claude/rules/<name>.md`, loaded only for matching paths |
+| `--dirs "infra experiments"` | `<dir>/README.md` |
+
+Every `CLAUDE.md` also gets a **Project context** section to fill in (domain terms, key libraries, architecture, invariants, gotchas).
+
+### The software path: one command surface, tiered tests
+
+The `devtools` module (software, ml, agentic; research from recommended):
+
+- a **Makefile** as the single interface for humans, agents, hooks, and CI: `setup`, `lint`, `fmt`, `typecheck`, `test` (fast tier), `test-all` (full tier), `check` (everything a PR must pass);
+- **`docs/TESTING.md`**: unit, integration, property-based, regression (golden), and performance tiers; determinism, explicit tolerances, reviewed golden results, pinned inputs;
+- in an **empty Python repo**, a working **uv** skeleton: `pyproject.toml` (ruff, mypy strict, pytest with `integration` / `regression` / `slow` / `benchmark` markers, hypothesis, coverage), `src/<package>/`, `tests/`. `make setup && make check` passes out of the box;
+- a nightly **Full tests** workflow when there is a full-tier command (`make test-all`).
+
+Existing `Makefile` or `pyproject.toml` files are left alone; CI then calls the raw commands instead. Override any detected command with `--cmd KEY=CMD` (`install`, `lint`, `typecheck`, `test`, `full-test`, `format`, `eval`).
+
+### Data and model versioning (local first)
+
+The `artifacts` module (ml; research from recommended; anywhere with `--artifacts`) versions data and models without any cloud service:
+
+- `data/` and `models/` stay out of git (their `README.md` files stay in);
+- a committed **`artifacts.lock`** records the sha256 of every file, so each commit pins the exact data and models it was built and tested with;
+- `scripts/artifacts.sh snapshot | verify | status | list | hash`, plus `make artifacts-verify`; tests that need the real files skip cleanly when they don't match (e.g. in CI);
+- agents may verify but not re-pin (snapshot) on their own; agent guard flags PRs that change the lock;
+- `docs/ARTIFACTS.md` documents the migration path to DVC or object storage (and the IaC that provisions it) once remote storage exists: the lock is the list of what to upload.
+
 ## CI/CD: one PR gate
 
 Every PR gets a single required check, **PR gate**, made of:
@@ -97,7 +133,7 @@ Every PR gets a single required check, **PR gate**, made of:
   - gate scores for agent vs human PRs, and overrides;
   - AI-review findings by `detected_pattern` with 👎 dismissal counts, which tell you which categories need sharper criteria or switching off.
 
-Plus stack-aware `ci.yml`, Conventional Commit PR titles, CodeQL, dependency review, Dependabot, `@claude` mentions, and an eval workflow for agentic repos. Make **CI** and **PR gate / gate** required in branch protection. (Upgrading from an earlier harness? The old "Agent guard" check is now part of the gate: swap the required check.)
+Plus stack-aware `ci.yml` (fast tier on every PR), a nightly full-tier workflow, Conventional Commit PR titles, CodeQL, dependency review, Dependabot, `@claude` mentions, and an eval workflow for agentic repos. Make **CI** and **PR gate / gate** required in branch protection.
 
 The gate is hardened against the PR it judges:
 - every job runs its scripts and review criteria from the **base branch**;
@@ -118,50 +154,41 @@ Protect `.github/` with CODEOWNERS, and pin `CLAUDE_CODE_VERSION` in `pr-gate.ym
 | Block force-push, `--no-verify`, `curl \| sh`, `chmod 777`, shell access to `.env` | | ✅ | ✅ |
 | Lint/typecheck must pass before the agent finishes (Stop hook) | | ✅ | ✅ |
 | Block `--force-with-lease`, `reset --hard`, `git clean -f`, `gh pr merge` | | | ✅ |
-| CI workflows, CODEOWNERS, `.claude/settings.json`, hooks, `.harness/` are human-only | | | ✅ |
+| CI workflows, CODEOWNERS, `.claude/settings.json`, hooks are human-only | | | ✅ |
 | `git push` asks for confirmation; agent-guard findings fail the gate | | | ✅ |
 
-Rules that must always hold are hooks and gates; `CLAUDE.md` only guides. Every block is logged and explained to the agent: *"Blocked by harness guardrail: force-push rewrites shared history. If this is genuinely required, stop and ask a human to do it."*
+Rules that must always hold are hooks and gates; `CLAUDE.md` only guides. Every block is logged and explained to the agent: *"Blocked by guardrail: force-push rewrites shared history. If this is genuinely required, stop and ask a human to do it."*
 
 ## Monitoring
 
 1. **Live usage** (`telemetry`): Claude Code OpenTelemetry metrics (cost, tokens, sessions, tool decisions) sent to your collector.
-2. **Local audit** (`audit`): `.harness/logs/events.jsonl` records each tool call, blocked action, and failed check; `.harness/report.sh --days 7` summarises it.
+2. **Local audit** (`audit`): `.claude/logs/events.jsonl` (git-ignored) records each tool call, blocked action, and failed check; `.claude/scripts/agent-report.sh --days 7` summarises it.
 3. **Outcomes** (PR gate): scorecards on every PR and the weekly digest.
 
 ## Commands
 
-All through `setup.sh`, run from inside the project:
+Run from inside the project:
 
 ```
-setup.sh                 the wizard (re-run any time; previous answers are kept)
-setup.sh update          re-apply .harness/config (after editing it, or after a harness upgrade)
-setup.sh doctor          check drift, hook permissions, settings validity, tools
-setup.sh report          summarise local agent activity (--days N)
+setup.sh                 the wizard
+setup.sh --yes           non-interactive: profile defaults plus any flags
+setup.sh --dry-run       show what would be written
 setup.sh list            profiles, tiers, and modules
 setup.sh help            all options
 ```
 
-Non-interactive (scripts, fleet rollout):
+Non-interactive examples:
 
 ```sh
 ~/.harness-workflow/setup.sh --yes --profile ml --tier strict --owners @acme/platform --agents multi
+~/.harness-workflow/setup.sh --yes --stack python --artifacts \
+  --skills run-solver,formulate --rules "solver=src/*/solver/**" --dirs infra
 ~/.harness-workflow/setup.sh --yes --profile study
-~/.harness-workflow/setup.sh update --dry-run
 ```
-
-## How updates stay safe
-
-harness owns files in one of four ways (details in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)):
-
-- **Managed files** (workflows, hooks, rules, skills, roles) are tracked by sha256 in `.harness/manifest` and updated only while they still match what harness wrote. Once someone edits one, harness leaves it alone and writes `<file>.harness-new` next to it.
-- **Managed blocks** (`CLAUDE.md`, `AGENTS.md`, `.gitignore`, `REVIEW.md`): harness owns only the text between the `>>> harness:managed` / `<<< harness:managed` markers.
-- **Seeds** (`.github/review/criteria.md`, `.mcp.json`, `SECURITY.md`, logs and plans) are written once and are then the team's.
-- **Your rules** in `.harness/permissions` (`allow|ask|deny <rule>`) are merged into `settings.json` on every update.
 
 ## Using harness inside a company
 
-Fork or import the repo into your company's GitHub org, through whatever route your security team approves, and clone *that*. Only tech leads ever touch it; collaborators never need access. The fork is your release channel: sync upstream when you choose, and pin with a tag. Generated docs link to wherever harness was cloned from, with credentials stripped.
+Fork or import the repo into your company's GitHub org, through whatever route your security team approves, and clone *that*. Only tech leads ever touch it; collaborators never need access. Sync upstream when you choose. Generated repos never reference harness or the fork, so nothing breaks when either moves.
 
 ## Requirements
 
@@ -171,10 +198,12 @@ bash 3.2+ (stock macOS works), git, awk, sed. `jq` is optional for hooks, which 
 
 ```sh
 make lint   # shellcheck
-make test   # tests/run.sh: every profile × tier, idempotency, conflicts, hooks, review + gate (stubbed claude)
+make test   # tests/run.sh: every profile × tier, create-only/--force, stubs, artifacts, devtools, hooks, review + gate (stubbed claude)
 ```
 
-This repo runs its own harness. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) to add a module or profile, [docs/CCAR-ALIGNMENT.md](docs/CCAR-ALIGNMENT.md) for the practices behind it, and [docs/ROADMAP.md](docs/ROADMAP.md) for what's next.
+`HARNESS_TEST_UV=1 make test` also runs `make setup && make check` inside a generated Python project (needs uv and network).
+
+This repo uses a harness itself, bootstrapped once and maintained by hand. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) to add a module or profile, [docs/CCAR-ALIGNMENT.md](docs/CCAR-ALIGNMENT.md) for the practices behind it, and [docs/ROADMAP.md](docs/ROADMAP.md) for what's next.
 
 ## License
 

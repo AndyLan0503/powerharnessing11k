@@ -12,16 +12,16 @@ out=$(mktemp)
 trap 'rm -f "$out"' EXIT
 failed=''
 {{#if LINT_CMD}}
-if ! {{LINT_CMD}} >"$out" 2>&1; then failed="lint ({{LINT_CMD}})"; fi
+if ! { {{LINT_CMD}}; } >"$out" 2>&1; then failed=lint; fi
 {{/if}}
 {{#if TYPECHECK_CMD}}
-if [ -z "$failed" ] && ! {{TYPECHECK_CMD}} >"$out" 2>&1; then failed="typecheck ({{TYPECHECK_CMD}})"; fi
+if [ -z "$failed" ] && ! { {{TYPECHECK_CMD}}; } >"$out" 2>&1; then failed=typecheck; fi
 {{/if}}
 
 if [ -n "$failed" ]; then
   hook_log check_failed "$failed"
   {
-    echo "harness: $failed failed on your changes. Fix it before finishing. Last lines:"
+    echo "stop-checks: $failed failed on your changes. Fix it before finishing. Last lines:"
     tail -n 40 "$out"
   } >&2
   exit 2

@@ -1,18 +1,15 @@
 # {{PROJECT_NAME}}
 
-<!-- Project-specific guidance for Claude goes here: architecture, domain terms,
-     gotchas. Harness never edits anything outside the managed block below. -->
-
-<!-- >>> harness:managed: generated from .harness/config; see .harness/README.md before editing -->
 {{#if MULTI_AGENT}}
 @AGENTS.md
 
 ## Claude Code specifics
 
-- `.claude/settings.json` is generated; put personal overrides in `.claude/settings.local.json`.
+- Team settings are in `.claude/settings.json`; personal overrides go in `.claude/settings.local.json` (git-ignored).
 - If a hook blocks a tool call, treat the message as a hard rule, not an obstacle to route around.
 {{/if}}
 {{#unless MULTI_AGENT}}
+{{> project-context.md}}
+
 {{> working-agreement.md}}
 {{/if}}
-<!-- <<< harness:managed -->

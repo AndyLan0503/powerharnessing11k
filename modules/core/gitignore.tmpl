@@ -1,28 +1,10 @@
-# >>> harness:managed
-.harness/logs/
+# Claude Code: personal settings, agent audit log, session handoffs
 .claude/settings.local.json
+.claude/logs/
 .claude/handoff/
-*.harness-new
-{{#if MOD_ML}}
-# data and model artifacts: keep them in storage, DVC, or LFS
-/data/*
-!/data/README.md
-/models/
-*.ckpt
-*.pt
-*.pth
-*.safetensors
-*.onnx
-*.h5
-mlruns/
-wandb/
-.ipynb_checkpoints/
-{{/if}}
-{{#if MOD_RESEARCH}}
-/data/raw/
+{{#if NOTEBOOK_CHECK}}
 .ipynb_checkpoints/
 {{/if}}
 {{#if MOD_AGENTIC}}
 evals/results/
 {{/if}}
-# <<< harness:managed

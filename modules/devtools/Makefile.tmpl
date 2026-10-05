@@ -1,0 +1,65 @@
+# Common tasks. Agents, humans, and CI all use these targets, so each command
+# lives in one place. `make help` lists them.
+.DEFAULT_GOAL := help
+.PHONY: help setup lint fmt typecheck test test-all check{{#if MOD_ARTIFACTS}} artifacts-status artifacts-verify{{/if}}
+
+help: ## List targets
+	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+setup: ## Install dependencies and dev tools
+{{#if INSTALL_CMD}}
+	{{INSTALL_CMD}}
+{{/if}}
+{{#unless INSTALL_CMD}}
+	@echo "TODO(team): no install command configured" && exit 1
+{{/if}}
+
+lint: ## Static checks (style, common bugs)
+{{#if LINT_CMD}}
+	{{LINT_CMD}}
+{{/if}}
+{{#unless LINT_CMD}}
+	@echo "TODO(team): no lint command configured" && exit 1
+{{/if}}
+
+fmt: ## Reformat the code base
+{{#if PM_UV}}
+	uv run ruff format . && uv run ruff check --fix .
+{{/if}}
+{{#unless PM_UV}}
+	@echo "TODO(team): no formatter configured" && exit 1
+{{/if}}
+
+typecheck: ## Static type checks
+{{#if TYPECHECK_CMD}}
+	{{TYPECHECK_CMD}}
+{{/if}}
+{{#unless TYPECHECK_CMD}}
+	@echo "typecheck: not configured (skipped)"
+{{/if}}
+
+test: ## Fast test tier: what every change and every PR must pass
+{{#if TEST_CMD}}
+	{{TEST_CMD}}
+{{/if}}
+{{#unless TEST_CMD}}
+	@echo "TODO(team): no test command configured" && exit 1
+{{/if}}
+
+test-all: ## Full test tier: adds slow, regression, and benchmark tests
+{{#if FULL_TEST_CMD}}
+	{{FULL_TEST_CMD}}
+{{/if}}
+{{#unless FULL_TEST_CMD}}
+	$(MAKE) test
+{{/if}}
+
+check: lint typecheck test ## Everything a PR must pass (run before pushing)
+{{#if MOD_ARTIFACTS}}
+
+artifacts-status: ## Local data/model files vs artifacts.lock
+	scripts/artifacts.sh status
+
+artifacts-verify: ## Fail if recorded data/model files are missing or changed
+	scripts/artifacts.sh verify
+{{/if}}

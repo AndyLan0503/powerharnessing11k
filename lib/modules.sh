@@ -3,7 +3,7 @@
 # and module_apply(), which calls emit / settings_* (see lib/apply.sh and
 # lib/settings.sh). Order matters only for readability of the summary.
 
-ALL_MODULES="core guardrails quality audit skills ml agentic study research mcp collab ci security agent-guard review telemetry"
+ALL_MODULES="core guardrails quality audit devtools skills ml agentic study research artifacts mcp collab ci security agent-guard review telemetry"
 ALL_PROFILES="software ml agentic study research"
 ALL_TIERS="minimal recommended strict"
 
@@ -83,8 +83,6 @@ profile_load() { # profile tier -> sets HV_PROFILE HV_MODULES HV_GUARD_LEVEL
 derive_vars() {
   local m up
   HV_HARNESS_VERSION=$HARNESS_VERSION
-  HV_HARNESS_URL=$(harness_url)
-  export HV_HARNESS_URL
   HV_MULTI_AGENT=''
   [ "$HV_AGENT_TOOLS" = multi ] && HV_MULTI_AGENT=1
   HV_GUARD_RELAXED='' HV_GUARD_STANDARD='' HV_GUARD_STRICT=''
@@ -113,13 +111,27 @@ derive_vars() {
   HV_PROFILE_ENGINEERING='' HV_PROFILE_SOLO='' HV_PROTECT_RAW_DATA=''
   case $HV_PROFILE in software | ml | agentic) HV_PROFILE_ENGINEERING=1 ;; esac
   case $HV_PROFILE in study) HV_PROFILE_SOLO=1 ;; esac
-  case $HV_PROFILE in ml | research) HV_PROTECT_RAW_DATA=1 ;; esac
-  HV_NOTEBOOK_CHECK=$HV_PROTECT_RAW_DATA
+  case $HV_PROFILE in ml | research) HV_NOTEBOOK_CHECK=1 ;; *) HV_NOTEBOOK_CHECK='' ;; esac
+  # Raw data is protected wherever data is versioned (or the profile is data-centric).
+  if [ -n "$HV_NOTEBOOK_CHECK" ] || list_has "$HV_MODULES" artifacts; then HV_PROTECT_RAW_DATA=1; fi
   HV_HOW_WE_WORK=''
   case $HV_PROFILE in software | ml | agentic | research) HV_HOW_WE_WORK=1 ;; esac
   HV_PROFILE_RULES=''
   case $HV_PROFILE in ml | agentic | study | research) HV_PROFILE_RULES=1 ;; esac
   export HV_HOW_WE_WORK HV_PROFILE_RULES
+
+  # devtools: a Makefile unless the repo has one; a Python skeleton only in a
+  # Python/uv repo that has no pyproject.toml yet (both overridable by --force).
+  HV_USE_MAKE='' HV_SCAFFOLD_PYTHON=''
+  if list_has "$HV_MODULES" devtools; then
+    if [ ! -e "$TARGET/Makefile" ] || [ -n "${FORCE:-}" ]; then HV_USE_MAKE=1; fi
+    if [ "$HV_STACK" = python ] && [ "$HV_PKG_MANAGER" = uv ] &&
+      { [ ! -e "$TARGET/pyproject.toml" ] || [ -n "${FORCE:-}" ]; }; then HV_SCAFFOLD_PYTHON=1; fi
+  fi
+  HV_PY_DIST=$(printf '%s' "$HV_PROJECT_NAME" | tr 'A-Z' 'a-z' | sed 's/[^a-z0-9]\{1,\}/-/g; s/^-//; s/-$//')
+  HV_PY_PACKAGE=$(printf '%s' "$HV_PY_DIST" | tr '-' '_')
+  case $HV_PY_PACKAGE in '' ) HV_PY_PACKAGE=app HV_PY_DIST=app ;; [0-9]*) HV_PY_PACKAGE="pkg_$HV_PY_PACKAGE" ;; esac
+  export HV_USE_MAKE HV_SCAFFOLD_PYTHON HV_PY_DIST HV_PY_PACKAGE
 
   # Jobs the PR gate waits for.
   HV_GATE_NEEDS=''

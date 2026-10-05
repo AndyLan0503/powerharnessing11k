@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# harness: a repeatable agentic-harness setup for any git repository.
+# harness: one-shot agentic-harness bootstrap for a git repository.
 # https://github.com/AndyLan0503/powerharnessing11k
+#
+# harness runs once per repository. It creates the files a team needs to work
+# with coding agents and then steps away: nothing it writes refers back to it,
+# and the team owns and maintains every file from then on.
 set -eu
 set -o pipefail
 
@@ -13,32 +17,28 @@ HARNESS_ROOT=$(cd "$(dirname "$_self")/.." && pwd)
 HARNESS_VERSION=$(cat "$HARNESS_ROOT/VERSION")
 export HARNESS_ROOT HARNESS_VERSION
 
-for _lib in util ui render state apply settings detect modules wizard; do
+for _lib in util ui render apply settings detect modules custom wizard; do
   # shellcheck disable=SC1090
   . "$HARNESS_ROOT/lib/$_lib.sh"
 done
 
 usage() {
   cat <<EOF
-harness $HARNESS_VERSION: agentic harness setup for git repositories
+harness $HARNESS_VERSION: one-shot agentic harness bootstrap for a git repository
 
-Usage: harness <command> [options]
+Usage: harness [configure] [options]     run the setup wizard (default)
+       harness list                      show profiles, tiers, and modules
+       harness version | help
 
-Commands:
-  configure   Run the setup wizard (alias: init). Re-run any time.
-  update      Re-apply the harness from .harness/config (after editing it,
-              or after upgrading harness). Never overwrites files you edited.
-  doctor      Check the harness in a repo: drift, hooks, settings, tools.
-  report      Summarise the local agent audit log (.harness/logs).
-  list        Show profiles, tiers, and modules.
-  self-update Pull the latest harness (same as: git -C <harness dir> pull).
-  version     Print the version.
+harness creates missing files and never touches existing ones (unless
+--force). After the bootstrap the repository owns every file; harness is not
+needed again.
 
 Options:
-  -C, --target DIR      Repository to operate on (default: current directory)
+  -C, --target DIR      Repository to bootstrap (default: current directory)
   -y, --yes             Non-interactive: accept detected defaults
-  -n, --dry-run         Show what would change without writing anything
-  -f, --force           Overwrite managed files even if you edited them
+  -n, --dry-run         Show what would be written without writing anything
+  -f, --force           Overwrite files that already exist
       --profile NAME    software | ml | agentic | study | research (default: software)
       --tier NAME       minimal | recommended | strict (default: recommended;
                         --preset is an alias, and "standard" means recommended)
@@ -48,15 +48,33 @@ Options:
       --agents KIND     claude | multi (multi adds AGENTS.md for other agents)
       --owners LIST     CODEOWNERS entries, e.g. "@acme/platform"
       --otel URL        OTLP endpoint; enables the telemetry module
-      --days N          (report) only include the last N days
+      --artifacts       Version local data/model artifacts (artifacts.lock)
+      --no-artifacts    Don't, even if the profile would
+      --cmd KEY=CMD     Override a detected command (repeatable). KEY is one of
+                        install, lint, typecheck, test, full-test, format, eval;
+                        an empty CMD clears it. e.g. --cmd "test=make test"
+
+Project-specific stubs (blank files with instructions for the team to fill in):
+      --skills LIST     Skill names, e.g. "model-formulation,solver-tuning"
+      --roles LIST      Subagent role names, e.g. "formulation-reviewer"
+      --rules LIST      Path-scoped rules as name=glob[,glob], space-separated,
+                        e.g. "solver=src/solver/** benchmarks=benchmarks/**"
+      --dirs LIST       Extra directories to scaffold with a README, e.g. "infra"
 EOF
 }
 
 # ---- argument parsing ------------------------------------------------------
-CMD=${1:-help}
-[ $# -eq 0 ] || shift
+CMD=configure
+case ${1:-} in
+  configure | init | list | version | help) CMD=$1; shift ;;
+  -v | --version) CMD=version; shift ;;
+  -h | --help) CMD=help; shift ;;
+  '' | -*) ;;
+  *) harness_die "unknown command: $1 (see: harness help)" ;;
+esac
 TARGET=. YES='' DRY_RUN='' FORCE='' OPT_PROFILE='' OPT_TIER='' OPT_STACK='' OPT_MODULES=''
-OPT_GUARD='' OPT_AGENTS='' OPT_OWNERS='' OPT_OWNERS_SET='' OPT_OTEL='' OPT_DAYS=''
+OPT_GUARD='' OPT_AGENTS='' OPT_OWNERS='' OPT_OWNERS_SET='' OPT_OTEL='' OPT_ARTIFACTS=''
+OPT_SKILLS='' OPT_ROLES='' OPT_RULES='' OPT_DIRS='' OPT_CUSTOM_SET='' OPT_CMDS=''
 while [ $# -gt 0 ]; do
   case $1 in
     -C | --target) TARGET=${2:?--target needs a value}; shift ;;
@@ -71,7 +89,21 @@ while [ $# -gt 0 ]; do
     --agents) OPT_AGENTS=${2:?}; shift ;;
     --owners) OPT_OWNERS=${2-}; OPT_OWNERS_SET=1; shift ;;
     --otel) OPT_OTEL=${2:?}; shift ;;
-    --days) OPT_DAYS=${2:?}; shift ;;
+    --artifacts) OPT_ARTIFACTS=yes ;;
+    --no-artifacts) OPT_ARTIFACTS=no ;;
+    --skills) OPT_SKILLS=${2-}; OPT_CUSTOM_SET=1; shift ;;
+    --roles) OPT_ROLES=${2-}; OPT_CUSTOM_SET=1; shift ;;
+    --rules) OPT_RULES=${2-}; OPT_CUSTOM_SET=1; shift ;;
+    --dirs) OPT_DIRS=${2-}; OPT_CUSTOM_SET=1; shift ;;
+    --cmd)
+      case ${2-} in
+        install=* | lint=* | typecheck=* | test=* | full-test=* | format=* | eval=*) ;;
+        *) harness_die "invalid --cmd '${2-}' (expected KEY=CMD; see: harness help)" ;;
+      esac
+      OPT_CMDS="$OPT_CMDS$2
+"
+      shift
+      ;;
     -h | --help) CMD=help ;;
     *) harness_die "unknown option: $1 (see: harness help)" ;;
   esac
@@ -112,11 +144,12 @@ validate_answers() {
   case $HV_GUARD_LEVEL in relaxed | standard | strict) ;; *) harness_die "invalid guard level: $HV_GUARD_LEVEL" ;; esac
   case $HV_AGENT_TOOLS in claude | multi) ;; *) harness_die "invalid agents value: $HV_AGENT_TOOLS" ;; esac
   case $HV_DIFF_BUDGET in '' | *[!0-9]*) harness_die "DIFF_BUDGET must be a number" ;; esac
+  custom_validate
   HV_MODULES=$(modules_normalize "$HV_MODULES")
   export HV_MODULES
 }
 
-# Apply flags given on the command line on top of whatever answers we have.
+# Apply flags given on the command line on top of the defaults.
 apply_flag_overrides() {
   if [ -n "$OPT_STACK" ]; then
     HV_STACK=$OPT_STACK
@@ -135,17 +168,42 @@ apply_flag_overrides() {
     HV_OTEL_ENDPOINT=$OPT_OTEL
     HV_MODULES="$HV_MODULES telemetry"
   fi
-  export HV_MODULES HV_GUARD_LEVEL HV_AGENT_TOOLS HV_CODEOWNERS HV_OTEL_ENDPOINT
+  case $OPT_ARTIFACTS in
+    yes) HV_MODULES="$HV_MODULES artifacts" ;;
+    no) HV_MODULES=$(printf ' %s ' "$HV_MODULES" | sed 's/ artifacts / /g') ;;
+  esac
+  local line key
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    key=${line%%=*}
+    case $key in
+      install) HV_INSTALL_CMD=${line#*=} ;;
+      lint) HV_LINT_CMD=${line#*=} ;;
+      typecheck) HV_TYPECHECK_CMD=${line#*=} ;;
+      test) HV_TEST_CMD=${line#*=} ;;
+      full-test) HV_FULL_TEST_CMD=${line#*=} ;;
+      format) HV_FORMAT_CMD=${line#*=} ;;
+      eval) HV_EVAL_CMD=${line#*=} ;;
+    esac
+  done <<EOF
+$OPT_CMDS
+EOF
+  export HV_INSTALL_CMD HV_LINT_CMD HV_TYPECHECK_CMD HV_TEST_CMD HV_FULL_TEST_CMD HV_FORMAT_CMD HV_EVAL_CMD
+  if [ -n "$OPT_CUSTOM_SET" ]; then
+    HV_SKILLS=${OPT_SKILLS//,/ } HV_ROLES=${OPT_ROLES//,/ } HV_RULES=$OPT_RULES HV_DIRS=${OPT_DIRS//,/ }
+  fi
+  export HV_MODULES HV_GUARD_LEVEL HV_AGENT_TOOLS HV_CODEOWNERS HV_OTEL_ENDPOINT \
+    HV_SKILLS HV_ROLES HV_RULES HV_DIRS
 }
 
 do_apply() {
-  local tmp
+  local tmp m
   validate_answers
   derive_vars
   apply_reset
   settings_reset
-  local m
   for m in $HV_MODULES; do module_run "$m"; done
+  custom_apply
 
   tmp=$HARNESS_TMP/settings.json
   settings_render >"$tmp"
@@ -155,61 +213,54 @@ do_apply() {
   printf '\n'
   [ -z "$DRY_RUN" ] || ui_warn "Dry run: nothing was written."
   apply_summary
-
-  local orphans
-  orphans=$(manifest_orphans)
-  if [ -n "$orphans" ]; then
-    printf '\n'
-    ui_warn "No longer generated by your config (left in place; delete if unwanted):"
-    printf '%s\n' "$orphans" | sed 's/^/      /'
-  fi
-
-  if [ -z "$DRY_RUN" ]; then
-    config_write
-    manifest_commit
-  fi
   printf '\n'
-  if [ "$APPLY_CONFLICTS" -gt 0 ]; then
-    ui_warn "$APPLY_CONFLICTS file(s) kept as you had them. Review each *.harness-new, merge what you want, delete it."
-    ui_note "Or run 'harness update --force' to take harness's version everywhere."
+  if [ "$APPLY_SKIPPED" -gt 0 ]; then
+    ui_warn "$APPLY_SKIPPED file(s) already existed and were left as they are. Use --force to overwrite them."
   fi
 }
 
 next_steps() {
   [ -z "$DRY_RUN" ] || return 0
-  ui_ok "Harness applied to $TARGET"
+  local n=1
+  ui_ok "Bootstrapped $TARGET"
   printf '\n'
-  ui_info "${C_BOLD}Next steps${C_RESET}"
-  ui_info "  1. Review, commit, and open a PR:  git add -A && git commit -m 'chore: set up agent harness'"
-  ui_info "     Once it merges, collaborators get everything on their next pull; they install nothing."
-  ui_info "  2. Write project-specific guidance above the managed block in CLAUDE.md"
+  ui_info "${C_BOLD}Next steps${C_RESET} (everything written is now yours; harness is not needed again)"
+  ui_info "  $n. Fill in the TODOs: the Project context in CLAUDE.md$(custom_has_stubs && printf ', and the stubs listed above')"
+  n=$((n + 1))
+  if [ -n "$HV_SCAFFOLD_PYTHON" ]; then
+    ui_info "  $n. make setup && make check     (installs dev tools with uv, then runs every fast check)"
+    n=$((n + 1))
+  fi
+  ui_info "  $n. Review, commit, and open a PR:  git add -A && git commit -m 'chore: bootstrap agent harness'"
+  n=$((n + 1))
   if list_has "$HV_MODULES" ci; then
-    ui_info "  3. Protect '$HV_DEFAULT_BRANCH': require PR review + the CI check (Settings → Branches)"
+    ui_info "  $n. Protect '$HV_DEFAULT_BRANCH': require PR review and the CI checks (Settings → Branches)"
+    n=$((n + 1))
   fi
   if list_has "$HV_MODULES" review; then
-    ui_info "  4. Add the ANTHROPIC_API_KEY repository secret for the Claude workflows"
+    ui_info "  $n. Add the ANTHROPIC_API_KEY repository secret for the Claude workflows"
   fi
-  ui_info "  Re-run ${C_BOLD}$HARNESS_ROOT/setup.sh${C_RESET} to change answers; ${C_BOLD}setup.sh doctor${C_RESET} checks health."
 }
 
 cmd_configure() {
   resolve_target
   ensure_git_repo
   harness_tmpdir >/dev/null
-  # Start from defaults, then any previous answers, then flags.
   HV_PROJECT_NAME=$(basename "$TARGET")
   HV_DEFAULT_BRANCH=$(detect_default_branch "$TARGET")
   HV_STACK=$(detect_stack "$TARGET")
   HV_PKG_MANAGER=$(detect_pkg_manager "$TARGET" "$HV_STACK")
   HV_AGENT_TOOLS=claude HV_CODEOWNERS='' HV_OTEL_ENDPOINT='' HV_DIFF_BUDGET=800 HV_EVAL_CMD=''
+  HV_SKILLS='' HV_ROLES='' HV_RULES='' HV_DIRS=''
   export HV_PROJECT_NAME HV_DEFAULT_BRANCH HV_STACK HV_PKG_MANAGER HV_AGENT_TOOLS \
-    HV_CODEOWNERS HV_OTEL_ENDPOINT HV_DIFF_BUDGET HV_EVAL_CMD
+    HV_CODEOWNERS HV_OTEL_ENDPOINT HV_DIFF_BUDGET HV_EVAL_CMD HV_SKILLS HV_ROLES HV_RULES HV_DIRS
   stack_defaults
   profile_load software recommended
-  local had_config=''
-  if config_load; then had_config=1; fi
   apply_flag_overrides
 
+  if [ -e "$TARGET/.claude/settings.json" ] && [ -z "$FORCE" ]; then
+    ui_warn "This repository already has .claude/settings.json: existing files will be kept and only missing ones created."
+  fi
   if [ -z "$YES" ]; then
     if ! { : <"$HARNESS_TTY"; } 2>/dev/null; then
       harness_die "no terminal for the wizard; pass --yes for non-interactive setup"
@@ -218,89 +269,10 @@ cmd_configure() {
     ui_clear
     ui_banner
   else
-    ui_info "${C_BOLD}harness${C_RESET} $HARNESS_VERSION → $TARGET  ${C_DIM}($HV_PROFILE, $HV_STACK, $HV_GUARD_LEVEL${had_config:+, using .harness/config})${C_RESET}"
+    ui_info "${C_BOLD}harness${C_RESET} $HARNESS_VERSION → $TARGET  ${C_DIM}($HV_PROFILE, $HV_STACK, $HV_GUARD_LEVEL)${C_RESET}"
   fi
   do_apply
   next_steps
-}
-
-cmd_update() {
-  resolve_target
-  harness_tmpdir >/dev/null
-  config_load || harness_die "no .harness/config in $TARGET; run setup.sh (the wizard) first"
-  apply_flag_overrides
-  ui_info "${C_BOLD}harness update${C_RESET} $HARNESS_VERSION → $TARGET"
-  do_apply
-  [ -n "$DRY_RUN" ] || ui_ok "Up to date."
-}
-
-cmd_doctor() {
-  resolve_target
-  harness_tmpdir >/dev/null
-  local problems=0 sha path cur hook
-  ui_info "${C_BOLD}harness doctor${C_RESET} → $TARGET"
-  printf '\n'
-  if config_load; then ui_ok ".harness/config found (stack: $HV_STACK, guard: $HV_GUARD_LEVEL)"; else
-    ui_err "no .harness/config; run setup.sh (the wizard) first"
-    return 1
-  fi
-
-  if [ -f "$(manifest_path)" ]; then
-    while read -r sha path; do
-      if [ ! -e "$TARGET/$path" ]; then
-        ui_warn "missing: $path (run 'harness update' to restore)"
-        problems=$((problems + 1))
-      else
-        cur=$(harness_sha "$TARGET/$path")
-        [ "$cur" = "$sha" ] || ui_note "  edited locally: $path (updates will propose $path.harness-new)"
-      fi
-    done <"$(manifest_path)"
-    ui_ok "manifest checked ($(wc -l <"$(manifest_path)" | tr -d ' ') managed files)"
-  fi
-
-  for hook in "$TARGET"/.claude/hooks/*.sh; do
-    [ -e "$hook" ] || continue
-    if [ ! -x "$hook" ]; then
-      ui_warn "hook not executable: ${hook#"$TARGET"/} (chmod +x it)"
-      problems=$((problems + 1))
-    fi
-  done
-
-  if [ -f "$TARGET/.claude/settings.json" ]; then
-    if command -v jq >/dev/null 2>&1; then
-      if jq empty "$TARGET/.claude/settings.json" 2>/dev/null; then ui_ok ".claude/settings.json is valid JSON"; else
-        ui_err ".claude/settings.json is not valid JSON"
-        problems=$((problems + 1))
-      fi
-    fi
-  fi
-
-  local pending
-  pending=$(cd "$TARGET" && find . -name '*.harness-new' -not -path './.git/*' 2>/dev/null | sed 's|^\./||')
-  if [ -n "$pending" ]; then
-    ui_warn "pending proposals to review:"
-    printf '%s\n' "$pending" | sed 's/^/      /'
-  fi
-
-  if command -v jq >/dev/null 2>&1; then ui_ok "jq available (fast hook parsing)"; else
-    ui_note "  jq not found: hooks fall back to python3/sed parsing"
-  fi
-  if command -v claude >/dev/null 2>&1; then ui_ok "claude CLI available"; else ui_note "  claude CLI not found on PATH"; fi
-  if command -v gh >/dev/null 2>&1; then ui_ok "gh CLI available"; else ui_note "  gh CLI not found (optional)"; fi
-
-  printf '\n'
-  if [ $problems -eq 0 ]; then ui_ok "No problems found."; else
-    ui_warn "$problems problem(s) found."
-    return 1
-  fi
-}
-
-cmd_report() {
-  resolve_target
-  # Same script the audit module installs as .harness/report.sh, so the
-  # maintainer's view and every collaborator's view are identical.
-  bash "$HARNESS_ROOT/modules/audit/report.sh" --log "$TARGET/.harness/logs/events.jsonl" \
-    ${OPT_DAYS:+--days "$OPT_DAYS"}
 }
 
 cmd_list() {
@@ -321,23 +293,9 @@ cmd_list() {
   for m in $ALL_MODULES; do printf '  %-12s %s\n' "$m" "$(module_desc "$m")"; done
 }
 
-cmd_self_update() {
-  if ! git -C "$HARNESS_ROOT" symbolic-ref --quiet HEAD >/dev/null; then
-    harness_die "$HARNESS_ROOT is pinned to a release tag; check out another tag with: git -C $HARNESS_ROOT checkout <tag>"
-  fi
-  ui_info "Pulling from $(harness_url)"
-  git -C "$HARNESS_ROOT" pull --ff-only && ui_ok "harness is now $(cat "$HARNESS_ROOT/VERSION")"
-  ui_note "Run 'harness update' in each repo to pick up template changes."
-}
-
 case $CMD in
   configure | init) cmd_configure ;;
-  update) cmd_update ;;
-  doctor) cmd_doctor ;;
-  report) cmd_report ;;
   list) cmd_list ;;
-  self-update) cmd_self_update ;;
-  version | --version | -v) echo "harness $HARNESS_VERSION" ;;
-  help | -h | --help) usage ;;
-  *) harness_die "unknown command: $CMD (see: harness help)" ;;
+  version) echo "harness $HARNESS_VERSION" ;;
+  help) usage ;;
 esac

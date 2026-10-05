@@ -5,8 +5,8 @@
 cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
 {{#if INSTALL_CMD}}
 log=$(mktemp)
-if ! {{INSTALL_CMD}} >"$log" 2>&1; then
-  echo "harness: dependency install failed ({{INSTALL_CMD}}). Last lines:" >&2
+if ! { {{INSTALL_CMD}}; } >"$log" 2>&1; then
+  echo "session-start: dependency install failed. Last lines:" >&2
   tail -n 20 "$log" >&2
 fi
 rm -f "$log"

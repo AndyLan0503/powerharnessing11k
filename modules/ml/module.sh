@@ -8,5 +8,5 @@ module_apply() {
   emit file skills/data-audit.md .claude/skills/data-audit/SKILL.md
   emit seed EXPERIMENTS.md EXPERIMENTS.md
   emit seed DATA.md docs/DATA.md
-  emit seed data-readme.md data/README.md
+  emit append gitignore.tmpl .gitignore
 }

@@ -1,6 +1,4 @@
-# >>> harness:managed
-.harness/logs/
+# Claude Code: personal settings, agent audit log, session handoffs
 .claude/settings.local.json
+.claude/logs/
 .claude/handoff/
-*.harness-new
-# <<< harness:managed

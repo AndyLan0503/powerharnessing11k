@@ -1,0 +1,48 @@
+{{#if STACK_NODE}}
+{{#if PM_PNPM}}
+      - uses: pnpm/action-setup@v4
+{{/if}}
+{{#if PM_BUN}}
+      - uses: oven-sh/setup-bun@v2
+{{/if}}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+{{#unless PM_BUN}}
+          cache: {{PKG_MANAGER}}
+{{/if}}
+{{/if}}
+{{#if STACK_PYTHON}}
+{{#if PM_UV}}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+{{/if}}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+{{#if PM_POETRY}}
+      - run: pipx install poetry
+{{/if}}
+{{/if}}
+{{#if STACK_GO}}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+{{/if}}
+{{#if STACK_RUST}}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+{{/if}}
+{{#if INSTALL_CMD}}
+      - name: Install
+        run: |
+{{#if USE_MAKE}}
+          make setup
+{{/if}}
+{{#unless USE_MAKE}}
+          {{INSTALL_CMD}}
+{{/if}}
+{{/if}}

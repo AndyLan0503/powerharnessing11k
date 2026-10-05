@@ -1,9 +1,7 @@
 # Review checklist
 
-<!-- Add repo-specific review rules above or below the managed block.
-     Humans and the Claude review workflow both use this file. -->
+<!-- Humans and the Claude review workflow both use this file; adapt it to the repo. -->
 
-<!-- >>> harness:managed -->
 ## Always check
 
 1. **Correctness.** Name concrete inputs that break it. Edge cases: empty, null, very large, concurrent, unicode.
@@ -18,4 +16,3 @@
 
 - 🔴 **Blocking:** bugs, security issues, missing tests for changed behavior.
 - 🟡 **Nit:** style, naming, small clarity wins. Never blocks a merge.
-<!-- <<< harness:managed -->

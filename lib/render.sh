@@ -19,7 +19,7 @@ render_template() {
         }
       }
       close(path)
-      if (n == 0) { print "render: missing or empty partial " path > "/dev/stderr"; exit 3 }
+      if (n == 0 && depth > 0) { print "render: missing or empty partial " path > "/dev/stderr"; exit 3 }
     }
     BEGIN { expand(ARGV[1], 0); exit }' "$1" | awk -f "$HARNESS_ROOT/lib/render.awk" >"$2"
 }

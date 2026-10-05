@@ -2,16 +2,14 @@
 MODULE_DESC="CLAUDE.md / AGENTS.md, .claude/rules, settings.json, /review + /handoff commands, reviewer role, session-start hook"
 
 module_apply() {
-  emit block CLAUDE.md.tmpl CLAUDE.md
-  if [ -n "$HV_MULTI_AGENT" ]; then emit block AGENTS.md.tmpl AGENTS.md; fi
+  emit file CLAUDE.md.tmpl CLAUDE.md
+  if [ -n "$HV_MULTI_AGENT" ]; then emit file AGENTS.md.tmpl AGENTS.md; fi
   emit exec hooks/lib.sh .claude/hooks/lib.sh
   emit exec hooks/session-start.sh .claude/hooks/session-start.sh
-  emit block gitignore.tmpl .gitignore
-  emit seed editorconfig.tmpl .editorconfig
-  emit seed permissions.tmpl .harness/permissions
-  emit file harness-readme.md .harness/README.md
+  emit append gitignore.tmpl .gitignore
+  emit file editorconfig.tmpl .editorconfig
 
-  # Shared commands and roles. Study repos get their own tutor-style roles.
+  # Shared commands and the shared reviewer role (not for solo study repos).
   emit file commands/handoff.md .claude/commands/handoff.md
   if [ -z "$HV_PROFILE_STUDY" ]; then
     emit file commands/review.md .claude/commands/review.md

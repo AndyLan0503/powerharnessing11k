@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Shared helpers for harness hooks. Generated file: change .harness/config
-# instead and have a maintainer regenerate (see .harness/README.md).
+# Shared helpers for this repo's Claude Code hooks (.claude/hooks/).
 #
 # Works without jq: falls back to python3, then to a sed extractor that is
 # good enough for pattern matching.
@@ -39,10 +38,10 @@ _hook_esc() {
   printf '%s' "$s" | tr '\n\t\r' '   '
 }
 
-# hook_log KIND DETAIL: append one JSON line to .harness/logs/events.jsonl.
+# hook_log KIND DETAIL: append one JSON line to .claude/logs/events.jsonl.
 hook_log() {
   local dir
-  dir="$(hook_root)/.harness/logs"
+  dir="$(hook_root)/.claude/logs"
   mkdir -p "$dir" 2>/dev/null || return 0
   printf '{"ts":"%s","kind":"%s","session_id":"%s","tool":"%s","detail":"%s"}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" \
@@ -55,6 +54,6 @@ hook_log() {
 # back to the agent as the reason.
 hook_block() {
   hook_log blocked "$1"
-  printf 'Blocked by harness guardrail: %s\nIf this is genuinely required, stop and ask a human to do it.\n' "$1" >&2
+  printf 'Blocked by guardrail: %s\nIf this is genuinely required, stop and ask a human to do it.\n' "$1" >&2
   exit 2
 }

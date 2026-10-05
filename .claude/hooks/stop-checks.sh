@@ -11,12 +11,12 @@ cd "$(hook_root)" || exit 0
 out=$(mktemp)
 trap 'rm -f "$out"' EXIT
 failed=''
-if ! make lint >"$out" 2>&1; then failed="lint (make lint)"; fi
+if ! { make lint; } >"$out" 2>&1; then failed=lint; fi
 
 if [ -n "$failed" ]; then
   hook_log check_failed "$failed"
   {
-    echo "harness: $failed failed on your changes. Fix it before finishing. Last lines:"
+    echo "stop-checks: $failed failed on your changes. Fix it before finishing. Last lines:"
     tail -n 40 "$out"
   } >&2
   exit 2

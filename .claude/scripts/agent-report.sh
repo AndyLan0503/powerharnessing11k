@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Summarise the local agent audit log written by the harness hooks.
-# Usage: .harness/report.sh [--days N] [--log FILE]
+# Summarise the local agent audit log written by the Claude Code hooks.
+# Usage: .claude/scripts/agent-report.sh [--days N] [--log FILE]
 # Self-contained (bash, awk, date); nothing to install.
 set -eu
 
@@ -17,7 +17,7 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-[ -n "$log" ] || log="$(cd "$(dirname "$0")" && pwd)/logs/events.jsonl"
+[ -n "$log" ] || log="$(cd "$(dirname "$0")/.." && pwd)/logs/events.jsonl"
 
 if [ ! -f "$log" ]; then
   echo "No agent activity recorded yet ($log). It fills as agents work in this repo."

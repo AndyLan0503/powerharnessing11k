@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # PostToolUse(*) and Stop: appends a compact record of each agent action to
-# .harness/logs/events.jsonl (git-ignored). Inputs are truncated; tool output
+# .claude/logs/events.jsonl (git-ignored). Inputs are truncated; tool output
 # is never logged.
 . "$(dirname "$0")/lib.sh"
 

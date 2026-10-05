@@ -1,20 +1,18 @@
 # shellcheck shell=bash
-# Writing files into the target repo. Four modes, chosen per file by modules:
+# Writing files into the target repo. harness runs once per repo: it creates
+# what is missing and never manages files afterwards. Modes, chosen by modules:
 #
-#   file   Whole file owned by harness. Tracked in .harness/manifest by sha256.
-#          Updated only while it still matches what harness last wrote; once a
-#          human edits it, harness writes <path>.harness-new beside it instead.
-#   exec   Same as file, plus chmod +x (hook scripts).
-#   block  Harness owns only the region between ">>> harness:managed" and
-#          "<<< harness:managed" marker lines; everything else is yours.
-#   seed   Written once if missing, never touched again.
-
-BLOCK_START='>>> harness:managed'
-BLOCK_END='<<< harness:managed'
+#   file    Create if missing. If the file exists it is left alone (reported as
+#           skipped) unless --force is given.
+#   exec    Same as file, plus chmod +x (hook and helper scripts).
+#   append  Line-based files such as .gitignore: append the template's lines
+#           that are not already present. Existing lines are never touched.
+#
+# "seed" is accepted as a synonym for "file".
 
 apply_reset() {
   : >"$HARNESS_TMP/status"
-  : >"$HARNESS_TMP/manifest.new"
+  APPLY_APPENDED=''
 }
 
 _status() { # kind path [note]
@@ -41,90 +39,73 @@ emit() {
 apply_rendered() { # mode tmp dest
   local mode=$1 tmp=$2 dest=$3 path=$TARGET/$3
   case $mode in
-    file | exec) _apply_file "$mode" "$tmp" "$dest" ;;
-    block) _apply_block "$tmp" "$dest" ;;
-    seed)
-      if [ -e "$path" ]; then
-        _status kept "$dest"
-      else
+    file | seed | exec)
+      if [ ! -e "$path" ]; then
         _write "$tmp" "$dest"
         _status created "$dest"
+      elif [ -n "${FORCE:-}" ]; then
+        if cmp -s "$tmp" "$path"; then
+          _status unchanged "$dest"
+        else
+          _write "$tmp" "$dest"
+          _status overwritten "$dest"
+        fi
+      else
+        _status skipped "$dest" "already exists; left as is"
+        return 0
       fi
+      if [ "$mode" = exec ] && [ -z "${DRY_RUN:-}" ]; then chmod +x "$path"; fi
       ;;
+    append) _apply_append "$tmp" "$dest" ;;
     *) harness_die "unknown emit mode: $mode" ;;
   esac
 }
 
-_apply_file() {
-  local mode=$1 tmp=$2 dest=$3 path=$TARGET/$3 new_sha cur_sha rec_sha
-  new_sha=$(harness_sha "$tmp")
-  if [ ! -e "$path" ]; then
-    _write "$tmp" "$dest"
-    _status created "$dest"
-    manifest_record "$dest" "$new_sha"
-  else
-    cur_sha=$(harness_sha "$path")
-    rec_sha=$(manifest_get "$dest")
-    if [ "$cur_sha" = "$new_sha" ]; then
-      _status unchanged "$dest"
-      manifest_record "$dest" "$new_sha"
-    elif [ -n "${FORCE:-}" ] || { [ -n "$rec_sha" ] && [ "$cur_sha" = "$rec_sha" ]; }; then
-      _write "$tmp" "$dest"
-      _status updated "$dest"
-      manifest_record "$dest" "$new_sha"
-    else
-      # Locally modified (or pre-existing and never managed): keep theirs.
-      _write "$tmp" "$dest.harness-new"
-      _status conflict "$dest" "kept yours; proposed version in $dest.harness-new"
-      [ -z "$rec_sha" ] || manifest_record "$dest" "$rec_sha"
-      return 0
-    fi
-  fi
-  if [ "$mode" = exec ] && [ -z "${DRY_RUN:-}" ]; then chmod +x "$path"; fi
-  if [ -z "${DRY_RUN:-}" ]; then rm -f "$path.harness-new"; fi
-}
-
-_apply_block() {
-  local tmp=$1 dest=$2 path=$TARGET/$2 block merged
-  grep -q "$BLOCK_START" "$tmp" || harness_die "template for $dest has no managed block markers"
+_apply_append() { # tmp dest
+  local tmp=$1 dest=$2 path=$TARGET/$2 missing=$HARNESS_TMP/append.missing
   if [ ! -e "$path" ]; then
     _write "$tmp" "$dest"
     _status created "$dest"
     return
   fi
-  block=$tmp.block
-  merged=$tmp.merged
-  awk -v s="$BLOCK_START" -v e="$BLOCK_END" \
-    'index($0, s) { on = 1 } on { print } index($0, e) { on = 0 }' "$tmp" >"$block"
-  if grep -q "$BLOCK_START" "$path"; then
-    awk -v s="$BLOCK_START" -v e="$BLOCK_END" -v blk="$block" '
-      index($0, s) && !done { while ((getline l < blk) > 0) print l; skip = 1; next }
-      skip && index($0, e) { skip = 0; done = 1; next }
-      !skip { print }' "$path" >"$merged"
-  else
-    { cat "$path"; [ -z "$(tail -c 1 "$path")" ] || echo; echo; cat "$block"; } >"$merged"
-  fi
-  if cmp -s "$merged" "$path"; then
+  # Template lines (comments and blanks excluded) not already in the file.
+  awk 'NR == FNR { have[$0] = 1; next } /^[[:space:]]*(#|$)/ { next } !($0 in have)' \
+    "$path" "$tmp" >"$missing"
+  if [ ! -s "$missing" ]; then
     _status unchanged "$dest"
-  else
-    _write "$merged" "$dest"
-    _status updated "$dest" "managed block only"
+    return
   fi
+  if [ -z "${DRY_RUN:-}" ]; then
+    local last
+    last=$(tail -c 1 "$path")
+    {
+      [ -z "$last" ] || echo
+      # One header per file per run, however many modules append to it.
+      case " $APPLY_APPENDED " in
+        *" $dest "*) ;;
+        *) echo; echo "# Added by the agent harness bootstrap" ;;
+      esac
+      cat "$missing"
+    } >>"$path"
+    APPLY_APPENDED="$APPLY_APPENDED $dest"
+  fi
+  _status appended "$dest" "$(wc -l <"$missing" | tr -d ' ') line(s)"
 }
 
-apply_summary() { # -> prints summary, returns number of conflicts (capped)
-  local kind path note conflicts=0 sym color
+apply_summary() {
+  local kind path note sym color skipped=0
   while IFS="$(printf '\t')" read -r kind path note; do
     case $kind in
       created) sym='+' color=$C_OK ;;
-      updated) sym='~' color=$C_ACCENT ;;
+      appended) sym='+' color=$C_OK ;;
+      overwritten) sym='~' color=$C_WARN ;;
       unchanged) sym='=' color=$C_DIM ;;
-      kept) sym='·' color=$C_DIM ;;
-      conflict) sym='!' color=$C_WARN conflicts=$((conflicts + 1)) ;;
+      skipped) sym='·' color=$C_DIM skipped=$((skipped + 1)) ;;
+      *) sym='?' color='' ;;
     esac
-    printf '  %s%s %-9s%s %s' "$color" "$sym" "$kind" "$C_RESET" "$path"
+    printf '  %s%s %-11s%s %s' "$color" "$sym" "$kind" "$C_RESET" "$path"
     [ -z "$note" ] || printf '  %s' "${C_DIM}($note)${C_RESET}"
     printf '\n'
   done <"$HARNESS_TMP/status"
-  APPLY_CONFLICTS=$conflicts
+  APPLY_SKIPPED=$skipped
 }

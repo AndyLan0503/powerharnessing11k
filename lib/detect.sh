@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # Stack detection and per-stack command defaults. Every default can be
-# overridden in the wizard or by editing .harness/config.
+# overridden in the wizard or with command-line flags.
 
 detect_stack() { # dir -> node|python|go|rust|generic
   local d=$1
@@ -27,9 +27,11 @@ detect_pkg_manager() { # dir stack
       else echo npm; fi
       ;;
     python)
+      # uv is the default for new projects; pip only for requirements-only repos.
       if [ -f "$d/uv.lock" ]; then echo uv
       elif [ -f "$d/poetry.lock" ]; then echo poetry
-      else echo pip; fi
+      elif [ -f "$d/requirements.txt" ] && [ ! -f "$d/pyproject.toml" ]; then echo pip
+      else echo uv; fi
       ;;
     go) echo go ;;
     rust) echo cargo ;;
@@ -51,7 +53,7 @@ detect_default_branch() { # dir
 # from HV_STACK and HV_PKG_MANAGER. FORMAT_CMD uses {file} for the edited path.
 stack_defaults() {
   local pm=$HV_PKG_MANAGER run
-  HV_INSTALL_CMD='' HV_LINT_CMD='' HV_TYPECHECK_CMD='' HV_TEST_CMD='' HV_FORMAT_CMD=''
+  HV_INSTALL_CMD='' HV_LINT_CMD='' HV_TYPECHECK_CMD='' HV_TEST_CMD='' HV_FULL_TEST_CMD='' HV_FORMAT_CMD=''
   case $HV_STACK in
     node)
       case $pm in
@@ -69,8 +71,12 @@ stack_defaults() {
       case $pm in
         uv)
           HV_INSTALL_CMD='uv sync'
-          HV_LINT_CMD='uv run ruff check .'
-          HV_TEST_CMD='uv run pytest'
+          HV_LINT_CMD='uv run ruff check . && uv run ruff format --check .'
+          HV_TYPECHECK_CMD='uv run mypy'
+          # Fast tier on every change; the full tier (slow, regression,
+          # benchmark) runs nightly and on demand.
+          HV_TEST_CMD='uv run pytest -m "not slow and not benchmark"'
+          HV_FULL_TEST_CMD='uv run pytest'
           HV_FORMAT_CMD='uv run ruff format {file}'
           ;;
         poetry)
@@ -100,5 +106,5 @@ stack_defaults() {
       HV_FORMAT_CMD='rustfmt {file}'
       ;;
   esac
-  export HV_INSTALL_CMD HV_LINT_CMD HV_TYPECHECK_CMD HV_TEST_CMD HV_FORMAT_CMD
+  export HV_INSTALL_CMD HV_LINT_CMD HV_TYPECHECK_CMD HV_TEST_CMD HV_FULL_TEST_CMD HV_FORMAT_CMD
 }

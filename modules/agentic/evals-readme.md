@@ -8,7 +8,7 @@ Evaluation cases that gate changes to prompts, tools, models, and agent logic.
 - Run: `{{EVAL_CMD}}`. CI runs it on PRs that touch prompts, evals, or agent code (`.github/workflows/evals.yml`).
 {{/if}}
 {{#unless EVAL_CMD}}
-- No eval command configured yet. Add one as `EVAL_CMD` in `.harness/config` and regenerate; CI then runs it on relevant PRs.
+- TODO(team): no eval command configured yet. Add one here and a CI workflow that runs it on PRs touching prompts, evals, or agent code.
 {{/if}}
 
 Good eval sets cover: the main tasks, every bug ever fixed (a regression case each), adversarial inputs (prompt injection, jailbreak attempts, malformed data), and cases where the agent should refuse, ask, or *not* call a tool.

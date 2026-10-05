@@ -1,7 +1,6 @@
 # shellcheck shell=bash
 # Modules contribute to .claude/settings.json through these calls; the file is
-# generated once all modules have run. Team-specific extra rules live in
-# .harness/permissions ("allow|deny|ask <rule>" per line) and survive updates.
+# generated once all modules have run.
 
 settings_reset() {
   local f
@@ -19,19 +18,6 @@ settings_string() { printf '%s\t%s\n' "$1" "$2" >>"$HARNESS_TMP/settings.top"; }
 # SCRIPT is a file name under .claude/hooks/. MATCHER may be empty.
 settings_hook() {
   printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "${4:-30}" >>"$HARNESS_TMP/settings.hooks"
-}
-
-_settings_extra() {
-  local file=$TARGET/.harness/permissions kind rule line
-  [ -f "$file" ] || return 0
-  while IFS= read -r line || [ -n "$line" ]; do
-    case $line in '' | '#'*) continue ;; esac
-    kind=${line%% *}
-    rule=$(trim "${line#* }")
-    case $kind in
-      allow | deny | ask) printf '%s\n' "$rule" >>"$HARNESS_TMP/settings.$kind" ;;
-    esac
-  done <"$file"
 }
 
 # Print a JSON array of the unique lines in FILE, indented by INDENT.
@@ -52,7 +38,6 @@ _json_array() {
 
 settings_render() { # -> stdout
   local event matcher script timeout key value ev_first m_first h_first
-  _settings_extra
   printf '{\n'
   printf '  "$schema": "https://json.schemastore.org/claude-code-settings.json",\n'
   printf '  "permissions": {\n'

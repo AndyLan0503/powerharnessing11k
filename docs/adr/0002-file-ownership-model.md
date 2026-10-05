@@ -1,6 +1,6 @@
 # ADR 0002: File ownership model for repeatable updates
 
-- Status: accepted
+- Status: superseded by [ADR 0003](0003-one-shot-bootstrap.md)
 - Date: 2026-10-04
 
 ## Context

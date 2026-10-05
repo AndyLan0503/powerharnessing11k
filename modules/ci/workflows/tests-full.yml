@@ -1,0 +1,32 @@
+name: Full tests
+
+# The full test tier (slow, regression, benchmark): nightly and on demand.
+# The fast tier runs on every PR in ci.yml.
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-full-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  full:
+    name: Full test tier
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+{{> workflows/toolchain.yml.part}}
+      - name: Test (full tier)
+        run: |
+{{#if USE_MAKE}}
+          make test-all
+{{/if}}
+{{#unless USE_MAKE}}
+          {{FULL_TEST_CMD}}
+{{/if}}

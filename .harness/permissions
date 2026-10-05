@@ -1,5 +1,0 @@
-# Extra Claude Code permission rules for this repo, merged into
-# .claude/settings.json by `harness update`. One rule per line:
-#   allow Bash(make build:*)
-#   ask   Bash(git push:*)
-#   deny  Read(./config/credentials.yml)

@@ -4,7 +4,7 @@
 Claude Code sessions in this repo export OpenTelemetry metrics and events to `{{OTEL_ENDPOINT}}` (configured in `.claude/settings.json` → `env`).
 {{/if}}
 {{#unless OTEL_ENDPOINT}}
-Telemetry export is **not configured**. A maintainer can set `OTEL_ENDPOINT` in `.harness/config` and regenerate (see `.harness/README.md`).
+Telemetry export is **not configured**. To enable it, add the `CLAUDE_CODE_ENABLE_TELEMETRY` and `OTEL_*` variables to the `env` block of `.claude/settings.json` (see the monitoring docs below).
 {{/if}}
 
 ## What you get
@@ -24,5 +24,5 @@ export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <token>"
 | Layer | Source | Answers |
 |---|---|---|
 | Live usage | OpenTelemetry (this doc) | Cost, tokens, activity per engineer/repo |
-| Local audit | `.harness/logs/events.jsonl` (`.harness/report.sh`) | What tools ran, what was blocked |
+| Local audit | `.claude/logs/events.jsonl` (`.claude/scripts/agent-report.sh`) | What tools ran, what was blocked |
 | Outcomes | `agent-guard` and `agent-digest` workflows | Were agent PRs merged, reverted, flagged? |

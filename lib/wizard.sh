@@ -2,15 +2,16 @@
 # The interactive configuration wizard (`harness configure`). Every question
 # can be answered with one key; (r) restarts, (q) quits without changes.
 
-WIZ_TOTAL=8
+WIZ_TOTAL=10
 
 wizard_run() {
   local rc
-  # Snapshot the starting answers (from .harness/config or detection) so that
-  # re-running the wizard keeps customised commands when the stack is unchanged.
+  # Snapshot the starting answers (detection plus command-line flags) so that
+  # a restart (r) keeps them when the stack is unchanged.
   WIZ_PREV_STACK=$HV_STACK WIZ_PREV_PM=$HV_PKG_MANAGER WIZ_PREV_INSTALL=$HV_INSTALL_CMD
   WIZ_PREV_LINT=$HV_LINT_CMD WIZ_PREV_TYPECHECK=$HV_TYPECHECK_CMD WIZ_PREV_TEST=$HV_TEST_CMD
-  WIZ_PREV_FORMAT=$HV_FORMAT_CMD WIZ_PREV_PROFILE=${HV_PROFILE:-software}
+  WIZ_PREV_FULL_TEST=$HV_FULL_TEST_CMD WIZ_PREV_FORMAT=$HV_FORMAT_CMD
+  WIZ_PREV_PROFILE=${HV_PROFILE:-software}
   while :; do
     rc=0
     _wizard_steps || rc=$?
@@ -59,8 +60,9 @@ _wizard_steps() {
   done
   if [ "$HV_STACK" = "$WIZ_PREV_STACK" ]; then
     HV_PKG_MANAGER=$WIZ_PREV_PM HV_INSTALL_CMD=$WIZ_PREV_INSTALL HV_LINT_CMD=$WIZ_PREV_LINT
-    HV_TYPECHECK_CMD=$WIZ_PREV_TYPECHECK HV_TEST_CMD=$WIZ_PREV_TEST HV_FORMAT_CMD=$WIZ_PREV_FORMAT
-    export HV_INSTALL_CMD HV_LINT_CMD HV_TYPECHECK_CMD HV_TEST_CMD HV_FORMAT_CMD
+    HV_TYPECHECK_CMD=$WIZ_PREV_TYPECHECK HV_TEST_CMD=$WIZ_PREV_TEST
+    HV_FULL_TEST_CMD=$WIZ_PREV_FULL_TEST HV_FORMAT_CMD=$WIZ_PREV_FORMAT
+    export HV_INSTALL_CMD HV_LINT_CMD HV_TYPECHECK_CMD HV_TEST_CMD HV_FULL_TEST_CMD HV_FORMAT_CMD
   else
     HV_PKG_MANAGER=$(detect_pkg_manager "$TARGET" "$HV_STACK")
     stack_defaults
@@ -71,7 +73,7 @@ _wizard_steps() {
   local evals=''
   case $HV_PROFILE in ml | agentic) evals="   eval: ${HV_EVAL_CMD:-—}" ;; esac
   ui_choose "These commands will be used by hooks, CI, and agent docs. OK?" 3 $WIZ_TOTAL \
-    "Use them|install: ${HV_INSTALL_CMD:-—}   lint: ${HV_LINT_CMD:-—}   typecheck: ${HV_TYPECHECK_CMD:-—}   test: ${HV_TEST_CMD:-—}   format: ${HV_FORMAT_CMD:-—}$evals" \
+    "Use them|install: ${HV_INSTALL_CMD:-—}   lint: ${HV_LINT_CMD:-—}   typecheck: ${HV_TYPECHECK_CMD:-—}   test: ${HV_TEST_CMD:-—}   full tests: ${HV_FULL_TEST_CMD:-—}   format: ${HV_FORMAT_CMD:-—}$evals" \
     "Edit them|Type each command; Enter keeps the default, '-' clears it" || return
   if [ "$UI_CHOICE" = 2 ]; then
     ui_header 3 $WIZ_TOTAL "Edit commands"
@@ -82,6 +84,8 @@ _wizard_steps() {
     _wizard_edit LINT_CMD "Lint     "
     _wizard_edit TYPECHECK_CMD "Typecheck"
     _wizard_edit TEST_CMD "Test     "
+    ui_note "Full tests: the slow tier (regression, benchmarks), run nightly. Leave empty if there is none."
+    _wizard_edit FULL_TEST_CMD "Full test"
     _wizard_edit FORMAT_CMD "Format   "
     [ -z "$evals" ] || _wizard_edit EVAL_CMD "Eval     "
   fi
@@ -108,9 +112,36 @@ _wizard_steps() {
     4) _wizard_custom || return ;;
   esac
 
-  # 6. Code owners -----------------------------------------------------------
+  # 6. Artifacts -------------------------------------------------------------
+  local art_yes="Yes|Local data/ and models/, pinned by hash in artifacts.lock; no cloud needed"
+  local art_no="No|No data or model files to version"
+  if list_has "$HV_MODULES" artifacts; then
+    art_yes="$art_yes  ← profile default"
+  else
+    art_no="$art_no  ← profile default"
+  fi
+  ui_choose "Does this project version data or model files?" 6 $WIZ_TOTAL "$art_yes" "$art_no" || return
+  if [ "$UI_CHOICE" = 1 ]; then
+    HV_MODULES=$(modules_normalize "$HV_MODULES artifacts")
+  else
+    HV_MODULES=$(printf ' %s ' "$HV_MODULES" | sed 's/ artifacts / /g')
+  fi
+  export HV_MODULES
+
+  # 7. Project-specific stubs ---------------------------------------------------
+  ui_choose "Create blank, project-specific files for the team to fill in?" 7 $WIZ_TOTAL \
+    "No|Skip; add skills, subagents, and rules later by hand" \
+    "Yes|Name them now (e.g. a solver skill, a model-validation rule); each gets a TODO(team) stub" || return
+  if [ "$UI_CHOICE" = 2 ]; then
+    _wizard_stubs || return
+  else
+    HV_SKILLS='' HV_ROLES='' HV_RULES='' HV_DIRS=''
+    export HV_SKILLS HV_ROLES HV_RULES HV_DIRS
+  fi
+
+  # 8. Code owners -----------------------------------------------------------
   if list_has "$HV_MODULES" collab; then
-    ui_header 6 $WIZ_TOTAL "Who must review changes? (CODEOWNERS)"
+    ui_header 8 $WIZ_TOTAL "Who must review changes? (CODEOWNERS)"
     ui_note "GitHub users or teams, space-separated, e.g. @acme/platform @alice."
     ui_note "Leave empty to skip CODEOWNERS."
     printf '\n'
@@ -120,12 +151,12 @@ _wizard_steps() {
     export HV_CODEOWNERS
   fi
 
-  # 7. Telemetry -------------------------------------------------------------
-  ui_choose "Export Claude Code telemetry (cost, tokens, sessions) via OpenTelemetry?" 7 $WIZ_TOTAL \
+  # 9. Telemetry -------------------------------------------------------------
+  ui_choose "Export Claude Code telemetry (cost, tokens, sessions) via OpenTelemetry?" 9 $WIZ_TOTAL \
     "No|You still get the local audit log and CI agent monitoring" \
     "Yes|Send metrics to an OTLP collector (Grafana, Datadog, Honeycomb, ...)" || return
   if [ "$UI_CHOICE" = 2 ]; then
-    ui_header 7 $WIZ_TOTAL "OTLP collector endpoint"
+    ui_header 9 $WIZ_TOTAL "OTLP collector endpoint"
     ui_note "gRPC endpoint. Auth headers stay out of git (see docs/agents/TELEMETRY.md)."
     printf '\n'
     ui_line "Endpoint" "${HV_OTEL_ENDPOINT:-http://localhost:4317}"
@@ -136,10 +167,10 @@ _wizard_steps() {
   fi
   export HV_OTEL_ENDPOINT HV_MODULES
 
-  # 8. Confirm ---------------------------------------------------------------
+  # 10. Confirm ---------------------------------------------------------------
   derive_vars
   while :; do
-    ui_header 8 $WIZ_TOTAL "Ready to apply"
+    ui_header 10 $WIZ_TOTAL "Ready to apply"
     _wizard_summary
     printf '  %s  Apply to %s\n' "${C_ACCENT}${C_BOLD}(y)${C_RESET}" "${C_BOLD}$TARGET${C_RESET}"
     ui_footer
@@ -167,6 +198,7 @@ _wizard_custom() {
   for m in $ALL_MODULES; do
     [ "$m" != core ] || continue
     [ "$m" != telemetry ] || continue # asked separately
+    [ "$m" != artifacts ] || continue # asked separately
     # Profile modules: the selected profile's own is always in, others never.
     if list_has "$ALL_PROFILES" "$m"; then
       [ "$m" != "$HV_PROFILE" ] || picked="$picked $m"
@@ -192,6 +224,41 @@ _wizard_custom() {
   export HV_MODULES HV_GUARD_LEVEL
 }
 
+_wizard_stubs() {
+  local err
+  while :; do
+    ui_header 7 $WIZ_TOTAL "Project-specific stubs"
+    ui_note "Space-separated; leave empty for none. Names: lowercase letters, digits, hyphens."
+    ui_note "Each file is created blank, with TODO(team) notes on what to write."
+    printf '\n'
+    ui_note "Skills (.claude/skills/<name>/SKILL.md), e.g. run-solver"
+    ui_line "Skills  " "${HV_SKILLS:--}"
+    HV_SKILLS=$UI_LINE
+    ui_note "Subagents (.claude/agents/<name>.md), e.g. model-checker"
+    ui_line "Roles   " "${HV_ROLES:--}"
+    HV_ROLES=$UI_LINE
+    ui_note "Path-scoped rules (.claude/rules/<name>.md) as name=glob[,glob], e.g. solver=src/*/solver/**"
+    ui_line "Rules   " "${HV_RULES:--}"
+    HV_RULES=$UI_LINE
+    ui_note "Directories that get a README stub, e.g. src/app/model experiments"
+    ui_line "Dirs    " "${HV_DIRS:--}"
+    HV_DIRS=$UI_LINE
+    [ "$HV_SKILLS" != "-" ] || HV_SKILLS=''
+    [ "$HV_ROLES" != "-" ] || HV_ROLES=''
+    [ "$HV_RULES" != "-" ] || HV_RULES=''
+    [ "$HV_DIRS" != "-" ] || HV_DIRS=''
+    HV_SKILLS=${HV_SKILLS//,/ } HV_ROLES=${HV_ROLES//,/ } HV_DIRS=${HV_DIRS//,/ }
+    export HV_SKILLS HV_ROLES HV_RULES HV_DIRS
+    if err=$(custom_validate 2>&1); then
+      return 0
+    fi
+    printf '\n'
+    ui_warn "${err#harness: }"
+    ui_note "Press any key to try again."
+    ui_key
+  done
+}
+
 _default_owner() {
   local url owner
   url=$(git -C "$TARGET" remote get-url origin 2>/dev/null) || return 0
@@ -208,11 +275,20 @@ _wizard_summary() {
   ui_info "${C_BOLD}Guard level${C_RESET}  $HV_GUARD_LEVEL"
   [ -z "$HV_CODEOWNERS" ] || ui_info "${C_BOLD}Owners${C_RESET}       $HV_CODEOWNERS"
   [ -z "$HV_OTEL_ENDPOINT" ] || ui_info "${C_BOLD}Telemetry${C_RESET}    $HV_OTEL_ENDPOINT"
+  [ -z "$HV_SKILLS" ] || ui_info "${C_BOLD}Skills${C_RESET}       $HV_SKILLS"
+  [ -z "$HV_ROLES" ] || ui_info "${C_BOLD}Roles${C_RESET}        $HV_ROLES"
+  [ -z "$HV_RULES" ] || ui_info "${C_BOLD}Rules${C_RESET}        $HV_RULES"
+  [ -z "$HV_DIRS" ] || ui_info "${C_BOLD}Dirs${C_RESET}         $HV_DIRS"
   printf '\n'
   for m in $HV_MODULES; do
     printf '  %s %-12s %s\n' "${C_OK}●${C_RESET}" "$m" "${C_DIM}$(module_desc "$m")${C_RESET}"
   done
   printf '\n'
-  ui_note "Files you have edited are never overwritten; harness writes <file>.harness-new instead."
+  if [ -n "${FORCE:-}" ]; then
+    ui_note "--force: existing files with the same paths will be overwritten."
+  else
+    ui_note "Existing files are never overwritten; only missing ones are created."
+  fi
+  ui_note "After this, every file belongs to the team; harness is not needed again."
   printf '\n'
 }

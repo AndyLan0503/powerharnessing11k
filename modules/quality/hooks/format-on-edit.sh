@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# PostToolUse(Edit|Write): formats the file the agent just changed.
+# After a file edit: formats the file the agent just changed.
 # Never fails the tool call: a missing formatter is not the agent's problem.
 . "$(dirname "$0")/lib.sh"
 
-file=$(hook_field file_path)
+file=$(hook_file)
 [ -n "$file" ] && [ -f "$file" ] || exit 0
 cd "$(hook_root)" || exit 0
 

@@ -8,7 +8,7 @@ powerharnessing11k turns the team's agentic-engineering practices into a one-sho
 - [x] Stack detection: Node (npm/pnpm/yarn/bun), Python (uv/poetry/pip), Go, Rust, generic
 - [x] Modules: core, guardrails, quality, audit, skills, mcp, collab, ci, security, diff-guard, review, telemetry, plus profile modules ml, agentic, study, research
 - [x] Profiles (software, ml, agentic, study, research) × tiers (minimal, recommended, strict), with three guard levels
-- [x] Monitoring: local audit log + `.claude/scripts/agent-report.sh`, diff-guard CI, weekly digest, OpenTelemetry
+- [x] Monitoring: local audit log + `.agents/scripts/agent-report.sh`, diff-guard CI, weekly digest, OpenTelemetry
 - [x] Test suite on Linux, plus macOS with bash 3.2 / BSD awk
 - [x] This repo runs its own harness
 - [x] Apache-2.0 license; generated output is unrestricted (NOTICE)
@@ -27,7 +27,8 @@ powerharnessing11k turns the team's agentic-engineering practices into a one-sho
 
 ## v0.2: hardening
 
-- [ ] Provider support: choose the coding agents (Claude Code, Codex CLI, Cursor, Copilot, Gemini CLI), the git host (GitHub, GitLab, none), and the AI review backend. Design: `docs/design/providers.md`, ADR 0005
+- [x] Provider-neutral engine (step 1 of provider support): modules emit neutral rules, skills, roles, hooks, and permissions; a Claude Code adapter renders them. `AGENTS.md` is the source of truth, skills live in `.agents/skills/`, hooks in `.agents/hooks/`, gate scripts in `scripts/ci/`
+- [ ] Provider support, remaining steps: Codex CLI and Copilot adapters, review backends, GitLab, then Cursor and Gemini. Choose the coding agents (Claude Code, Codex CLI, Cursor, Copilot, Gemini CLI), the git host (GitHub, GitLab, none), and the AI review backend. Design: `docs/design/providers.md`, ADR 0005
 
 - [ ] First real GitHub run of the PR gate; confirm `claude -p --json-schema` output shape and inline-comment posting on a live PR
 - [ ] Profile feedback loop: try each profile on a real repo and tune its rules, skills, and roles

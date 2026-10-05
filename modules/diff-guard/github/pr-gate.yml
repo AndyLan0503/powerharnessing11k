@@ -50,8 +50,8 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          git show "$BASE_SHA:.github/scripts/diff-guard.sh" >"$RUNNER_TEMP/diff-guard.sh" 2>/dev/null ||
-            cp .github/scripts/diff-guard.sh "$RUNNER_TEMP/diff-guard.sh"
+          git show "$BASE_SHA:scripts/ci/diff-guard.sh" >"$RUNNER_TEMP/diff-guard.sh" 2>/dev/null ||
+            cp scripts/ci/diff-guard.sh "$RUNNER_TEMP/diff-guard.sh"
       - name: Inspect diff
         id: guard
         run: bash "$RUNNER_TEMP/diff-guard.sh"
@@ -87,7 +87,7 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          for f in .github/scripts/ai-review.sh .github/review/criteria.md .github/review/findings.schema.json; do
+          for f in scripts/ci/ai-review.sh scripts/ci/review/criteria.md scripts/ci/review/findings.schema.json; do
             git show "$BASE_SHA:$f" >"$RUNNER_TEMP/$(basename "$f")" 2>/dev/null || cp "$f" "$RUNNER_TEMP/$(basename "$f")"
           done
       - uses: actions/setup-node@v4
@@ -131,8 +131,8 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          git show "$BASE_SHA:.github/scripts/pr-gate.sh" >"$RUNNER_TEMP/pr-gate.sh" 2>/dev/null ||
-            cp .github/scripts/pr-gate.sh "$RUNNER_TEMP/pr-gate.sh"
+          git show "$BASE_SHA:scripts/ci/pr-gate.sh" >"$RUNNER_TEMP/pr-gate.sh" 2>/dev/null ||
+            cp scripts/ci/pr-gate.sh "$RUNNER_TEMP/pr-gate.sh"
       - name: Gate and scorecard
         run: bash "$RUNNER_TEMP/pr-gate.sh"
         env:

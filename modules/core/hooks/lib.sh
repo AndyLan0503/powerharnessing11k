@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
-# Shared helpers for this repo's Claude Code hooks (.claude/hooks/).
+# Shared helpers for this repo's agent hooks (.agents/hooks/).
+#
+# Every hook is called as `<script> <agent>` with the agent's JSON payload on
+# stdin. Agents name their payload fields and signal a block differently; the
+# hook_* accessors below hide that, so the guard logic is written once.
 #
 # Works without jq: falls back to python3, then to a sed extractor that is
 # good enough for pattern matching.
 
+HOOK_AGENT=${1:-claude}
 HOOK_INPUT=$(cat)
+HOOK_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 
 # hook_field KEY: string value of tool_input.KEY, else top-level KEY.
 hook_field() {
@@ -23,12 +29,65 @@ print("" if v is None else v if isinstance(v, str) else json.dumps(v))' "$1" 2>/
   fi
 }
 
-hook_root() {
-  if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
-    printf '%s' "$CLAUDE_PROJECT_DIR"
-  else
-    git rev-parse --show-toplevel 2>/dev/null || pwd
-  fi
+hook_root() { printf '%s' "$HOOK_ROOT"; }
+
+# hook_rel PATH: where PATH really is, relative to the repo root. Symlinks and
+# ".." in existing directories are resolved, so a protected file cannot be
+# reached under another name (for example through the .claude/skills link).
+# Parts that do not exist yet are kept as written.
+hook_rel() {
+  local p=$1 dir rest='' real_dir real_root
+  case $p in /*) ;; *) p=$PWD/$p ;; esac
+  dir=$(dirname "$p")
+  while [ ! -d "$dir" ] && [ "$dir" != / ]; do
+    rest="${dir##*/}/$rest"
+    dir=$(dirname "$dir")
+  done
+  real_dir=$(cd "$dir" 2>/dev/null && pwd -P) || real_dir=$dir
+  real_root=$(cd "$HOOK_ROOT" && pwd -P)
+  p=${real_dir%/}/$rest${p##*/}
+  case $p in "$real_root"/*) p=${p#"$real_root"/} ;; esac
+  printf '%s' "$p"
+}
+
+# What the agent is about to do, or just did. One case per agent; an agent
+# not listed uses the first set of field names.
+hook_command() { # the shell command
+  case $HOOK_AGENT in
+    *) hook_field command ;;
+  esac
+}
+hook_file() { # the file being created or edited
+  local f
+  case $HOOK_AGENT in
+    *)
+      f=$(hook_field file_path)
+      [ -n "$f" ] || f=$(hook_field notebook_path)
+      ;;
+  esac
+  printf '%s' "$f"
+}
+hook_tool() {
+  case $HOOK_AGENT in
+    *) hook_field tool_name ;;
+  esac
+}
+hook_session() {
+  case $HOOK_AGENT in
+    *) hook_field session_id ;;
+  esac
+}
+# 0 when this call is the agent finishing its turn.
+hook_is_stop() {
+  case $HOOK_AGENT in
+    *) [ "$(hook_field hook_event_name)" = Stop ] ;;
+  esac
+}
+# 0 when the agent is already continuing because a stop hook sent it back.
+hook_stop_active() {
+  case $HOOK_AGENT in
+    *) [ "$(hook_field stop_hook_active)" = true ] ;;
+  esac
 }
 
 _hook_esc() {
@@ -38,22 +97,34 @@ _hook_esc() {
   printf '%s' "$s" | tr '\n\t\r' '   '
 }
 
-# hook_log KIND DETAIL: append one JSON line to .claude/logs/events.jsonl.
+# hook_log KIND DETAIL: append one JSON line to .agents/logs/events.jsonl.
 hook_log() {
   local dir
-  dir="$(hook_root)/.claude/logs"
+  dir="$HOOK_ROOT/.agents/logs"
   mkdir -p "$dir" 2>/dev/null || return 0
   printf '{"ts":"%s","kind":"%s","session_id":"%s","tool":"%s","detail":"%s"}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" \
-    "$(_hook_esc "$(hook_field session_id)")" \
-    "$(_hook_esc "$(hook_field tool_name)")" \
+    "$(_hook_esc "$(hook_session)")" \
+    "$(_hook_esc "$(hook_tool)")" \
     "$(_hook_esc "$2")" >>"$dir/events.jsonl" 2>/dev/null || true
 }
 
-# hook_block REASON: log, then block the tool call. Exit code 2 sends stderr
-# back to the agent as the reason.
+# hook_block REASON: log, then block the tool call and tell the agent why.
 hook_block() {
   hook_log blocked "$1"
-  printf 'Blocked by guardrail: %s\nIf this is genuinely required, stop and ask a human to do it.\n' "$1" >&2
-  exit 2
+  _hook_refuse "Blocked by guardrail: $1
+If this is genuinely required, stop and ask a human to do it."
+}
+
+# hook_send_back MESSAGE: the agent was about to finish; make it continue.
+hook_send_back() { _hook_refuse "$1"; }
+
+# How each agent is told "no". Exit code 2 with the reason on stderr.
+_hook_refuse() {
+  case $HOOK_AGENT in
+    *)
+      printf '%s\n' "$1" >&2
+      exit 2
+      ;;
+  esac
 }

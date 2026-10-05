@@ -14,6 +14,6 @@ module_apply() {
     emit append python/gitignore.tmpl .gitignore
   fi
   if [ -n "$HV_USE_MAKE" ]; then
-    settings_allow 'Bash(make lint:*)' 'Bash(make typecheck:*)' 'Bash(make test:*)' 'Bash(make check:*)'
+    settings_allow_cmd 'make lint' 'make typecheck' 'make test' 'make check'
   fi
 }

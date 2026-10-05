@@ -1,6 +1,6 @@
 ---
 name: {{ITEM_NAME}}
-description: "TODO(team): one sentence on what this skill does and when to use it. Claude reads this line to decide when the skill applies, so name the trigger situations."
+description: "TODO(team): one sentence on what this skill does and when to use it. The agent reads this line to decide when the skill applies, so name the trigger situations."
 argument-hint: "[TODO(team): what to pass, e.g. a file or an ID]"
 # Optional, uncomment as needed:
 # context: fork                    # run in an isolated context (verbose or exploratory work)
@@ -20,4 +20,4 @@ Good skills are short and concrete:
 4. How to verify the result (which command or test proves it worked).
 5. What to report back, and where to record it.
 
-Put always-true project facts in CLAUDE.md, not here. -->
+Put always-true project facts in AGENTS.md; keep this file for the procedure. -->

@@ -1,98 +1,43 @@
 # shellcheck shell=bash
-# Modules contribute to .claude/settings.json through these calls; the file is
-# generated once all modules have run.
+# Provider-neutral settings. Modules state what they need in plain terms (a
+# command that may run unprompted, a file that must not be read, a hook at a
+# lifecycle moment); each agent adapter (agents/<name>/adapter.sh) turns the
+# collected entries into that agent's own configuration files.
+#
+# Hook events (see docs/design/providers.md for the per-agent mapping):
+#   session-start  a session begins
+#   pre-shell      before a shell command runs (can block)
+#   pre-edit       before a file is created or edited (can block)
+#   post-edit      after a file was created or edited
+#   post-tool      after any tool call
+#   stop           the agent is about to finish its turn (can send it back)
+SETTINGS_EVENTS="session-start pre-shell pre-edit post-edit post-tool stop"
 
 settings_reset() {
   local f
-  for f in allow deny ask env hooks top; do : >"$HARNESS_TMP/settings.$f"; done
+  for f in allow_cmd ask_cmd deny_cmd deny_read allow_tool hooks agent; do : >"$HARNESS_TMP/settings.$f"; done
 }
 
-settings_allow() { printf '%s\n' "$@" >>"$HARNESS_TMP/settings.allow"; }
-settings_deny() { printf '%s\n' "$@" >>"$HARNESS_TMP/settings.deny"; }
-settings_ask() { printf '%s\n' "$@" >>"$HARNESS_TMP/settings.ask"; }
-settings_env() { printf '%s\t%s\n' "$1" "$2" >>"$HARNESS_TMP/settings.env"; }
-# settings_string KEY VALUE: a top-level string setting, e.g. outputStyle.
-settings_string() { printf '%s\t%s\n' "$1" "$2" >>"$HARNESS_TMP/settings.top"; }
+# Commands are written as a prefix, e.g. 'git status' or 'make test'.
+settings_allow_cmd() { printf '%s\n' "$@" >>"$HARNESS_TMP/settings.allow_cmd"; }
+settings_ask_cmd() { printf '%s\n' "$@" >>"$HARNESS_TMP/settings.ask_cmd"; }
+settings_deny_cmd() { printf '%s\n' "$@" >>"$HARNESS_TMP/settings.deny_cmd"; }
+# Paths or globs relative to the repo root, e.g. '.env' or '**/*.pem'.
+settings_deny_read() { printf '%s\n' "$@" >>"$HARNESS_TMP/settings.deny_read"; }
+# A built-in capability by neutral name. Known: websearch.
+settings_allow_tool() { printf '%s\n' "$@" >>"$HARNESS_TMP/settings.allow_tool"; }
 
-# settings_hook EVENT MATCHER SCRIPT [TIMEOUT_SECONDS]
-# SCRIPT is a file name under .claude/hooks/. MATCHER may be empty.
+# settings_hook EVENT SCRIPT [TIMEOUT_SECONDS]
+# SCRIPT is a file name under .agents/hooks/ in the target repo.
 settings_hook() {
-  printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "${4:-30}" >>"$HARNESS_TMP/settings.hooks"
+  list_has "$SETTINGS_EVENTS" "$1" || harness_die "module ${MODULE_NAME:-?}: unknown hook event '$1'"
+  printf '%s\t%s\t%s\n' "$1" "$2" "${3:-30}" >>"$HARNESS_TMP/settings.hooks"
 }
 
-# Print a JSON array of the unique lines in FILE, indented by INDENT.
-_json_array() {
-  local file=$1 indent=$2 first=1 line
-  if [ ! -s "$file" ]; then
-    printf '[]'
-    return
-  fi
-  printf '['
-  while IFS= read -r line; do
-    [ $first -eq 1 ] || printf ','
-    first=0
-    printf '\n%s  "%s"' "$indent" "$(json_escape "$line")"
-  done < <(awk '!seen[$0]++' "$file")
-  printf '\n%s]' "$indent"
-}
+# settings_agent AGENT KIND KEY VALUE: a setting only one agent understands.
+# KIND is "string" (a top-level setting) or "env" (an environment variable).
+# Ignored when that agent is not selected.
+settings_agent() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >>"$HARNESS_TMP/settings.agent"; }
 
-settings_render() { # -> stdout
-  local event matcher script timeout key value ev_first m_first h_first
-  printf '{\n'
-  printf '  "$schema": "https://json.schemastore.org/claude-code-settings.json",\n'
-  printf '  "permissions": {\n'
-  printf '    "allow": %s,\n' "$(_json_array "$HARNESS_TMP/settings.allow" '    ')"
-  printf '    "ask": %s,\n' "$(_json_array "$HARNESS_TMP/settings.ask" '    ')"
-  printf '    "deny": %s\n' "$(_json_array "$HARNESS_TMP/settings.deny" '    ')"
-  printf '  }'
-
-  while IFS="$(printf '\t')" read -r key value; do
-    printf ',\n  "%s": "%s"' "$(json_escape "$key")" "$(json_escape "$value")"
-  done <"$HARNESS_TMP/settings.top"
-
-  if [ -s "$HARNESS_TMP/settings.env" ]; then
-    printf ',\n  "env": {'
-    ev_first=1
-    while IFS="$(printf '\t')" read -r key value; do
-      [ $ev_first -eq 1 ] || printf ','
-      ev_first=0
-      printf '\n    "%s": "%s"' "$(json_escape "$key")" "$(json_escape "$value")"
-    done <"$HARNESS_TMP/settings.env"
-    printf '\n  }'
-  fi
-
-  if [ -s "$HARNESS_TMP/settings.hooks" ]; then
-    printf ',\n  "hooks": {'
-    ev_first=1
-    for event in SessionStart UserPromptSubmit PreToolUse PostToolUse Stop SubagentStop; do
-      grep -q "^$event	" "$HARNESS_TMP/settings.hooks" || continue
-      [ $ev_first -eq 1 ] || printf ','
-      ev_first=0
-      printf '\n    "%s": [' "$event"
-      m_first=1
-      while IFS= read -r matcher; do
-        [ $m_first -eq 1 ] || printf ','
-        m_first=0
-        printf '\n      {\n'
-        [ -z "$matcher" ] || printf '        "matcher": "%s",\n' "$(json_escape "$matcher")"
-        printf '        "hooks": ['
-        h_first=1
-        # Tab is IFS whitespace, so empty fields would collapse: let awk pick
-        # the two (always non-empty) columns we need.
-        while IFS="$(printf '\t')" read -r script timeout; do
-          [ $h_first -eq 1 ] || printf ','
-          h_first=0
-          printf '\n          {\n'
-          printf '            "type": "command",\n'
-          printf '            "command": "\\"$CLAUDE_PROJECT_DIR\\"/.claude/hooks/%s",\n' "$(json_escape "$script")"
-          printf '            "timeout": %s\n' "$timeout"
-          printf '          }'
-        done < <(awk -F '\t' -v e="$event" -v m="$matcher" '$1 == e && $2 == m { print $3 "\t" $4 }' "$HARNESS_TMP/settings.hooks")
-        printf '\n        ]\n      }'
-      done < <(awk -F '\t' -v e="$event" '$1 == e && !seen[$2]++ { print $2 }' "$HARNESS_TMP/settings.hooks")
-      printf '\n    ]'
-    done
-    printf '\n  }'
-  fi
-  printf '\n}\n'
-}
+# Unique lines of a settings list, in first-seen order.
+settings_list() { awk '!seen[$0]++' "$HARNESS_TMP/settings.$1"; }

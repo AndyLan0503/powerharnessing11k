@@ -8,6 +8,7 @@ sends TEXT plus Enter. All terminal output is written to OUT_FILE.
 import os
 import pty
 import select
+import signal
 import sys
 import time
 
@@ -38,9 +39,16 @@ def main():
         drain(0.4)
         kind, _, value = item.partition(":")
         os.write(fd, (value if kind == "key" else value + "\r").encode())
+    # Wait for the command to finish. If it is still asking for input after
+    # the script ran out (a wrong key sequence), stop it instead of hanging.
+    deadline = time.time() + 20
     while drain(1.0) and len(out) < 2_000_000:
-        _, status = os.waitpid(pid, os.WNOHANG)
-        if _:
+        done, _ = os.waitpid(pid, os.WNOHANG)
+        if done:
+            break
+        if time.time() > deadline:
+            os.kill(pid, signal.SIGKILL)
+            out.extend(b"\n[drive-tty: timed out waiting for the command to exit]\n")
             break
     with open(out_path, "w") as f:
         f.write(out.decode(errors="replace").replace("\r", ""))

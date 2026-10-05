@@ -83,8 +83,6 @@ profile_load() { # profile tier -> sets HV_PROFILE HV_MODULES HV_GUARD_LEVEL
 derive_vars() {
   local m up
   HV_HARNESS_VERSION=$HARNESS_VERSION
-  HV_MULTI_AGENT=''
-  [ "$HV_AGENT_TOOLS" = multi ] && HV_MULTI_AGENT=1
   HV_GUARD_RELAXED='' HV_GUARD_STANDARD='' HV_GUARD_STRICT=''
   case $HV_GUARD_LEVEL in
     relaxed) HV_GUARD_RELAXED=1 ;;
@@ -97,7 +95,7 @@ derive_vars() {
   HV_DIFF_BUDGET=${HV_DIFF_BUDGET:-800}
   HV_HAS_COMMANDS=''
   [ -z "$HV_LINT_CMD$HV_TYPECHECK_CMD$HV_TEST_CMD$HV_EVAL_CMD" ] || HV_HAS_COMMANDS=1
-  export HV_HARNESS_VERSION HV_MULTI_AGENT HV_GUARD_STRICT HV_DIFF_GUARD_MODE HV_DIFF_BUDGET HV_HAS_COMMANDS
+  export HV_HARNESS_VERSION HV_GUARD_STRICT HV_DIFF_GUARD_MODE HV_DIFF_BUDGET HV_HAS_COMMANDS
 
   # Profile flags. ENGINEERING: profiles whose work ships through PRs and CI.
   # SOLO: one person, no review flow (pushing to the default branch is fine).
@@ -116,9 +114,7 @@ derive_vars() {
   if [ -n "$HV_NOTEBOOK_CHECK" ] || list_has "$HV_MODULES" artifacts; then HV_PROTECT_RAW_DATA=1; fi
   HV_HOW_WE_WORK=''
   case $HV_PROFILE in software | ml | agentic | research) HV_HOW_WE_WORK=1 ;; esac
-  HV_PROFILE_RULES=''
-  case $HV_PROFILE in ml | agentic | study | research) HV_PROFILE_RULES=1 ;; esac
-  export HV_HOW_WE_WORK HV_PROFILE_RULES
+  export HV_HOW_WE_WORK
 
   # devtools: a Makefile unless the repo has one; a Python skeleton only in a
   # Python/uv repo that has no pyproject.toml yet. --force never changes this:

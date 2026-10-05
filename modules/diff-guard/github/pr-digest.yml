@@ -69,7 +69,7 @@ jobs:
             if length == 0 then "" else
               group_by(.pattern) | map({pattern: .[0].pattern, cat: .[0].cat, posted: length, dismissed: ([.[] | select(.down > 0)] | length)})
               | sort_by(-.dismissed, -.posted) | .[:10]
-              | "### AI review: findings by pattern\n\nA 👎 counts as a dismissal. Patterns with high dismissal rates are candidates for sharper criteria, or for switching their category off in `.github/review/criteria.md`.\n\n| Pattern | Category | Posted | Dismissed (👎) |\n|---|---|---|---|\n"
+              | "### AI review: findings by pattern\n\nA 👎 counts as a dismissal. Patterns with high dismissal rates are candidates for sharper criteria, or for switching their category off in `scripts/ci/review/criteria.md`.\n\n| Pattern | Category | Posted | Dismissed (👎) |\n|---|---|---|---|\n"
                 + (map("| `\(.pattern)` | \(.cat) | \(.posted) | \(.dismissed) |") | join("\n")) + "\n"
             end' >> digest.md
           cat digest.md >> "$GITHUB_STEP_SUMMARY"

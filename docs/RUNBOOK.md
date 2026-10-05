@@ -19,14 +19,14 @@ A useful comparison is a new engineer joining your team. A capable hire still ne
 
 | A new engineer needs | The harness equivalent | Where it lives |
 |---|---|---|
-| An onboarding doc | Project context | `CLAUDE.md` |
-| Team conventions for specific areas | Path-scoped rules | `.claude/rules/` |
-| Runbooks for recurring procedures | Skills | `.claude/skills/` |
-| Colleagues with specialities | Subagents (roles) | `.claude/agents/` |
-| Access rights | Permissions | `.claude/settings.json` |
-| Safety interlocks on dangerous machinery | Hooks | `.claude/hooks/` |
+| An onboarding doc | Project context | `AGENTS.md` |
+| Team conventions for specific areas | Path-scoped rules | each agent's rules folder, e.g. `.claude/rules/` |
+| Runbooks for recurring procedures | Skills | `.agents/skills/` |
+| Colleagues with specialities | Subagents (roles) | each agent's folder, e.g. `.claude/agents/` |
+| Access rights | Permissions | each agent's settings, e.g. `.claude/settings.json` |
+| Safety interlocks on dangerous machinery | Hooks | `.agents/hooks/` |
 | Code review and CI | The PR gate | `.github/workflows/` |
-| A manager who can see what happened | Audit log, scorecards, weekly digest | `.claude/logs/`, PR comments, issues |
+| A manager who can see what happened | Audit log, scorecards, weekly digest | `.agents/logs/`, PR comments, issues |
 
 Without a harness, each person on the team prompts the agent differently, the agent rediscovers the project every session, and nothing prevents a confident mistake from reaching `main`. With one, the agent starts every session knowing the project, the dangerous actions are physically blocked, and every change passes the same checks.
 
@@ -34,7 +34,7 @@ Without a harness, each person on the team prompts the agent differently, the ag
 
 This is the single most important idea in the whole document.
 
-- **Guidance** is text the model reads: `CLAUDE.md`, rules, skills. The model usually follows it. "Usually" means it can be forgotten in a long session, misread, or outweighed by something else in the conversation.
+- **Guidance** is text the model reads: `AGENTS.md`, rules, skills. The model usually follows it. "Usually" means it can be forgotten in a long session, misread, or outweighed by something else in the conversation.
 - **Enforcement** is code that runs outside the model: permissions, hooks, and CI checks. It behaves the same way every time, whatever the model thinks.
 
 The practical rule: **if something must always hold, enforce it; if it is a preference or a piece of knowledge, write it as guidance.**
@@ -44,16 +44,18 @@ The practical rule: **if something must always hold, enforce it; if it is a pref
 | "Never force-push" | Hook | A single violation is costly, so it needs a mechanical block |
 | "Never read `.env`" | Permission deny rule | Same reason |
 | "Tests must pass before you finish" | Stop hook | The agent cannot declare victory on a red build |
-| "We prefer small functions" | `CLAUDE.md` or a rule | A judgement call, fine as guidance |
+| "We prefer small functions" | `AGENTS.md` or a rule | A judgement call, fine as guidance |
 | "How to run a benchmark" | Skill | A procedure, loaded only when needed |
 
-People new to this tend to put everything in `CLAUDE.md` in capital letters. That produces a long file the model skims and a false sense of safety. Keep `CLAUDE.md` short and move the hard rules into hooks and CI.
+People new to this tend to put everything in `AGENTS.md` in capital letters. That produces a long file the model skims and a false sense of safety. Keep `AGENTS.md` short and move the hard rules into hooks and CI.
 
 ### 1.3 The layers, one at a time
 
-**Context: `CLAUDE.md`.** Loaded at the start of every session. It should hold the facts the agent needs every single time: what the project is, the domain vocabulary, the main components, the commands to run, the invariants, and the known traps. Every line costs attention in every session, so it stays short. If you use other agents too (Copilot, Codex, Cursor), the shared guidance goes in `AGENTS.md` and `CLAUDE.md` imports it.
+**Context: `AGENTS.md`.** Loaded at the start of every session. It should hold the facts the agent needs every single time: what the project is, the domain vocabulary, the main components, the commands to run, the invariants, and the known traps. Every line costs attention in every session, so it stays short.
 
-**Path-scoped rules: `.claude/rules/*.md`.** A rule file starts with a `paths:` line listing file patterns. It is loaded only when the agent touches a matching file. A rule about writing tests loads when the agent edits a test and stays out of the way otherwise. This keeps the always-loaded context small.
+`AGENTS.md` is a convention most coding agents read (Codex CLI, Cursor, GitHub Copilot, and others), so it is the single source of truth here. Claude Code reads `CLAUDE.md`, which in this harness is a short file that imports `AGENTS.md`. Write guidance once, in `AGENTS.md`.
+
+**Path-scoped rules** (for Claude Code: `.claude/rules/*.md`). A rule file starts with a `paths:` line listing file patterns. It is loaded only when the agent touches a matching file. A rule about writing tests loads when the agent edits a test and stays out of the way otherwise. This keeps the always-loaded context small.
 
 ```markdown
 ---
@@ -64,17 +66,15 @@ paths: ["src/solver/**"]
 - ...
 ```
 
-**Skills: `.claude/skills/<name>/SKILL.md`.** A skill is a written procedure: numbered steps, how to verify the result, what to report. The agent sees only each skill's one-line description until the skill is needed, then loads the whole thing. You can also invoke one yourself with `/<name>`. Use skills for anything you would otherwise explain repeatedly: "how we run an experiment", "how we take a PR to green".
+**Skills: `.agents/skills/<name>/SKILL.md`.** A skill is a written procedure: numbered steps, how to verify the result, what to report. The agent sees only each skill's one-line description until the skill is needed, then loads the whole thing. You can also invoke one yourself with `/<name>`. Use skills for anything you would otherwise explain repeatedly: "how we run an experiment", "how we take a PR to green". This harness ships `review` (run the independent reviewer) and `handoff` (write a summary so a fresh session can continue the work). Skills live in `.agents/skills/`, a folder most agents read; Claude Code reaches it through the `.claude/skills` link.
 
-**Subagents (roles): `.claude/agents/<name>.md`.** A subagent is a separate agent with its own fresh context and its own restricted tool list. The main agent hands it a task and receives a summary back. Two reasons to use one:
+**Subagents (roles)** (for Claude Code: `.claude/agents/<name>.md`). A subagent is a separate agent with its own fresh context and its own restricted tool list. The main agent hands it a task and receives a summary back. Two reasons to use one:
 - *Independence.* The context that wrote a change is the worst one to review it, because it already believes its own reasoning. A `reviewer` subagent sees only the diff.
 - *Focus.* Exploration produces a lot of output. A subagent absorbs that noise and returns the conclusion.
 
-**Slash commands: `.claude/commands/*.md`.** Saved prompts you trigger by name. This harness ships `/review` (run the independent reviewer) and `/handoff` (write a summary so a fresh session can continue the work).
+**Permissions** (for Claude Code: `.claude/settings.json`). Three lists. `allow` holds commands the agent may run without asking (your lint and test commands). `deny` holds things it may never do (reading secret files). `ask` holds things that need a human click each time. Good permissions make the agent faster, because it stops asking about safe commands, and safer, because the dangerous ones are closed off.
 
-**Permissions: `.claude/settings.json`.** Three lists. `allow` holds commands the agent may run without asking (your lint and test commands). `deny` holds things it may never do (reading secret files). `ask` holds things that need a human click each time. Good permissions make the agent faster, because it stops asking about safe commands, and safer, because the dangerous ones are closed off.
-
-**Hooks: `.claude/hooks/*.sh`.** Small scripts that Claude Code runs at fixed moments. Each receives a JSON description of what is about to happen and can block it.
+**Hooks: `.agents/hooks/*.sh`.** Small scripts that the agent runs at fixed moments. Each receives a JSON description of what is about to happen and can block it. The scripts are shared; each agent's settings file says when to call them (for Claude Code, the `hooks` section of `.claude/settings.json`).
 
 | Moment | Hook in this harness | What it does |
 |---|---|---|
@@ -89,11 +89,11 @@ When a hook blocks something, the agent is told why and what to do instead. A bl
 
 **The PR gate: `.github/workflows/pr-gate.yml`.** Local hooks protect one developer's machine. The gate protects the shared branch. Every pull request gets a single required check made of:
 - *Diff guard:* inspects every PR the same way, whoever or whatever wrote it, and flags risky patterns such as deleted tests, removed assertions, edits to CI files, very large diffs, and new dependencies.
-- *AI review* (strict tier): a fresh model instance reviews the diff against criteria your team owns in `.github/review/criteria.md`.
+- *AI review* (strict tier): a fresh model instance reviews the diff against criteria your team owns in `scripts/ci/review/criteria.md`.
 - *Scorecard:* a comment on the PR listing every signal and a score, so a human reviewer sees the picture at a glance.
 
 **Monitoring.** Three views, from closest to furthest:
-- *Audit log:* `.claude/logs/events.jsonl` on each developer's machine records tool calls and blocks. `.claude/scripts/agent-report.sh --days 7` summarises it.
+- *Audit log:* `.agents/logs/events.jsonl` on each developer's machine records tool calls and blocks. `.agents/scripts/agent-report.sh --days 7` summarises it.
 - *Scorecards:* one per PR.
 - *Weekly digest:* a GitHub issue with PR volume, merge and revert rates, gate scores, and which review findings people dismissed. Dismissals tell you which review criteria need sharpening.
 
@@ -143,20 +143,21 @@ cd ~/work/my-project        # an empty folder is fine; it offers to run git init
 ~/powerharnessing11k/setup.sh
 ```
 
-Ten screens, one key each. `r` restarts, `q` quits without writing anything.
+Nine screens, one key each. `r` restarts, `q` quits without writing anything.
 
 | # | Screen | Tip |
 |:-:|---|---|
 | 1 | What is this repository for? | Your profile from Step 1 |
 | 2 | Language or toolchain | Detected from existing files; pick one in an empty folder |
 | 3 | Commands | Check these carefully. Hooks, CI, and the agent's instructions all use them. Choose "Edit them" if any are wrong |
-| 4 | Which coding agents | "Claude Code + others" if teammates use Copilot, Codex, or Cursor |
-| 5 | How much harness | `Recommended` to start |
-| 6 | Version data or model files? | Your decision from Step 1 |
-| 7 | Project-specific stubs | Type the names from Step 1 |
-| 8 | Who must review changes | CODEOWNERS entries, for example `@acme/platform` |
-| 9 | Telemetry | "No" unless you already run an OpenTelemetry collector |
-| 10 | Ready to apply | Read the summary, then `y` |
+| 4 | How much harness | `Recommended` to start |
+| 5 | Version data or model files? | Your decision from Step 1 |
+| 6 | Project-specific stubs | Type the names from Step 1 |
+| 7 | Who must review changes | CODEOWNERS entries, for example `@acme/platform` |
+| 8 | Telemetry | "No" unless you already run an OpenTelemetry collector |
+| 9 | Ready to apply | Read the summary, then `y` |
+
+Today the tool sets up Claude Code's own files (settings, rules, subagents) and the shared ones every agent reads (`AGENTS.md`, skills). A screen for choosing other coding agents appears once their adapters ship.
 
 To preview first, add `--dry-run`. To skip the questions entirely, pass flags:
 
@@ -172,9 +173,9 @@ The wizard only creates files that do not exist yet. Existing files are left alo
 
 Spend five minutes here before changing anything. Open these in order:
 
-1. `CLAUDE.md` - what the agent reads first. Note the empty **Project context** section.
-2. `.claude/settings.json` - the `allow` and `deny` lists, and which hook runs at which moment.
-3. `.claude/hooks/guard-bash.sh` - plain bash. Read the list of blocked patterns so you know what your agent cannot do.
+1. `AGENTS.md` - what the agent reads first. Note the empty **Project context** section.
+2. `CLAUDE.md` - one import line. Then `.claude/settings.json` - the `allow` and `deny` lists, and which hook runs at which moment.
+3. `.agents/hooks/guard-bash.sh` - plain bash. Read the list of blocked patterns so you know what your agent cannot do.
 4. `Makefile` - the commands everyone shares. Run `make help`.
 5. `.github/workflows/ci.yml` and `pr-gate.yml` - what happens to every PR.
 6. `docs/agents/HANDBOOK.md` - the team policy in plain language.
@@ -186,7 +187,7 @@ Do not take enforcement on trust. Feed the guard hook a dangerous command by han
 
 ```sh
 echo '{"tool_name":"Bash","tool_input":{"command":"git push --force origin feature"}}' \
-  | CLAUDE_PROJECT_DIR=$PWD .claude/hooks/guard-bash.sh; echo "exit code: $?"
+  | .agents/hooks/guard-bash.sh claude; echo "exit code: $?"
 ```
 
 Expected:
@@ -197,7 +198,7 @@ If this is genuinely required, stop and ask a human to do it.
 exit code: 2
 ```
 
-Exit code 2 is the signal that tells Claude Code to stop the action. A harmless command such as `git status` in the same test exits 0.
+The last word on the command line names the agent calling the hook. Exit code 2 is the signal that tells Claude Code to stop the action. A harmless command such as `git status` in the same test exits 0.
 
 Then check the project itself is healthy:
 
@@ -218,7 +219,7 @@ grep -rl 'TODO(team)' .
 
 Work through them in this order.
 
-**6a. `CLAUDE.md`, the Project context section.** Six short entries. Aim for a page in total.
+**6a. `AGENTS.md`, the Project context section.** Six short entries. Aim for a page in total.
 
 | Entry | Write | Avoid |
 |---|---|---|
@@ -231,7 +232,7 @@ Work through them in this order.
 
 A test for each line: would a capable engineer who is new to this repo make a mistake without it? If the answer is no, cut it.
 
-**6b. Skill stubs, `.claude/skills/<name>/SKILL.md`.** Two parts matter most.
+**6b. Skill stubs, `.agents/skills/<name>/SKILL.md`.** Two parts matter most.
 - The `description` line. The agent decides whether to load a skill from this line alone, so name the situations that should trigger it. "Use when adding or changing a constraint in the optimisation model" works. "Solver helper" does not.
 - The body: when to use it and when not to, the inputs to gather, numbered steps with a checkable outcome each, how to verify the result, and what to report back.
 
@@ -288,19 +289,19 @@ claude
 
 and give it the task. Watch what the harness does:
 
-1. The agent starts already knowing your project, because it read `CLAUDE.md`.
+1. The agent starts already knowing your project, because it read `AGENTS.md`.
 2. It runs `make test` without asking, because that command is on the allow list.
 3. When it edits a test file, the testing rule loads.
 4. Its edits are formatted automatically.
 5. If it tries to finish with lint failing, the stop hook sends it back.
-6. Run `/review` before opening the PR. The reviewer subagent reads the diff with fresh eyes.
+6. Run the `review` skill (`/review` in Claude Code) before opening the PR. The reviewer subagent reads the diff with fresh eyes.
 7. On the PR, the gate runs the same checks it runs on every PR and posts a scorecard. Nothing asks how the change was written.
 8. A human approves and merges. A human owns every merge.
 
 Afterwards, look at what happened:
 
 ```sh
-.claude/scripts/agent-report.sh --days 1
+.agents/scripts/agent-report.sh --days 1
 ```
 
 ---
@@ -315,11 +316,11 @@ When an agent makes a mistake, ask which layer should have prevented it, and fix
 
 | What you observed | Fix |
 |---|---|
-| The agent lacked a fact about the project | Add one line to `CLAUDE.md` |
+| The agent lacked a fact about the project | Add one line to `AGENTS.md` |
 | It broke a convention in one area of the code | Add or extend a rule in `.claude/rules/` |
 | You explained the same procedure a second time | Write a skill |
 | It did something that must never happen | Add a hook pattern or a deny rule |
-| A bad change passed review | Sharpen `.github/review/criteria.md` or add a CI check |
+| A bad change passed review | Sharpen `scripts/ci/review/criteria.md` or add a CI check |
 | It keeps asking permission for a safe command | Add the command to `allow` in `.claude/settings.json` |
 | A guardrail blocks legitimate work | Narrow the pattern in the hook, through a PR |
 
@@ -329,7 +330,7 @@ A harness that never changes is being ignored. Expect a few small edits a week a
 
 Guardrails are code in your repo, so the process is a normal PR:
 
-1. Edit the hook in `.claude/hooks/` or the lists in `.claude/settings.json`.
+1. Edit the hook in `.agents/hooks/` or the lists in your agent's settings (`.claude/settings.json`).
 2. Test it by hand with the command from Step 5.
 3. Open a PR and get it reviewed. At the strict guard level these files are human-only, so an agent cannot loosen its own rules.
 
@@ -339,15 +340,15 @@ Never work around a guardrail locally. If the rule is wrong, change the rule for
 
 Create the file by hand in the matching folder, copying the frontmatter from an existing one:
 
-- Skill: `.claude/skills/<name>/SKILL.md` with `name` and `description`
-- Rule: `.claude/rules/<name>.md` with `paths`
-- Role: `.claude/agents/<name>.md` with `name`, `description`, and `tools`
+- Skill: `.agents/skills/<name>/SKILL.md` with `name` and `description`
+- Rule (Claude Code): `.claude/rules/<name>.md` with `paths`
+- Role (Claude Code): `.claude/agents/<name>.md` with `name`, `description`, and `tools`
 
 ### 3.4 Reading the signals
 
 - **Each PR:** read the scorecard before the diff. It tells you where to look.
 - **Weekly:** read the digest issue. Rising reverts point to weak tasks or weak context. Review findings that people keep dismissing point to criteria that need editing or switching off.
-- **Monthly:** reread `CLAUDE.md` as a team and delete what is stale. Shorter is better.
+- **Monthly:** reread `AGENTS.md` as a team and delete what is stale. Shorter is better.
 
 ### 3.5 When the gate blocks a PR
 
@@ -366,7 +367,7 @@ Golden results are reviewed when they change. Regenerating them to make a failur
 
 ### 3.7 Long sessions and handoffs
 
-Agent context fills up. When a session has been running for a long time, run `/handoff`. It writes a summary of the goal, the decisions made, the files changed, and the next steps. Start a fresh session from that file. A fresh session with a good summary is more reliable than a long one with stale details.
+Agent context fills up. When a session has been running for a long time, run the `handoff` skill. It writes a summary of the goal, the decisions made, the files changed, and the next steps. Start a fresh session from that file. A fresh session with a good summary is more reliable than a long one with stale details.
 
 ---
 
@@ -380,7 +381,8 @@ Agent context fills up. When a session has been running for a long time, run `/h
 | A harmless command is blocked because its text contains a dangerous one | The guard matches command text, including quoted strings | Rephrase the command or put the text in a file. Narrow the hook pattern if it recurs |
 | The agent cannot finish; lint or typecheck keeps failing | The stop hook is doing its job | Let the agent fix it, or run `make lint` yourself to see the error |
 | The agent keeps asking permission for the same command | The command is missing from the allow list | Add it to `permissions.allow` in `.claude/settings.json` |
-| Hooks do not run at all | Files lost their executable bit, or settings were not loaded | `chmod +x .claude/hooks/*.sh`, then restart Claude Code |
+| Hooks do not run at all | Files lost their executable bit, or settings were not loaded | `chmod +x .agents/hooks/*.sh`, then restart Claude Code |
+| Claude Code finds no skills on Windows | `.claude/skills` is a symbolic link, and git checked it out as a text file | Enable Developer Mode, run `git config --global core.symlinks true`, and clone again |
 | A rule never seems to apply | Its `paths:` pattern does not match the files | Compare the pattern with real paths in the repo |
 | A skill is never used | Its `description` does not say when to use it | Rewrite the description around trigger situations |
 | CI fails at "Typecheck" in an existing Python repo | A typecheck command is configured without matching tool config | Configure the tool in `pyproject.toml`, or clear the command in the Makefile and CI |
@@ -395,7 +397,7 @@ Agent context fills up. When a session has been running for a long time, run `/h
 | **Agent** | A language model running in a loop with tools: it reads, runs commands, edits, and decides the next step |
 | **Harness** | Everything around the model: context, permissions, hooks, checks, and monitoring |
 | **Context** | What the model can see in a session. It is finite, so what goes in matters |
-| **`CLAUDE.md`** | The project file loaded at the start of every session |
+| **`AGENTS.md`** | The project file every agent loads at the start of a session; `CLAUDE.md` imports it |
 | **Rule** | Guidance loaded only for matching file paths |
 | **Skill** | A written procedure loaded on demand, invoked automatically or with `/<name>` |
 | **Subagent / role** | A separate agent with fresh context and limited tools, used for independent or noisy work |

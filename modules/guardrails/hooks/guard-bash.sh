@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# PreToolUse(Bash): blocks destructive or guardrail-bypassing shell commands.
+# Before a shell command: blocks destructive or guardrail-bypassing commands.
 # Guard level: {{GUARD_LEVEL}}.
 . "$(dirname "$0")/lib.sh"
 
 LEVEL='{{GUARD_LEVEL}}'
 DEFAULT_BRANCH='{{DEFAULT_BRANCH}}'
-cmd=$(hook_field command)
+cmd=$(hook_command)
 [ -n "$cmd" ] || exit 0
 
 has() { printf '%s' "$cmd" | grep -Eq -- "$1"; }

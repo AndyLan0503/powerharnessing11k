@@ -21,11 +21,11 @@ ui_banner() {
   printf '%s' "${C_ACCENT}${C_BOLD}"
   cat <<'EOF'
 
-          _   _   _
-   _ __  / | / | | | __
-  | '_ \ | | | | | |/ /
-  | |_) || | | | |   <
-  | .__/ |_| |_| |_|\_\
+           _   _   _
+   _ __   / | / | | | __
+  | '_ \  | | | | | |/ /
+  | |_) | | | | | |   <
+  | .__/  |_| |_| |_|\_\
   |_|
 EOF
   printf '%s\n' "${C_RESET}"
@@ -94,6 +94,44 @@ ui_choose() {
         if [ "$UI_KEY" -le "$n" ]; then
           UI_CHOICE=$UI_KEY
           return 0
+        fi
+        ;;
+    esac
+  done
+}
+
+# ui_checklist "Title" step total "note" "preselected indexes" "opt1" "opt2" ...
+# Number keys toggle an option, Enter confirms (at least one must be on).
+# Sets UI_CHECKED to the selected 1-based indexes, space-separated.
+# Returns 10 on restart, exits on quit.
+ui_checklist() {
+  local title=$1 step=$2 total=$3 note=$4 n opt mark
+  UI_CHECKED=$5
+  shift 5
+  while :; do
+    ui_header "$step" "$total" "$title"
+    [ -z "$note" ] || { ui_note "$note"; printf '\n'; }
+    n=0
+    for opt in "$@"; do
+      n=$((n + 1))
+      case " $UI_CHECKED " in *" $n "*) mark="${C_OK}[x]${C_RESET}" ;; *) mark='[ ]' ;; esac
+      printf '  %s  %s %s\n\n' "${C_ACCENT}${C_BOLD}($n)${C_RESET}" "$mark" "${C_BOLD}$opt${C_RESET}"
+    done
+    printf '  %s\n' "${C_DIM}(1-$n)  Toggle.   (Enter)  Continue.${C_RESET}"
+    ui_footer
+    printf '  %s ' "${C_BOLD}Choice [1-$n, Enter, r, q]:${C_RESET}"
+    ui_key
+    printf '\n'
+    case $UI_KEY in
+      q | Q) ui_quit ;;
+      r | R) return 10 ;;
+      '') [ -z "$UI_CHECKED" ] || return 0 ;;
+      [1-9])
+        if [ "$UI_KEY" -le "$n" ]; then
+          case " $UI_CHECKED " in
+            *" $UI_KEY "*) UI_CHECKED=$(printf ' %s ' "$UI_CHECKED" | sed "s/ $UI_KEY / /; s/^ *//; s/ *$//") ;;
+            *) UI_CHECKED="${UI_CHECKED:+$UI_CHECKED }$UI_KEY" ;;
+          esac
         fi
         ;;
     esac

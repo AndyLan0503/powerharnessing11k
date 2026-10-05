@@ -1,6 +1,6 @@
 # AI review criteria
 
-The PR gate's AI reviewer follows this file exactly. The team owns it: tune it in PRs. The reviewer also reads `CLAUDE.md` for project context.
+The PR gate's AI reviewer follows this file exactly. The team owns it: tune it in PRs. The reviewer also reads `AGENTS.md` for project context.
 
 ## Report these categories
 

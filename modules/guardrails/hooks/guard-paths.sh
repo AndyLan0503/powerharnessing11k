@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
-# PreToolUse(Edit|Write|...): blocks edits to secrets and, in strict mode, to
-# files that define the guardrails themselves.
+# Before a file edit: blocks edits to secrets and, in strict mode, to files
+# that define the guardrails themselves.
 # Guard level: {{GUARD_LEVEL}}.
 . "$(dirname "$0")/lib.sh"
 
 LEVEL='{{GUARD_LEVEL}}'
-path=$(hook_field file_path)
-[ -n "$path" ] || path=$(hook_field notebook_path)
+path=$(hook_file)
 [ -n "$path" ] || exit 0
 
-root=$(hook_root)
-rel=${path#"$root"/}
+rel=$(hook_rel "$path")
+# A ".." that survives resolution goes through a directory that does not
+# exist, so where the edit would land cannot be checked.
+case "/$rel/" in */../*) hook_block "editing $path: paths through '..' cannot be checked; use the direct path" ;; esac
 base=${rel##*/}
 
 case $base in
@@ -34,7 +35,7 @@ esac
 
 case $rel in
   .github/workflows/* | .github/CODEOWNERS | CODEOWNERS | docs/CODEOWNERS | \
-    .claude/settings.json | .claude/hooks/*)
+    .agents/hooks/* | scripts/ci/*{{PROTECTED_CASE}})
     hook_block "editing $rel: guardrail and CI configuration is human-only in strict mode"
     ;;
 esac

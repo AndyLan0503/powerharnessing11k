@@ -1,38 +1,36 @@
 # shellcheck shell=bash
-MODULE_DESC="CLAUDE.md / AGENTS.md, .claude/rules, settings.json, /review + /handoff commands, reviewer role, session-start hook"
+MODULE_DESC="AGENTS.md (project context, working agreement), path-scoped rules, permissions, review + handoff skills, reviewer role, session-start hook"
 
 module_apply() {
-  emit file CLAUDE.md.tmpl CLAUDE.md
-  if [ -n "$HV_MULTI_AGENT" ]; then emit file AGENTS.md.tmpl AGENTS.md; fi
-  emit exec hooks/lib.sh .claude/hooks/lib.sh
-  emit exec hooks/session-start.sh .claude/hooks/session-start.sh
+  # AGENTS.md is the source of truth for every agent; adapters add whatever
+  # their agent needs to find it (see agents/<name>/adapter.sh).
+  emit file AGENTS.md.tmpl AGENTS.md
+  emit_hook hooks/lib.sh
+  emit_hook hooks/session-start.sh
   emit append gitignore.tmpl .gitignore
   emit file editorconfig.tmpl .editorconfig
 
-  # Shared commands and the shared reviewer role (not for solo study repos).
-  emit file commands/handoff.md .claude/commands/handoff.md
+  # Shared skills and the shared reviewer role (not for solo study repos).
+  emit_skill handoff skills/handoff.md
   if [ -z "$HV_PROFILE_STUDY" ]; then
-    emit file commands/review.md .claude/commands/review.md
-    emit file agents/reviewer.md .claude/agents/reviewer.md
+    emit_skill review skills/review.md
+    emit_role reviewer agents/reviewer.md
   fi
 
-  # Path-scoped rules: loaded only when Claude works on matching files.
+  # Path-scoped rules: loaded only when the agent works on matching files.
   if [ -n "$HV_PROFILE_ENGINEERING" ]; then
-    emit file rules/testing.md .claude/rules/testing.md
-    emit file rules/github-actions.md .claude/rules/github-actions.md
+    emit_rule testing rules/testing.md
+    emit_rule github-actions rules/github-actions.md
   fi
-  if [ -n "$HV_PROTECT_RAW_DATA" ]; then emit file rules/data.md .claude/rules/data.md; fi
-  if [ -n "$HV_NOTEBOOK_CHECK" ]; then emit file rules/notebooks.md .claude/rules/notebooks.md; fi
+  if [ -n "$HV_PROTECT_RAW_DATA" ]; then emit_rule data rules/data.md; fi
+  if [ -n "$HV_NOTEBOOK_CHECK" ]; then emit_rule notebooks rules/notebooks.md; fi
 
-  settings_hook SessionStart "" session-start.sh 600
-
-  settings_allow 'Bash(git status:*)' 'Bash(git diff:*)' 'Bash(git log:*)' \
-    'Bash(git show:*)' 'Bash(git branch:*)'
+  settings_hook session-start session-start.sh 600
+  settings_allow_cmd 'git status' 'git diff' 'git log' 'git show' 'git branch'
   local cmd
   for cmd in "$HV_LINT_CMD" "$HV_TYPECHECK_CMD" "$HV_TEST_CMD"; do
-    [ -z "$cmd" ] || settings_allow "Bash($cmd:*)"
+    [ -z "$cmd" ] || settings_allow_cmd "$cmd"
   done
-
-  settings_deny 'Read(./.env)' 'Read(./.env.local)' 'Read(./.env.*.local)' \
-    'Read(./.env.production)' 'Read(./secrets/**)' 'Read(./**/*.pem)' 'Read(./**/*.key)'
+  settings_deny_read '.env' '.env.local' '.env.*.local' '.env.production' \
+    'secrets/**' '**/*.pem' '**/*.key'
 }

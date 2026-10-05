@@ -2,7 +2,10 @@
 # The interactive configuration wizard (`harness configure`). Every question
 # can be answered with one key; (r) restarts, (q) quits without changes.
 
-WIZ_TOTAL=10
+# Steps are numbered as they run; the agents step is skipped while only one
+# coding agent is available.
+WIZ_TOTAL=9
+WIZ_STEP=0
 
 wizard_run() {
   local rc
@@ -21,17 +24,21 @@ wizard_run() {
 
 _wizard_steps() {
   local current detected stacks s i opts p
+  WIZ_STEP=0
+  WIZ_TOTAL=9
+  case $ALL_AGENTS in *' '*) WIZ_TOTAL=10 ;; esac
   current=$WIZ_PREV_STACK
   detected=$(detect_stack "$TARGET")
 
-  # 1. Profile ---------------------------------------------------------------
+  # Profile ---------------------------------------------------------------
+  WIZ_STEP=$((WIZ_STEP + 1))
   opts=()
   for p in $ALL_PROFILES; do
     d=$(profile_field "$p" DESC)
     [ "$p" != "$WIZ_PREV_PROFILE" ] || d="$d  ← default"
     opts+=("$(profile_field "$p" TITLE)|$d")
   done
-  ui_choose "What is this repository for?" 1 $WIZ_TOTAL "${opts[@]}" || return
+  ui_choose "What is this repository for?" "$WIZ_STEP" "$WIZ_TOTAL" "${opts[@]}" || return
   i=0
   for p in $ALL_PROFILES; do
     i=$((i + 1))
@@ -39,7 +46,8 @@ _wizard_steps() {
   done
   export HV_PROFILE
 
-  # 2. Stack -----------------------------------------------------------------
+  # Stack -----------------------------------------------------------------
+  WIZ_STEP=$((WIZ_STEP + 1))
   stacks="node python go rust generic"
   opts=()
   for s in $stacks; do
@@ -61,7 +69,7 @@ _wizard_steps() {
     fi
     opts+=("$s|$d")
   done
-  ui_choose "What language or toolchain does it use?" 2 $WIZ_TOTAL "${opts[@]}" || return
+  ui_choose "What language or toolchain does it use?" "$WIZ_STEP" "$WIZ_TOTAL" "${opts[@]}" || return
   i=0
   for s in $stacks; do
     i=$((i + 1))
@@ -78,17 +86,18 @@ _wizard_steps() {
   fi
   export HV_STACK HV_PKG_MANAGER
 
-  # 3. Commands --------------------------------------------------------------
+  # Commands --------------------------------------------------------------
+  WIZ_STEP=$((WIZ_STEP + 1))
   local evals='' nl=$'\n' cmds
   case $HV_PROFILE in ml | agentic) evals=1 ;; esac
   cmds="install     ${HV_INSTALL_CMD:-—}${nl}lint        ${HV_LINT_CMD:-—}${nl}typecheck   ${HV_TYPECHECK_CMD:-—}"
   cmds="$cmds${nl}test        ${HV_TEST_CMD:-—}${nl}full tests  ${HV_FULL_TEST_CMD:-—}${nl}format      ${HV_FORMAT_CMD:-—}"
   [ -z "$evals" ] || cmds="$cmds${nl}eval        ${HV_EVAL_CMD:-—}"
-  ui_choose "These commands will be used by hooks, CI, and agent docs. OK?" 3 $WIZ_TOTAL \
+  ui_choose "These commands will be used by hooks, CI, and agent docs. OK?" "$WIZ_STEP" "$WIZ_TOTAL" \
     "Use them|$cmds" \
     "Edit them|Type each command; Enter keeps the default, '-' clears it" || return
   if [ "$UI_CHOICE" = 2 ]; then
-    ui_header 3 $WIZ_TOTAL "Edit commands"
+    ui_header "$WIZ_STEP" "$WIZ_TOTAL" "Edit commands"
     ui_note "Enter keeps the default shown in brackets. '-' clears a command."
     ui_note "The format command may use {file} for the edited file's path."
     printf '\n'
@@ -102,17 +111,30 @@ _wizard_steps() {
     [ -z "$evals" ] || _wizard_edit EVAL_CMD "Eval     "
   fi
 
-  # 4. Agent tools -----------------------------------------------------------
-  ui_choose "Which coding agents will work in this repo?" 4 $WIZ_TOTAL \
-    "Claude Code only|All agent guidance lives in CLAUDE.md" \
-    "Claude Code + others (Copilot, Codex, Cursor...)|Shared guidance in AGENTS.md; CLAUDE.md imports it with @AGENTS.md" || return
-  if [ "$UI_CHOICE" = 1 ]; then HV_AGENT_TOOLS=claude; else HV_AGENT_TOOLS=multi; fi
-  export HV_AGENT_TOOLS
+  # Coding agents ----------------------------------------------------------
+  case $ALL_AGENTS in
+    *' '*)
+      WIZ_STEP=$((WIZ_STEP + 1))
+      opts=()
+      for p in $ALL_AGENTS; do opts+=("$(agent_title "$p")"); done
+      ui_checklist "Which coding agents will work in this repo?" "$WIZ_STEP" "$WIZ_TOTAL" \
+        "AGENTS.md is written for all of them; each selected agent also gets its own setup." \
+        "$(_wizard_agent_marks)" "${opts[@]}" || return
+      HV_AGENTS=''
+      i=0
+      for p in $ALL_AGENTS; do
+        i=$((i + 1))
+        case " $UI_CHECKED " in *" $i "*) HV_AGENTS="${HV_AGENTS:+$HV_AGENTS }$p" ;; esac
+      done
+      export HV_AGENTS
+      ;;
+  esac
 
-  # 5. Tier -----------------------------------------------------------------
+  # Tier -----------------------------------------------------------------
+  WIZ_STEP=$((WIZ_STEP + 1))
   local title
   title=$(profile_field "$HV_PROFILE" TITLE)
-  ui_choose "How much harness for this $title repo?" 5 $WIZ_TOTAL \
+  ui_choose "How much harness for this $title repo?" "$WIZ_STEP" "$WIZ_TOTAL" \
     "Minimal|$(profile_field "$HV_PROFILE" MINIMAL)  (guard: relaxed)" \
     "Recommended|$(profile_field "$HV_PROFILE" RECOMMENDED)  (guard: $(profile_field "$HV_PROFILE" GUARD_LEVEL))" \
     "Strict|$(profile_field "$HV_PROFILE" STRICT)  (guard: $(profile_field "$HV_PROFILE" STRICT_GUARD))" \
@@ -124,7 +146,8 @@ _wizard_steps() {
     4) _wizard_custom || return ;;
   esac
 
-  # 6. Artifacts -------------------------------------------------------------
+  # Artifacts -------------------------------------------------------------
+  WIZ_STEP=$((WIZ_STEP + 1))
   local art_yes="Yes|Local data/ and models/, pinned by hash in artifacts.lock; no cloud needed"
   local art_no="No|No data or model files to version"
   if list_has "$HV_MODULES" artifacts; then
@@ -132,7 +155,7 @@ _wizard_steps() {
   else
     art_no="$art_no  ← profile default"
   fi
-  ui_choose "Does this project version data or model files?" 6 $WIZ_TOTAL "$art_yes" "$art_no" || return
+  ui_choose "Does this project version data or model files?" "$WIZ_STEP" "$WIZ_TOTAL" "$art_yes" "$art_no" || return
   if [ "$UI_CHOICE" = 1 ]; then
     HV_MODULES=$(modules_normalize "$HV_MODULES artifacts")
   else
@@ -140,8 +163,9 @@ _wizard_steps() {
   fi
   export HV_MODULES
 
-  # 7. Project-specific stubs ---------------------------------------------------
-  ui_choose "Create blank, project-specific files for the team to fill in?" 7 $WIZ_TOTAL \
+  # Project-specific stubs ---------------------------------------------------
+  WIZ_STEP=$((WIZ_STEP + 1))
+  ui_choose "Create blank, project-specific files for the team to fill in?" "$WIZ_STEP" "$WIZ_TOTAL" \
     "No|Skip; add skills, subagents, and rules later by hand" \
     "Yes|Name them now (e.g. a solver skill, a model-validation rule); each gets a TODO(team) stub" || return
   if [ "$UI_CHOICE" = 2 ]; then
@@ -151,9 +175,10 @@ _wizard_steps() {
     export HV_SKILLS HV_ROLES HV_RULES HV_DIRS
   fi
 
-  # 8. Code owners -----------------------------------------------------------
+  # Code owners -----------------------------------------------------------
+  WIZ_STEP=$((WIZ_STEP + 1))
   if list_has "$HV_MODULES" collab; then
-    ui_header 8 $WIZ_TOTAL "Who must review changes? (CODEOWNERS)"
+    ui_header "$WIZ_STEP" "$WIZ_TOTAL" "Who must review changes? (CODEOWNERS)"
     ui_note "GitHub users or teams, space-separated, e.g. @acme/platform @alice."
     ui_note "Leave empty to skip CODEOWNERS."
     printf '\n'
@@ -163,12 +188,13 @@ _wizard_steps() {
     export HV_CODEOWNERS
   fi
 
-  # 9. Telemetry -------------------------------------------------------------
-  ui_choose "Export Claude Code telemetry (cost, tokens, sessions) via OpenTelemetry?" 9 $WIZ_TOTAL \
+  # Telemetry -------------------------------------------------------------
+  WIZ_STEP=$((WIZ_STEP + 1))
+  ui_choose "Export Claude Code telemetry (cost, tokens, sessions) via OpenTelemetry?" "$WIZ_STEP" "$WIZ_TOTAL" \
     "No|You still get the local audit log, PR scorecards, and the weekly digest" \
     "Yes|Send metrics to an OTLP collector (Grafana, Datadog, Honeycomb, ...)" || return
   if [ "$UI_CHOICE" = 2 ]; then
-    ui_header 9 $WIZ_TOTAL "OTLP collector endpoint"
+    ui_header "$WIZ_STEP" "$WIZ_TOTAL" "OTLP collector endpoint"
     ui_note "gRPC endpoint. Auth headers stay out of git (see docs/agents/TELEMETRY.md)."
     printf '\n'
     ui_line "Endpoint" "${HV_OTEL_ENDPOINT:-http://localhost:4317}"
@@ -179,10 +205,11 @@ _wizard_steps() {
   fi
   export HV_OTEL_ENDPOINT HV_MODULES
 
-  # 10. Confirm ---------------------------------------------------------------
+  # Confirm ---------------------------------------------------------------
+  WIZ_STEP=$((WIZ_STEP + 1))
   derive_vars
   while :; do
-    ui_header 10 $WIZ_TOTAL "Ready to apply"
+    ui_header "$WIZ_STEP" "$WIZ_TOTAL" "Ready to apply"
     _wizard_summary
     printf '  %s  Apply to %s\n' "${C_ACCENT}${C_BOLD}(y)${C_RESET}" "${C_BOLD}$TARGET${C_RESET}"
     ui_footer
@@ -217,14 +244,14 @@ _wizard_custom() {
       continue
     fi
     rc=0
-    ui_yesno "Custom modules" 5 $WIZ_TOTAL "Include ${C_BOLD}$m${C_RESET}?  ${C_DIM}$(module_desc "$m")${C_RESET}" || rc=$?
+    ui_yesno "Custom modules" "$WIZ_STEP" "$WIZ_TOTAL" "Include ${C_BOLD}$m${C_RESET}?  ${C_DIM}$(module_desc "$m")${C_RESET}" || rc=$?
     case $rc in
       0) picked="$picked $m" ;;
       10) return 10 ;;
     esac
   done
   HV_MODULES=$picked
-  ui_choose "Guard level for hooks and CI" 5 $WIZ_TOTAL \
+  ui_choose "Guard level for hooks and CI" "$WIZ_STEP" "$WIZ_TOTAL" \
     "Relaxed|Block only catastrophic actions (rm -rf ~, pushing to the default branch)" \
     "Standard|Also block force-push, --no-verify, curl|sh, secret access; lint before finishing" \
     "Strict|Also make CI/guardrail files human-only; diff-guard findings block merges" || return
@@ -239,17 +266,17 @@ _wizard_custom() {
 _wizard_stubs() {
   local err
   while :; do
-    ui_header 7 $WIZ_TOTAL "Project-specific stubs"
+    ui_header "$WIZ_STEP" "$WIZ_TOTAL" "Project-specific stubs"
     ui_note "Space-separated; leave empty for none. Names: lowercase letters, digits, hyphens."
     ui_note "Each file is created blank, with TODO(team) notes on what to write."
     printf '\n'
-    ui_note "Skills (.claude/skills/<name>/SKILL.md), e.g. run-solver"
+    ui_note "Skills (.agents/skills/<name>/SKILL.md), e.g. run-solver"
     ui_line "Skills  " "${HV_SKILLS:--}"
     HV_SKILLS=$UI_LINE
-    ui_note "Subagents (.claude/agents/<name>.md), e.g. model-checker"
+    ui_note "Subagents, e.g. model-checker"
     ui_line "Roles   " "${HV_ROLES:--}"
     HV_ROLES=$UI_LINE
-    ui_note "Path-scoped rules (.claude/rules/<name>.md) as name=glob[,glob], e.g. solver=src/*/solver/**"
+    ui_note "Path-scoped rules as name=glob[,glob], e.g. solver=src/*/solver/**"
     ui_line "Rules   " "${HV_RULES:--}"
     HV_RULES=$UI_LINE
     ui_note "Directories that get a README stub, e.g. src/app/model experiments"
@@ -271,6 +298,16 @@ _wizard_stubs() {
   done
 }
 
+# Indexes (1-based, in ALL_AGENTS order) of the agents selected so far.
+_wizard_agent_marks() {
+  local i=0 p out=''
+  for p in $ALL_AGENTS; do
+    i=$((i + 1))
+    if list_has "$HV_AGENTS" "$p"; then out="${out:+$out }$i"; fi
+  done
+  printf '%s' "$out"
+}
+
 _default_owner() {
   local url owner
   url=$(git -C "$TARGET" remote get-url origin 2>/dev/null) || return 0
@@ -283,7 +320,9 @@ _wizard_summary() {
   local m
   ui_info "${C_BOLD}Profile${C_RESET}      $(profile_field "$HV_PROFILE" TITLE)"
   ui_info "${C_BOLD}Project${C_RESET}      $HV_PROJECT_NAME  ${C_DIM}($HV_STACK, $HV_PKG_MANAGER, default branch $HV_DEFAULT_BRANCH)${C_RESET}"
-  ui_info "${C_BOLD}Agents${C_RESET}       $([ "$HV_AGENT_TOOLS" = multi ] && echo 'Claude Code + others (AGENTS.md)' || echo 'Claude Code (CLAUDE.md)')"
+  local a titles=''
+  for a in $HV_AGENTS; do titles="${titles:+$titles, }$(agent_title "$a")"; done
+  ui_info "${C_BOLD}Agents${C_RESET}       $titles  ${C_DIM}(AGENTS.md is the shared source of truth)${C_RESET}"
   ui_info "${C_BOLD}Guard level${C_RESET}  $HV_GUARD_LEVEL"
   [ -z "$HV_CODEOWNERS" ] || ui_info "${C_BOLD}Owners${C_RESET}       $HV_CODEOWNERS"
   [ -z "$HV_OTEL_ENDPOINT" ] || ui_info "${C_BOLD}Telemetry${C_RESET}    $HV_OTEL_ENDPOINT"

@@ -1,0 +1,11 @@
+# {{PROJECT_NAME}}
+
+@AGENTS.md
+
+## Claude Code specifics
+
+- `AGENTS.md` is the source of truth for this project's context and rules; this file only imports it. Put new guidance there.
+- Team settings are in `.claude/settings.json`; personal overrides go in `.claude/settings.local.json` (git-ignored).
+- Skills live in `.agents/skills/`; `.claude/skills` links to it. On Windows, clone with symlinks enabled (`git config --global core.symlinks true`, with Developer Mode on), or the link arrives as a text file and no skills load.
+- Path-scoped rules are in `.claude/rules/`, subagents in `.claude/agents/`.
+- If a hook blocks a tool call, treat the message as a hard rule and stop to explain what you needed.

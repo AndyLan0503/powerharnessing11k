@@ -30,8 +30,8 @@ MIN_CONF=${MIN_INLINE_CONFIDENCE:-0.5}
 OUT=${OUT_DIR:-.ai-review}
 OUTPUT=${GITHUB_OUTPUT:-/dev/null}
 RANGE="$BASE_SHA...$HEAD_SHA"
-CRITERIA=${CRITERIA_FILE:-.github/review/criteria.md}
-SCHEMA=${SCHEMA_FILE:-.github/review/findings.schema.json}
+CRITERIA=${CRITERIA_FILE:-scripts/ci/review/criteria.md}
+SCHEMA=${SCHEMA_FILE:-scripts/ci/review/findings.schema.json}
 SKIP='(^|/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|uv\.lock|poetry\.lock|go\.sum|Cargo\.lock|Gemfile\.lock)$|\.(png|jpe?g|gif|ico|pdf|zip|gz|ipynb|map)$|\.min\.js$|(^|/)(dist|build|vendor|node_modules)/'
 mkdir -p "$OUT"
 
@@ -243,7 +243,7 @@ review_body() { # posted-inline-count
     cat "$OUT/body.md"
   fi
   echo
-  echo "<sub>Independent Claude Code review per .github/review/criteria.md. React 👎 on false positives; the weekly digest tracks them by pattern.</sub>"
+  echo "<sub>Independent Claude Code review per scripts/ci/review/criteria.md. React 👎 on false positives; the weekly digest tracks them by pattern.</sub>"
 }
 posted=$(wc -l <"$OUT/inline.jsonl" | tr -d ' ')
 review_body "$posted" >"$OUT/review-body.md"

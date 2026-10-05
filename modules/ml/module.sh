@@ -2,10 +2,9 @@
 MODULE_DESC="Data science & ML: experiment + data-audit skills, experiment log, dataset cards, immutable data/raw"
 
 module_apply() {
-  # Always-on profile rules. With AGENTS.md they live there instead (shared with other agents).
-  if [ -z "$HV_MULTI_AGENT" ]; then emit file rules/profile.md .claude/rules/ml.md; fi
-  emit file skills/experiment.md .claude/skills/experiment/SKILL.md
-  emit file skills/data-audit.md .claude/skills/data-audit/SKILL.md
+  # The always-on profile rules (rules/profile.md) are included in AGENTS.md.
+  emit_skill experiment skills/experiment.md
+  emit_skill data-audit skills/data-audit.md
   emit seed EXPERIMENTS.md EXPERIMENTS.md
   emit seed DATA.md docs/DATA.md
   emit append gitignore.tmpl .gitignore

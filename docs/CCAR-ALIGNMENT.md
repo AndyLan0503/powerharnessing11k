@@ -6,29 +6,29 @@ How harness applies the practices in the Claude Certified Architect exam guides:
 
 | Task statement | Practice | Where in harness |
 |---|---|---|
-| **1.4** Programmatic enforcement vs prompt guidance | Rules that must always hold are hooks and CI gates; `CLAUDE.md` only guides | `guard-bash.sh`, `guard-paths.sh`, `stop-checks.sh`, PR gate; "Hooks enforce; this file guides" in `CLAUDE.md` |
+| **1.4** Programmatic enforcement vs prompt guidance | Rules that must always hold are hooks and CI gates; `AGENTS.md` only guides | `guard-bash.sh`, `guard-paths.sh`, `stop-checks.sh`, PR gate; "Hooks enforce; this file guides" in `CLAUDE.md` |
 | **1.5** Hooks that intercept tool calls | PreToolUse hooks block policy-violating commands and edits, and explain why to the agent | `modules/guardrails/hooks/` |
-| **1.2 / 1.3** Subagents get explicit context; coordinators route | Roles are separate subagents with their own instructions; `/review` passes the base ref and intent explicitly | `.claude/agents/*`, `.claude/commands/review.md` |
-| **1.7** Fresh session with a summary vs resuming stale context | `/handoff` writes a structured summary; the guidance prefers it over resuming with stale tool results | `.claude/commands/handoff.md`, "How we work" |
+| **1.2 / 1.3** Subagents get explicit context; coordinators route | Roles are separate subagents with their own instructions; the `review` skill passes the base ref and intent explicitly | `.claude/agents/*`, `.agents/skills/review/SKILL.md` |
+| **1.7** Fresh session with a summary vs resuming stale context | the `handoff` skill writes a structured summary; the guidance prefers it over resuming with stale tool results | `.agents/skills/handoff/SKILL.md`, "How we work" |
 | **2.1** Tool descriptions as the selection mechanism | Agentic profile rules and the `agent-tool` skill; `prompts.md` path rule | `modules/agentic/` |
-| **2.2 / 5.3** Structured errors, retryable vs not, empty vs failed | Agentic profile rule 6 | `.claude/rules/agentic.md` |
+| **2.2 / 5.3** Structured errors, retryable vs not, empty vs failed | Agentic profile rule 6 | `AGENTS.md` (agentic profile rules) |
 | **2.3** Scoped tool access per agent (4–5 tools) | The shared roles declare minimal `tools:` lists; skills restrict `allowed-tools`. Harness ships only the two near-universal roles (`reviewer`, `test-writer`); teams add domain roles in their own repos | `.claude/agents/*`, skill frontmatter |
 | **2.4** MCP in project `.mcp.json` with `${ENV}` expansion; personal servers in user scope | `mcp` module (strict tiers) | `.mcp.json`, `docs/agents/MCP.md` |
 | **2.5** Built-in tools used incrementally | "Grep for entry points, then Read along the flow" | "How we work" |
-| **3.1** CLAUDE.md hierarchy and modular rules | Project `CLAUDE.md` (shared through git) plus `.claude/rules/` topic files; `AGENTS.md` import for multi-agent repos | `modules/core/` |
-| **3.2** Project commands and skills; `context: fork`, `allowed-tools`, `argument-hint` | `/review`, `/handoff`; every skill has `argument-hint`; read-heavy skills (`data-audit`, `claim-check`) run forked with read-only tools | `.claude/commands/`, `.claude/skills/` |
+| **3.1** CLAUDE.md hierarchy and modular rules | `AGENTS.md` as the shared source of truth, imported by a short `CLAUDE.md`, plus `.claude/rules/` topic files for multi-agent repos | `modules/core/` |
+| **3.2** Project commands and skills; `context: fork`, `allowed-tools`, `argument-hint` | `review` and `handoff` skills; every skill has `argument-hint`; read-heavy skills (`data-audit`, `claim-check`) run forked with read-only tools | `.agents/skills/`, `.agents/skills/` |
 | **3.3** Path-specific rules with `paths:` globs | `testing.md` (test files anywhere), `github-actions.md`, `data.md`, `notebooks.md`, `prompts.md`, `evals.md`, `exercises.md`, `literature.md` | `.claude/rules/` |
 | **3.4** Plan mode vs direct execution; Explore subagent | "Plan before big changes", "Explore without flooding the context" | "How we work" |
 | **3.5** Concrete examples, test-driven iteration, interview pattern | "Interview before building", "Show, then test" | "How we work", `task-intake` |
-| **3.6** Claude Code in CI: `-p`, `--output-format json`, `--json-schema`, `CLAUDE.md` as CI context, independent review, prior findings to avoid duplicates | `ai-review.sh` runs `claude -p` with a findings JSON schema and read-only tools, in a fresh instance; earlier findings are fingerprinted, passed back in, and never reposted | `.github/scripts/ai-review.sh`, `.github/review/` |
-| **4.1** Explicit criteria; disable high-false-positive categories | `criteria.md` lists categories to report and to skip, each with an on/off status, plus severity definitions with code examples | `.github/review/criteria.md` |
-| **4.2** Few-shot examples for format and ambiguous cases | Report / don't-report / nit examples in the criteria | `.github/review/criteria.md` |
-| **4.3** Structured output via schemas | Strict findings schema with enums and nullable fields | `.github/review/findings.schema.json` |
+| **3.6** Claude Code in CI: `-p`, `--output-format json`, `--json-schema`, `CLAUDE.md` as CI context, independent review, prior findings to avoid duplicates | `ai-review.sh` runs `claude -p` with a findings JSON schema and read-only tools, in a fresh instance; earlier findings are fingerprinted, passed back in, and never reposted | `scripts/ci/ai-review.sh`, `scripts/ci/review/` |
+| **4.1** Explicit criteria; disable high-false-positive categories | `criteria.md` lists categories to report and to skip, each with an on/off status, plus severity definitions with code examples | `scripts/ci/review/criteria.md` |
+| **4.2** Few-shot examples for format and ambiguous cases | Report / don't-report / nit examples in the criteria | `scripts/ci/review/criteria.md` |
+| **4.3** Structured output via schemas | Strict findings schema with enums and nullable fields | `scripts/ci/review/findings.schema.json` |
 | **4.4** `detected_pattern` for dismissal analysis | Every finding has a `detected_pattern`; the weekly digest counts 👎 dismissals per pattern | `ai-review.sh`, `pr-digest.yml` |
-| **4.5** Batch API only for latency-tolerant work | The blocking pre-merge review is synchronous; agentic rules reserve batch for overnight jobs | `.claude/rules/agentic.md` |
+| **4.5** Batch API only for latency-tolerant work | The blocking pre-merge review is synchronous; agentic rules reserve batch for overnight jobs | `AGENTS.md` (agentic profile rules) |
 | **4.6** Independent instances; per-file plus cross-file passes; confidence for routing | One pass per file, then one cross-file pass; low-confidence findings go to "needs a human look" instead of inline comments | `ai-review.sh` |
-| **5.1 / 5.4** Context management: scratchpads, `/compact`, subagent delegation | "Long sessions" guidance; Explore delegation; `/handoff` | "How we work" |
-| **5.2** Escalation criteria, not sentiment or self-confidence | Agentic rule 12 | `.claude/rules/agentic.md` |
+| **5.1 / 5.4** Context management: scratchpads, `/compact`, subagent delegation | "Long sessions" guidance; subagent delegation; the `handoff` skill | "How we work" |
+| **5.2** Escalation criteria, not sentiment or self-confidence | Agentic rule 12 | `AGENTS.md` (agentic profile rules) |
 | **5.5** Segment-level accuracy; calibrated confidence before automating | ML rules 5 and 8; `evals.md` path rule | `.claude/rules/ml.md`, `evals.md` |
 | **5.6** Provenance: claim→source mappings, conflicts annotated, dates | Research rules 2–4; `lit-review`; `claim-check` | `modules/research/` |
 

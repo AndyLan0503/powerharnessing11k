@@ -7,5 +7,5 @@
 - Anything an agent must know before changing files here (for example "do not
   apply changes; plan only" for infrastructure code).
 
-If agents need rules for these files, add a path-scoped rule in
-.claude/rules/ with `paths: ["{{ITEM_NAME}}/**"]`. -->
+If agents need rules for these files, add a path-scoped rule for
+`{{ITEM_NAME}}/**` (see "Where things live" in AGENTS.md). -->

@@ -8,6 +8,8 @@
 #   append  Line-based files such as .gitignore: append the template's lines
 #           that are not already present. Existing lines are never touched.
 #
+# emit_symlink creates a relative symlink under the same create-only rule.
+#
 # "seed" is accepted as a synonym for "file".
 
 apply_reset() {
@@ -59,6 +61,31 @@ apply_rendered() { # mode tmp dest
     append) _apply_append "$tmp" "$dest" ;;
     *) harness_die "unknown emit mode: $mode" ;;
   esac
+}
+
+# emit_symlink TARGET DEST: DEST (relative to the repo) becomes a symlink to
+# TARGET (relative to DEST's directory). Create-only, like files: an existing
+# file or directory is never replaced. With --force, a link that points
+# somewhere else is repointed (a link holds no content of its own).
+emit_symlink() {
+  local link_to=$1 dest=$2 path=$TARGET/$2
+  if [ -L "$path" ] && [ "$(readlink "$path")" = "$link_to" ]; then
+    _status unchanged "$dest"
+  elif [ -L "$path" ] && [ -n "${FORCE:-}" ]; then
+    if [ -z "${DRY_RUN:-}" ]; then
+      rm "$path"
+      ln -s "$link_to" "$path"
+    fi
+    _status overwritten "$dest" "link to $link_to"
+  elif [ -e "$path" ] || [ -L "$path" ]; then
+    _status skipped "$dest" "already exists; left as is"
+  else
+    if [ -z "${DRY_RUN:-}" ]; then
+      mkdir -p "$(dirname "$path")"
+      ln -s "$link_to" "$path"
+    fi
+    _status created "$dest" "link to $link_to"
+  fi
 }
 
 _apply_append() { # tmp dest

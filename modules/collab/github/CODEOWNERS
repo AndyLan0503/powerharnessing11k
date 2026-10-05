@@ -3,8 +3,7 @@
 *                       {{CODEOWNERS}}
 
 /.github/               {{CODEOWNERS}}
-/.claude/               {{CODEOWNERS}}
-/CLAUDE.md              {{CODEOWNERS}}
-{{#if MULTI_AGENT}}
+/scripts/ci/            {{CODEOWNERS}}
 /AGENTS.md              {{CODEOWNERS}}
-{{/if}}
+/.agents/               {{CODEOWNERS}}
+{{AGENT_CODEOWNERS}}

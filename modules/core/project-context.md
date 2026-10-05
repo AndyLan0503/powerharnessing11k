@@ -2,8 +2,8 @@
 
 <!-- TODO(team): fill in this section, then delete this comment. Agents read it
      at the start of every session, so keep it to facts they need every time.
-     Put procedures in skills (.claude/skills/) and conventions for specific
-     files in path-scoped rules (.claude/rules/). -->
+     Put procedures in skills (.agents/skills/) and conventions for specific
+     files in path-scoped rules. -->
 
 - **What this is:** TODO(team): the problem it solves, for whom, and what "done" looks like.
 - **Domain terms:** TODO(team): the terms that have a precise meaning in this codebase.

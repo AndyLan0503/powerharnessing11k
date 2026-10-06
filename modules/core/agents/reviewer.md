@@ -23,12 +23,12 @@ Get the change with `git diff <base>...HEAD`, where the base is what the caller 
 {{/if}}
 {{#if PROFILE_RESEARCH}}
 1. Claims not supported by their cited source or by a logged analysis.
-2. Citations you can't trace to `references.bib`, and numbers that don't match the analysis outputs.
+2. Citations you can't trace to `literature/references.bib`, and numbers that don't match the analysis outputs.
 3. Analyses that can't be reproduced from committed scripts.
 4. Overclaiming wording and missing limitations.
 {{/if}}
 {{#if MOD_REVIEW}}
-Also apply the checklist in `REVIEW.md`.
+Also apply the checklist in `docs/REVIEW.md`.
 {{/if}}
 
 **Don't report** style preferences, naming nits, or patterns that match the surrounding code, unless they hide a bug.

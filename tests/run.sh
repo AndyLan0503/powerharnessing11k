@@ -188,9 +188,11 @@ test_single_source_of_truth() {
   # Instructions: AGENTS.md holds everything; CLAUDE.md only imports it.
   check "AGENTS.md has the working agreement" contains "$d/AGENTS.md" 'Working agreement'
   check "AGENTS.md has the project context" contains "$d/AGENTS.md" '## Project context'
-  check "CLAUDE.md imports AGENTS.md" grep -q '^@AGENTS.md$' "$d/CLAUDE.md"
-  check_not "CLAUDE.md repeats nothing" grep -q 'Working agreement\|Project context\|TODO(team)' "$d/CLAUDE.md"
-  check "AGENTS.md says where each agent's files are" contains "$d/AGENTS.md" '- Claude Code: `CLAUDE.md`'
+  check "Claude's file lives in .claude/ and imports AGENTS.md" grep -q '^@\.\./AGENTS\.md$' "$d/.claude/CLAUDE.md"
+  check "the import resolves from that file" test -f "$d/.claude/../AGENTS.md"
+  check_not "no CLAUDE.md at the root" test -e "$d/CLAUDE.md"
+  check_not "CLAUDE.md repeats nothing" grep -q 'Working agreement\|Project context\|TODO(team)' "$d/.claude/CLAUDE.md"
+  check "AGENTS.md says where each agent's files are" contains "$d/AGENTS.md" '- Claude Code: `.claude/CLAUDE.md`'
 
   # Skills: one copy, reached by Claude Code through a relative link.
   check "skills live in .agents/skills" test -f "$d/.agents/skills/review/SKILL.md"
@@ -546,7 +548,9 @@ test_profile_specifics() {
   [ "$(_guard "$d" guard-paths.sh Edit file_path "$d/data/raw/survey.csv")" = 2 ] || fail "research: raw data edit allowed"
   check "research: WebSearch allowed" jq -e '.permissions.allow | index("WebSearch")' "$d/.claude/settings.json"
   check "research: rules" contains "$d/AGENTS.md" 'Never fabricate'
-  check "research: bib seeded" test -f "$d/references.bib"
+  check "research: bib seeded" test -f "$d/literature/references.bib"
+  check "research: log in docs/" test -f "$d/docs/RESEARCH_LOG.md"
+  check "research: skills point at the moved files" sh -c "grep -q 'docs/RESEARCH_LOG.md' '$d/.agents/skills/lab-notebook/SKILL.md' && grep -q 'literature/references.bib' '$d/.agents/skills/lit-review/SKILL.md'"
 
   # Agentic: evals workflow appears once EVAL_CMD is set.
   d=$WORK/prof-agentic-recommended
@@ -1097,7 +1101,7 @@ test_summary_output() {
   d=$(new_repo summ)
   out=$("$H" configure --yes -C "$d" --stack python --artifacts --skills formulate 2>&1)
   check "grouped by directory" grep -qE '^  \+ \.agents/ +.*hooks/ [0-9]' <<<"$out"
-  check "root files on one line" grep -qE '^  \+ \./ +CLAUDE\.md, ' <<<"$out"
+  check "root files on one line" grep -qE '^  \+ \./ +.*AGENTS\.md, ' <<<"$out"
   check "short output" test "$(grep -c '^  [+~·] ' <<<"$out")" -lt 20
   check "TODO files listed" grep -qE '^ +\.agents/skills/formulate/SKILL\.md$' <<<"$out"
   out=$("$H" configure --yes -C "$d" --verbose --force 2>&1)
@@ -1122,6 +1126,43 @@ test_bash32_portability() {
     check "bootstrap runs under /bin/bash" /bin/bash "$H" configure --yes -C "$d" --stack python --artifacts
     check "and writes the harness" test -f "$d/.claude/settings.json"
   fi
+}
+
+# Non-hidden entries at the root of DIR, sorted bytewise, directories with a
+# trailing slash, each followed by a space.
+_visible_root() {
+  (
+    cd "$1" || exit 1
+    LC_ALL=C
+    for f in *; do
+      if [ -d "$f" ]; then printf '%s/ ' "$f"; else printf '%s ' "$f"; fi
+    done
+  )
+}
+
+# The root of a bootstrapped repo holds only what tools require there.
+test_tidy_root() {
+  local d visible
+  d=$(new_repo tidy)
+  "$H" configure --yes -C "$d" --stack python --artifacts --tier strict --owners @acme/x >/dev/null 2>&1 || fail "configure failed"
+  visible=$(_visible_root "$d")
+  check "visible root entries (strict Python + artifacts)" test "$visible" = \
+    "AGENTS.md CONTRIBUTING.md Makefile artifacts.lock data/ docs/ models/ pyproject.toml scripts/ src/ tests/ "
+  check "security policy in .github/" test -f "$d/.github/SECURITY.md"
+  check "review checklist in docs/" test -f "$d/docs/REVIEW.md"
+  check "reviewer is pointed at it" contains "$d/.claude/agents/reviewer.md" 'docs/REVIEW.md'
+
+  d=$(new_repo tidy-ml pyproject.toml)
+  "$H" configure --yes -C "$d" --profile ml >/dev/null 2>&1
+  check "ml: experiment log in docs/" test -f "$d/docs/EXPERIMENTS.md"
+  check "ml: skill points at it" contains "$d/.agents/skills/experiment/SKILL.md" 'docs/EXPERIMENTS.md'
+  check_not "ml: nothing left at the root" sh -c "ls '$d' | grep -q 'EXPERIMENTS'"
+
+  # The learner's own working files stay where they are easy to reach.
+  d=$(new_repo tidy-study)
+  "$H" configure --yes -C "$d" --profile study >/dev/null 2>&1
+  check "study: plan and progress stay at the root" test -f "$d/LEARNING_PLAN.md" -a -f "$d/PROGRESS.md"
+  check "study: visible root" test "$(_visible_root "$d")" = "AGENTS.md LEARNING_PLAN.md PROGRESS.md exercises/ notes/ "
 }
 
 test_cli_errors() {

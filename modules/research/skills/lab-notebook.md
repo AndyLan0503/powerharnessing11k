@@ -1,12 +1,12 @@
 ---
 name: lab-notebook
-description: Add a dated entry to RESEARCH_LOG.md recording goal, method, results, surprises, and next steps. Use at the end of every working session or after any analysis or experiment.
+description: Add a dated entry to docs/RESEARCH_LOG.md recording goal, method, results, surprises, and next steps. Use at the end of every working session or after any analysis or experiment.
 argument-hint: "[session title]"
 ---
 
 # Lab notebook entry
 
-Append to the top of `RESEARCH_LOG.md` (newest first):
+Append to the top of `docs/RESEARCH_LOG.md` (newest first):
 
 ```markdown
 ## YYYY-MM-DD: <short title>

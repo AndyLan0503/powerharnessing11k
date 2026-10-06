@@ -139,8 +139,8 @@ When it's done you get a short summary and your next steps:
 ```
   59 file(s) written
 
-  + ./             CLAUDE.md, .gitignore, AGENTS.md, .editorconfig, Makefile, pyproject.toml, ...
-  + .claude/       skills, agents/ 3, rules/ 5, settings.json
+  + ./             .gitignore, AGENTS.md, .editorconfig, Makefile, pyproject.toml, .python-version, ...
+  + .claude/       CLAUDE.md, skills, agents/ 3, rules/ 5, settings.json
   + .agents/       hooks/ 7, skills/ 6, scripts/
   + docs/          TESTING.md, ARTIFACTS.md, agents/
   + src/           opt_engine/ 2
@@ -169,7 +169,6 @@ A software-profile, Python, recommended-tier bootstrap with data versioning and 
 ```
 opt-engine/
 ├── AGENTS.md                  the source of truth: project context (TODO), commands, working agreement
-├── CLAUDE.md                  one line that matters: @AGENTS.md
 ├── Makefile                   setup · lint · fmt · typecheck · test · test-all · check
 ├── pyproject.toml             uv · ruff · mypy --strict · pytest markers · hypothesis · coverage
 ├── artifacts.lock             sha256 of every data/model file, committed
@@ -178,6 +177,7 @@ opt-engine/
 │   ├── hooks/                 guard-bash · guard-paths · format-on-edit · stop-checks · audit-log
 │   └── scripts/               agent-report.sh
 ├── .claude/                   Claude Code's own files
+│   ├── CLAUDE.md              one line that matters: @../AGENTS.md
 │   ├── settings.json          permissions (allow your commands, deny secrets) + hook wiring
 │   ├── rules/                 testing · github-actions · data · artifacts · solver (yours)
 │   ├── agents/                reviewer · test-writer · model-checker (yours)
@@ -196,11 +196,13 @@ opt-engine/
 
 `make setup && make check` passes on it out of the box.
 
+The root stays small on purpose. Only what tools require there is visible (`AGENTS.md`, `CONTRIBUTING.md`, the build files, `artifacts.lock`); everything else lives in the hidden folder of the tool that reads it, or in `docs/` and `scripts/`.
+
 ### Shared layer + profile layer
 
 | | Shared (every profile) | Profile-specific |
 |---|---|---|
-| **Context** | `AGENTS.md` (project context, commands, working agreement, "how we work with coding agents"), read by every agent; `CLAUDE.md` imports it | the profile's always-on rules, inside `AGENTS.md` |
+| **Context** | `AGENTS.md` (project context, commands, working agreement, "how we work with coding agents"), read by every agent; `.claude/CLAUDE.md` imports it | the profile's always-on rules, inside `AGENTS.md` |
 | **Path rules** | `testing.md` (test files anywhere), `github-actions.md` (`.github/**`) | `data.md`, `notebooks.md`, `prompts.md`, `evals.md`, `exercises.md`, `literature.md`, loaded only when the agent touches matching files |
 | **Skills** | `review` (independent review), `handoff` (summary for a fresh session), `steward`, `task-intake` (engineering profiles) | see [Profiles](#-profiles) |
 | **Roles** (subagents, scoped tools) | `reviewer` (fresh-context, profile-aware; all but study), `test-writer` (engineering profiles) | none: only these two near-universal roles ship; add domain roles as stubs |
@@ -212,10 +214,10 @@ opt-engine/
 | Profile | Rules focus | Skills | Seeded files |
 |---|---|---|---|
 | 🛠️ **software** | PR workflow, tests are the contract, scope, dependencies | `steward`, `task-intake` | Makefile, `docs/TESTING.md`, Python skeleton |
-| 📊 **ml** | Immutable raw data, no data/models in git, seeds + configs, no leakage, baselines, segment-level metrics, calibration | + `experiment`, `data-audit` (forked, read-only) | `EXPERIMENTS.md`, `docs/DATA.md`, `artifacts.lock` |
+| 📊 **ml** | Immutable raw data, no data/models in git, seeds + configs, no leakage, baselines, segment-level metrics, calibration | + `experiment`, `data-audit` (forked, read-only) | `docs/EXPERIMENTS.md`, `docs/DATA.md`, `artifacts.lock` |
 | 🤖 **agentic** | `stop_reason` loops, explicit subagent context, tool descriptions, structured tool errors, least privilege, schema output, evals gate changes, injection, caching | + `prompt-change`, `agent-tool` | `prompts/`, `evals/` (example cases incl. prompt injection) |
 | 📚 **study** | Tutor, not ghostwriter: diagnose, hints before answers, check understanding, keep the progress log | `tutor`, `quiz` (spaced repetition), `study-plan` | `LEARNING_PLAN.md`, `PROGRESS.md`, `notes/`, `exercises/` |
-| 🔬 **research** | Never fabricate; claim→source provenance with dates; conflicts annotated; lab notebook; reproducible analyses | `lab-notebook`, `lit-review`, `claim-check` (forked, read-only) | `RESEARCH_LOG.md`, `references.bib`, `literature/` |
+| 🔬 **research** | Never fabricate; claim→source provenance with dates; conflicts annotated; lab notebook; reproducible analyses | `lab-notebook`, `lit-review`, `claim-check` (forked, read-only) | `docs/RESEARCH_LOG.md`, `literature/` (with `references.bib`) |
 
 Each profile comes in three tiers: **minimal** (core, guardrails, profile module; relaxed guard), **recommended** (the profile's defaults), and **strict** (adds AI review, MCP, and a stricter guard). `setup.sh list` prints the exact modules.
 
@@ -299,7 +301,7 @@ Protect `.github/` with CODEOWNERS, and pin `CLAUDE_CODE_VERSION` in `pr-gate.ym
 | CI workflows, CODEOWNERS, `.claude/settings.json`, and hooks are human-only | | | ✅ |
 | `git push` asks for confirmation; diff-guard findings fail the gate | | | ✅ |
 
-Rules that must always hold are hooks and gates; `CLAUDE.md` only guides. Every block is logged and explained to the agent:
+Rules that must always hold are hooks and gates; `AGENTS.md` only guides. Every block is logged and explained to the agent:
 
 > Blocked by guardrail: force-push rewrites shared history. If this is genuinely required, stop and ask a human to do it.
 

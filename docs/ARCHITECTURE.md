@@ -32,7 +32,7 @@ harness runs once per repository. Everything it writes is a plain file the team 
 
 1. **Answers.** Defaults come from detection, then CLI flags (`--cmd KEY=CMD` overrides individual commands), then the wizard. Every answer is an `HV_*` environment variable, e.g. `HV_TEST_CMD`. Nothing is saved.
 2. **Derived flags.** `derive_vars` computes booleans for templates: `MOD_<MODULE>`, `STACK_<STACK>`, `PM_<MANAGER>`, `GUARD_STRICT`, `HAS_COMMANDS`, `USE_MAKE` (devtools on and the repo has no makefile of its own; `--force` never changes this), `MK_*_CMD` (commands escaped for make recipes), `SCAFFOLD_PYTHON` (devtools, Python/uv, no `pyproject.toml` yet), plus `PY_PACKAGE`, `CODEQL_LANGUAGE`, `DEPENDABOT_ECOSYSTEM`, and others.
-3. **Agents begin.** Each selected agent's adapter writes the files it always needs (for Claude Code: `CLAUDE.md` and the `.claude/skills` link).
+3. **Agents begin.** Each selected agent's adapter writes the files it always needs (for Claude Code: `.claude/CLAUDE.md` and the `.claude/skills` link).
 4. **Modules.** Each selected module's `module_apply` runs in canonical order. Modules are provider-neutral: they call `emit` for plain files, `emit_rule` / `emit_skill` / `emit_role` / `emit_hook` for agent content, and `settings_*` for permissions and hooks. The emitters hand rules and roles to every selected adapter.
 5. **Stubs.** `custom_apply` emits the project-specific TODO(team) stubs through the same emitters.
 6. **Agents finish.** Each adapter renders its settings file from the neutral store.

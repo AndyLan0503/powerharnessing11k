@@ -125,13 +125,13 @@ Blocked actions are logged to `.agents/logs/events.jsonl` (git-ignored).
 - `CONTRIBUTING.md` and `docs/agents/HANDBOOK.md`: how humans and agents collaborate here.
 {{/if}}
 {{#if MOD_REVIEW}}
-- `REVIEW.md`: the review checklist used by humans and the AI review in the PR gate.
+- `docs/REVIEW.md`: the review checklist used by humans and the AI review in the PR gate.
 {{/if}}
 {{#if MOD_SKILLS}}
 - Skills `steward` and `task-intake`: driving PRs to green, starting work well.
 {{/if}}
 {{#if MOD_ML}}
-- `EXPERIMENTS.md`: experiment log. `docs/DATA.md`: dataset cards. Skills: `experiment`, `data-audit`.
+- `docs/EXPERIMENTS.md`: experiment log. `docs/DATA.md`: dataset cards. Skills: `experiment`, `data-audit`.
 {{/if}}
 {{#if MOD_AGENTIC}}
 - `prompts/`: versioned prompts. `evals/`: eval cases and how to run them. Skills: `prompt-change`, `agent-tool`.
@@ -140,5 +140,5 @@ Blocked actions are logged to `.agents/logs/events.jsonl` (git-ignored).
 - `LEARNING_PLAN.md`, `PROGRESS.md`, `notes/`, `exercises/`. Skills: `tutor`, `quiz`, `study-plan`.
 {{/if}}
 {{#if MOD_RESEARCH}}
-- `RESEARCH_LOG.md` (lab notebook), `literature/`, `references.bib`. Skills: `lit-review`, `lab-notebook`, `claim-check`.
+- `docs/RESEARCH_LOG.md` (lab notebook), `literature/`, `literature/references.bib`. Skills: `lit-review`, `lab-notebook`, `claim-check`.
 {{/if}}

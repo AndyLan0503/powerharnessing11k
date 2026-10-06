@@ -28,6 +28,7 @@ powerharnessing11k turns the team's agentic-engineering practices into a one-sho
 ## v0.2: hardening
 
 - [x] Provider-neutral engine (step 1 of provider support): modules emit neutral rules, skills, roles, hooks, and permissions; a Claude Code adapter renders them. `AGENTS.md` is the source of truth, skills live in `.agents/skills/`, hooks in `.agents/hooks/`, gate scripts in `scripts/ci/`
+- [x] Small root: `CLAUDE.md` in `.claude/`, `SECURITY.md` in `.github/`, review checklist and logs in `docs/`, bib file in `literature/`; a test pins the visible root entries
 - [ ] Provider support, remaining steps: Codex CLI and Copilot adapters, review backends, GitLab, then Cursor and Gemini. Choose the coding agents (Claude Code, Codex CLI, Cursor, Copilot, Gemini CLI), the git host (GitHub, GitLab, none), and the AI review backend. Design: `docs/design/providers.md`, ADR 0005
 
 - [ ] First real GitHub run of the PR gate; confirm `claude -p --json-schema` output shape and inline-comment posting on a live PR

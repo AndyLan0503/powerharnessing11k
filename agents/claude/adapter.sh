@@ -1,20 +1,22 @@
 # shellcheck shell=bash
 # Claude Code adapter.
-#   instructions  CLAUDE.md, which imports AGENTS.md
+#   instructions  .claude/CLAUDE.md, which imports AGENTS.md (Claude Code reads
+#                 project memory from ./CLAUDE.md or ./.claude/CLAUDE.md, and
+#                 resolves imports relative to the importing file)
 #   rules         .claude/rules/<name>.md (the neutral format is Claude's own)
 #   skills        .claude/skills -> ../.agents/skills (Claude reads only .claude/skills)
 #   roles         .claude/agents/<name>.md, access translated to a tool list
 #   settings      .claude/settings.json: permissions, hooks, env
 AGENT_TITLE="Claude Code"
 # shellcheck disable=SC2034 # read by lib/agents.sh
-AGENT_LAYOUT='Claude Code: `CLAUDE.md` (imports this file), `.claude/settings.json` (permissions and hook wiring), `.claude/rules/` (path-scoped rules), `.claude/agents/` (subagents), `.claude/skills` (a link to `.agents/skills/`).'
+AGENT_LAYOUT='Claude Code: `.claude/CLAUDE.md` (imports this file), `.claude/settings.json` (permissions and hook wiring), `.claude/rules/` (path-scoped rules), `.claude/agents/` (subagents), `.claude/skills` (a link to `.agents/skills/`).'
 # shellcheck disable=SC2034
-AGENT_OWNED=".claude/ CLAUDE.md"
+AGENT_OWNED=".claude/"
 # shellcheck disable=SC2034
 AGENT_PROTECTED=".claude/settings.json"
 
 agent_claude_begin() {
-  emit file CLAUDE.md.tmpl CLAUDE.md
+  emit file CLAUDE.md.tmpl .claude/CLAUDE.md
   emit_symlink "../$SKILLS_DIR" .claude/skills
   emit append gitignore.tmpl .gitignore
 }

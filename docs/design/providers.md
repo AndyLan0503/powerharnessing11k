@@ -58,7 +58,7 @@ Facts from the vendors' documentation. "none" means the agent has no committed, 
 
 | Layer | Claude Code | Codex CLI | Cursor | GitHub Copilot | Gemini CLI |
 |---|---|---|---|---|---|
-| Instructions | `CLAUDE.md` (imports `@AGENTS.md`) | `AGENTS.md` | `AGENTS.md` | `AGENTS.md`, `.github/copilot-instructions.md` | `GEMINI.md`; `AGENTS.md` once listed in `.gemini/settings.json` |
+| Instructions | `.claude/CLAUDE.md` (imports `@../AGENTS.md`) | `AGENTS.md` | `AGENTS.md` | `AGENTS.md`, `.github/copilot-instructions.md` | `GEMINI.md`; `AGENTS.md` once listed in `.gemini/settings.json` |
 | Path-scoped rules | `.claude/rules/*.md`, `paths:` | none (nested `AGENTS.md` only) | `.cursor/rules/*.mdc`, `globs:` | `.github/instructions/*.instructions.md`, `applyTo:` | none (nested context files only) |
 | Skills | `.claude/skills/` | `.agents/skills/` | `.agents/skills/`, also `.claude/skills/` | `.agents/skills/`, also `.claude/skills/` | `.agents/skills/` |
 | Subagents | `.claude/agents/*.md`, tool list | `.codex/agents/*.toml`, sandbox mode | `.cursor/agents/*.md`, `readonly` flag | `.github/agents/*.agent.md`, tool list | `.gemini/agents/*.md`, tool list |
@@ -236,8 +236,9 @@ PR 1 carries the risk, because it moves files every later step depends on. It la
 Settled with the maintainer on 2026-10-05.
 
 1. **Skills for Claude Code:** `.claude/skills` is a symlink to `../.agents/skills`. One copy. Windows collaborators need `core.symlinks` enabled.
-2. **`AGENTS.md` is the source of truth in every repo.** `CLAUDE.md` contains an `@AGENTS.md` import and nothing else that matters.
+2. **`AGENTS.md` is the source of truth in every repo.** `.claude/CLAUDE.md` contains an `@../AGENTS.md` import and nothing else that matters.
 3. **CI scripts live in `scripts/ci/`** on every host.
 4. **GitLab baseline is the Free tier.** Premium and Ultimate improvements are documented as optional steps.
 5. **Agent order:** Codex first, then Copilot. Cursor and Gemini follow later.
 6. **Models:** Bedrock and Vertex require an explicit model. Direct API backends use the vendor default, with the pin documented in the workflow.
+7. **Small root.** Only what tools require is visible at the repo root. `CLAUDE.md` lives in `.claude/`, `SECURITY.md` in `.github/`, the review checklist and the experiment and research logs in `docs/`, and `references.bib` in `literature/`. `CONTRIBUTING.md` stays at the root. The study profile keeps `LEARNING_PLAN.md` and `PROGRESS.md` at the root.

@@ -53,7 +53,7 @@ People new to this tend to put everything in `AGENTS.md` in capital letters. Tha
 
 **Context: `AGENTS.md`.** Loaded at the start of every session. It should hold the facts the agent needs every single time: what the project is, the domain vocabulary, the main components, the commands to run, the invariants, and the known traps. Every line costs attention in every session, so it stays short.
 
-`AGENTS.md` is a convention most coding agents read (Codex CLI, Cursor, GitHub Copilot, and others), so it is the single source of truth here. Claude Code reads `CLAUDE.md`, which in this harness is a short file that imports `AGENTS.md`. Write guidance once, in `AGENTS.md`.
+`AGENTS.md` is a convention most coding agents read (Codex CLI, Cursor, GitHub Copilot, and others), so it is the single source of truth here. Claude Code reads `CLAUDE.md`, which in this harness is a short file at `.claude/CLAUDE.md` that imports `AGENTS.md`. Write guidance once, in `AGENTS.md`.
 
 **Path-scoped rules** (for Claude Code: `.claude/rules/*.md`). A rule file starts with a `paths:` line listing file patterns. It is loaded only when the agent touches a matching file. A rule about writing tests loads when the agent edits a test and stays out of the way otherwise. This keeps the always-loaded context small.
 
@@ -174,7 +174,7 @@ The wizard only creates files that do not exist yet. Existing files are left alo
 Spend five minutes here before changing anything. Open these in order:
 
 1. `AGENTS.md` - what the agent reads first. Note the empty **Project context** section.
-2. `CLAUDE.md` - one import line. Then `.claude/settings.json` - the `allow` and `deny` lists, and which hook runs at which moment.
+2. `.claude/CLAUDE.md` - one import line. Then `.claude/settings.json` - the `allow` and `deny` lists, and which hook runs at which moment.
 3. `.agents/hooks/guard-bash.sh` - plain bash. Read the list of blocked patterns so you know what your agent cannot do.
 4. `Makefile` - the commands everyone shares. Run `make help`.
 5. `.github/workflows/ci.yml` and `pr-gate.yml` - what happens to every PR.
@@ -397,7 +397,7 @@ Agent context fills up. When a session has been running for a long time, run the
 | **Agent** | A language model running in a loop with tools: it reads, runs commands, edits, and decides the next step |
 | **Harness** | Everything around the model: context, permissions, hooks, checks, and monitoring |
 | **Context** | What the model can see in a session. It is finite, so what goes in matters |
-| **`AGENTS.md`** | The project file every agent loads at the start of a session; `CLAUDE.md` imports it |
+| **`AGENTS.md`** | The project file every agent loads at the start of a session; `.claude/CLAUDE.md` imports it |
 | **Rule** | Guidance loaded only for matching file paths |
 | **Skill** | A written procedure loaded on demand, invoked automatically or with `/<name>` |
 | **Subagent / role** | A separate agent with fresh context and limited tools, used for independent or noisy work |

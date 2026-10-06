@@ -46,7 +46,7 @@ Options:
       --stack NAME      node | python | go | rust | generic (default: detected)
       --modules LIST    Comma-separated modules (overrides the tier's list)
       --guard LEVEL     relaxed | standard | strict (overrides the tier's level)
-      --agents LIST     Comma-separated coding agents (available: claude).
+      --agents LIST     Comma-separated coding agents: claude, codex (default: claude).
                         AGENTS.md is always written and is the source of truth
       --owners LIST     CODEOWNERS entries, e.g. "@acme/platform"
       --otel URL        OTLP endpoint; enables the telemetry module
@@ -146,6 +146,9 @@ validate_answers() {
   case $HV_STACK in node | python | go | rust | generic) ;; *) harness_die "invalid stack: $HV_STACK" ;; esac
   case $HV_GUARD_LEVEL in relaxed | standard | strict) ;; *) harness_die "invalid guard level: $HV_GUARD_LEVEL" ;; esac
   agents_validate
+  if [ -n "${HV_OTEL_ENDPOINT:-}" ] && ! list_has "$HV_AGENTS" claude; then
+    harness_die "--otel sets up Claude Code's telemetry export, but Claude Code is not among the selected agents ($HV_AGENTS)"
+  fi
   case $HV_DIFF_BUDGET in '' | *[!0-9]*) harness_die "DIFF_BUDGET must be a number" ;; esac
   custom_validate
   HV_MODULES=$(modules_normalize "$HV_MODULES")
@@ -209,6 +212,7 @@ do_apply() {
   agents_begin
   for m in $HV_MODULES; do module_run "$m"; done
   custom_apply
+  agents_md_emit
   agents_finish
 
   printf '\n'
@@ -247,7 +251,15 @@ EOF
   fi
   if list_has "$HV_MODULES" review; then
     ui_info "  $n. Add the ANTHROPIC_API_KEY repository secret for the Claude workflows"
+    n=$((n + 1))
   fi
+  local a step
+  for a in $HV_AGENTS; do
+    step=$(agent_field "$a" NEXT_STEP)
+    [ -n "$step" ] || continue
+    ui_info "  $n. $step"
+    n=$((n + 1))
+  done
 }
 
 cmd_configure() {

@@ -195,5 +195,9 @@ apply_todo_files() {
     case $kind in created | appended | overwritten) ;; *) continue ;; esac
     [ -f "$TARGET/$path" ] || continue
     if grep -q 'TODO(team)' "$TARGET/$path" 2>/dev/null; then printf '%s\n' "$path"; fi
-  done <"$HARNESS_TMP/status" | awk '!seen[$0]++'
+  done <"$HARNESS_TMP/status" | awk '
+    seen[$0]++ { next }
+    $0 == "AGENTS.md" { first = $0; next }   # the one everybody must fill in
+    { rest[++n] = $0 }
+    END { if (first != "") print first; for (i = 1; i <= n; i++) print rest[i] }'
 }

@@ -127,6 +127,8 @@ _wizard_steps() {
         case " $UI_CHECKED " in *" $i "*) HV_AGENTS="${HV_AGENTS:+$HV_AGENTS }$p" ;; esac
       done
       export HV_AGENTS
+      # The telemetry question only applies to Claude Code.
+      list_has "$HV_AGENTS" claude || WIZ_TOTAL=$((WIZ_TOTAL - 1))
       ;;
   esac
 
@@ -188,22 +190,27 @@ _wizard_steps() {
     export HV_CODEOWNERS
   fi
 
-  # Telemetry -------------------------------------------------------------
-  WIZ_STEP=$((WIZ_STEP + 1))
-  ui_choose "Export Claude Code telemetry (cost, tokens, sessions) via OpenTelemetry?" "$WIZ_STEP" "$WIZ_TOTAL" \
-    "No|You still get the local audit log, PR scorecards, and the weekly digest" \
-    "Yes|Send metrics to an OTLP collector (Grafana, Datadog, Honeycomb, ...)" || return
-  if [ "$UI_CHOICE" = 2 ]; then
-    ui_header "$WIZ_STEP" "$WIZ_TOTAL" "OTLP collector endpoint"
-    ui_note "gRPC endpoint. Auth headers stay out of git (see docs/agents/TELEMETRY.md)."
-    printf '\n'
-    ui_line "Endpoint" "${HV_OTEL_ENDPOINT:-http://localhost:4317}"
-    HV_OTEL_ENDPOINT=$UI_LINE
-    HV_MODULES=$(modules_normalize "$HV_MODULES telemetry")
-  else
+  # Telemetry (a Claude Code feature) ---------------------------------------
+  if ! list_has "$HV_AGENTS" claude; then
     HV_OTEL_ENDPOINT=''
+    export HV_OTEL_ENDPOINT
+  else
+    WIZ_STEP=$((WIZ_STEP + 1))
+    ui_choose "Export Claude Code telemetry (cost, tokens, sessions) via OpenTelemetry?" "$WIZ_STEP" "$WIZ_TOTAL" \
+      "No|You still get the local audit log, PR scorecards, and the weekly digest" \
+      "Yes|Send metrics to an OTLP collector (Grafana, Datadog, Honeycomb, ...)" || return
+    if [ "$UI_CHOICE" = 2 ]; then
+      ui_header "$WIZ_STEP" "$WIZ_TOTAL" "OTLP collector endpoint"
+      ui_note "gRPC endpoint. Auth headers stay out of git (see docs/agents/TELEMETRY.md)."
+      printf '\n'
+      ui_line "Endpoint" "${HV_OTEL_ENDPOINT:-http://localhost:4317}"
+      HV_OTEL_ENDPOINT=$UI_LINE
+      HV_MODULES=$(modules_normalize "$HV_MODULES telemetry")
+    else
+      HV_OTEL_ENDPOINT=''
+    fi
+    export HV_OTEL_ENDPOINT HV_MODULES
   fi
-  export HV_OTEL_ENDPOINT HV_MODULES
 
   # Confirm ---------------------------------------------------------------
   WIZ_STEP=$((WIZ_STEP + 1))
@@ -323,6 +330,9 @@ _wizard_summary() {
   local a titles=''
   for a in $HV_AGENTS; do titles="${titles:+$titles, }$(agent_title "$a")"; done
   ui_info "${C_BOLD}Agents${C_RESET}       $titles  ${C_DIM}(AGENTS.md is the shared source of truth)${C_RESET}"
+  for a in $HV_AGENTS; do
+    ui_note "               $(agent_title "$a"): rules $(agent_field "$a" COVERAGE | cut -d'|' -f1); subagents: $(agent_field "$a" COVERAGE | cut -d'|' -f2)"
+  done
   ui_info "${C_BOLD}Guard level${C_RESET}  $HV_GUARD_LEVEL"
   [ -z "$HV_CODEOWNERS" ] || ui_info "${C_BOLD}Owners${C_RESET}       $HV_CODEOWNERS"
   [ -z "$HV_OTEL_ENDPOINT" ] || ui_info "${C_BOLD}Telemetry${C_RESET}    $HV_OTEL_ENDPOINT"

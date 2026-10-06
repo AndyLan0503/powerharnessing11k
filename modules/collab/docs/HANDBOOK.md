@@ -32,6 +32,16 @@ Every PR passes the same gate and gets the same review, whoever or whatever wrot
 - **Dependencies:** any new packages? Are they justified and maintained?
 - **Confident-sounding claims:** verify "I ran the tests" against CI.
 
+## What each coding agent gets
+
+Project context (`AGENTS.md`), skills (`.agents/skills/`), and the guard hooks (`.agents/hooks/`) are shared by every agent set up here. The rest depends on what each agent supports:
+
+| Agent | Path-scoped rules | Subagent limits | Command permissions | Before finishing |
+|---|---|---|---|---|
+{{AGENT_COVERAGE}}
+
+Other agents that read `AGENTS.md` still get the project context and working agreement, without the hooks. CI and the PR gate apply to every change whichever tool wrote it.
+
 ## Guardrails at a glance (level: {{GUARD_LEVEL}})
 
 | Layer | What it does |

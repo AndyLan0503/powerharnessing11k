@@ -3,11 +3,14 @@
 # Never fails the tool call: a missing formatter is not the agent's problem.
 . "$(dirname "$0")/lib.sh"
 
-file=$(hook_file)
-[ -n "$file" ] && [ -f "$file" ] || exit 0
-cd "$(hook_root)" || exit 0
-
 fmt='{{FORMAT_CMD}}'
-quoted=$(printf '%q' "$file")
-eval "${fmt//\{file\}/$quoted}" >/dev/null 2>&1 || true
+cwd=$(hook_cwd)
+cd "$(hook_root)" || exit 0
+hook_files | while IFS= read -r file; do
+  [ -n "$file" ] || continue
+  case $file in /*) ;; *) file=$cwd/$file ;; esac
+  [ -f "$file" ] || continue
+  quoted=$(printf '%q' "$file")
+  eval "${fmt//\{file\}/$quoted}" >/dev/null 2>&1 || true
+done
 exit 0

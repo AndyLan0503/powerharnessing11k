@@ -264,6 +264,248 @@ test_single_source_of_truth() {
   check_not "the old 'multi' value is gone" "$H" configure --yes -C "$(new_repo ssot-multi)" --agents multi
 }
 
+# Parse a TOML file with the first Python on this machine that has tomllib
+# (3.11+). Sets nothing; 0 when valid. Without such a Python the check is
+# skipped (CI runners have one).
+_toml_ok() { # file
+  local py
+  for py in python3 python3.13 python3.12 python3.11; do
+    if command -v "$py" >/dev/null 2>&1 && "$py" -c 'import tomllib' 2>/dev/null; then
+      "$py" -c 'import sys, tomllib; tomllib.load(open(sys.argv[1], "rb"))' "$1"
+      return
+    fi
+  done
+}
+
+# A Codex hook call: the payload shapes are copied from the Codex source
+# (codex-rs/hooks/src/schema.rs and core/src/tools/handlers/apply_patch.rs).
+_codex_hook() { # dir script tool command-or-patch -> exit code; stderr in $WORK/codex.err
+  jq -cn --arg cwd "$1" --arg tool "$3" --arg cmd "$4" \
+    '{session_id: "session-1", turn_id: "turn-1", transcript_path: null, cwd: $cwd, hook_event_name: "PreToolUse",
+      model: "gpt-test", permission_mode: "default", tool_name: $tool, tool_input: {command: $cmd}, tool_use_id: "tool-1"}' |
+    "$1/.agents/hooks/$2" codex >/dev/null 2>"$WORK/codex.err"
+  echo $?
+}
+_patch() { # file... -> an apply_patch body touching each file
+  local f
+  printf '*** Begin Patch\n'
+  for f in "$@"; do printf '*** Update File: %s\n@@\n-old\n+new\n' "$f"; done
+  printf '*** End Patch'
+}
+
+test_codex_adapter() {
+  local d f secret=.e'nv'
+  d=$(new_repo codex-only)
+  f=$("$H" configure --yes -C "$d" --agents codex --stack python --tier strict --owners @acme/x --roles model-checker \
+    --rules 'solver=src/solver/**' 2>&1) || fail "configure failed: $f"
+
+  # Only Codex's files, plus what every agent shares.
+  check_not "no Claude Code files" test -e "$d/.claude"
+  check_not "no .mcp.json (Claude Code's format)" test -e "$d/.mcp.json"
+  check "shared instructions" contains "$d/AGENTS.md" 'Working agreement'
+  check "shared skills, read natively" test -f "$d/.agents/skills/review/SKILL.md"
+  check "next steps: trust and approve hooks" grep -q 'run /hooks and approve' <<<"$f"
+  _no_footprint "$d"
+
+  # config.toml
+  check "config is valid TOML" _toml_ok "$d/.codex/config.toml"
+  check "approval policy" grep -qx 'approval_policy = "on-request"' "$d/.codex/config.toml"
+  check "sandbox" grep -qx 'sandbox_mode = "workspace-write"' "$d/.codex/config.toml"
+  check "MCP server with token from the environment" sh -c "grep -A2 '^\\[mcp_servers.github\\]' '$d/.codex/config.toml' | grep -q 'bearer_token_env_var = \"GITHUB_PERSONAL_ACCESS_TOKEN\"'"
+  check_not "no token value in the repo" grep -rq 'Bearer ' "$d/.codex"
+
+  # Command rules
+  f=$d/.codex/rules/default.rules
+  check "forbidden rule" sh -c "grep -A1 'pattern = \\[\"git\", \"push\", \"--force\"\\]' '$f' | grep -q 'decision = \"forbidden\"'"
+  check "prompt rule in strict" sh -c "grep -A1 'pattern = \\[\"git\", \"push\"\\],' '$f' | grep -q 'decision = \"prompt\"'"
+  # An explicit allow could let a command run outside the sandbox, so none is written.
+  check_not "no allow rules" grep -q 'decision = "allow"' "$f"
+  check_not "allowed commands get no rule" grep -q '"make", "test"' "$f"
+  check_not "shell syntax is never put in a pattern" grep -E '^    pattern = .*(&&|[|;<>$`]|\\\\)' "$f"
+  if command -v codex >/dev/null 2>&1; then
+    check "codex accepts the rules file" sh -c "codex execpolicy check --rules '$f' -- git push --force origin x | grep -q '\"decision\": *\"forbidden\"'"
+  fi
+
+  # Subagents
+  check "role is valid TOML" _toml_ok "$d/.codex/agents/reviewer.toml"
+  check "read-run role is sandboxed read-only" grep -qx 'sandbox_mode = "read-only"' "$d/.codex/agents/reviewer.toml"
+  check "write role may edit the workspace" grep -qx 'sandbox_mode = "workspace-write"' "$d/.codex/agents/test-writer.toml"
+  check "role names use underscores" grep -qx 'name = "model_checker"' "$d/.codex/agents/model-checker.toml"
+  check "stub role keeps its TODO" contains "$d/.codex/agents/model-checker.toml" 'TODO(team)'
+  check "stub role is valid TOML" _toml_ok "$d/.codex/agents/model-checker.toml"
+  check_not "no neutral keys left" grep -rq '^access:' "$d/.codex/agents"
+  # Text that needs escaping in TOML survives intact, on any awk and sed.
+  printf '%s\n' '---' 'name: tricky' "description: \"Checks \\\"quoted\\\" things: carefully\"" 'access: read' '---' '' \
+    'Match digits with \d+ and paths like C:\temp.' 'A triple quote """ and a "single" one.' >"$WORK/tricky.md"
+  (
+    HARNESS_ROOT=$ROOT HARNESS_TMP=$WORK TARGET=$d FORCE='' DRY_RUN=''
+    # shellcheck disable=SC1090,SC1091
+    . "$ROOT/lib/util.sh" && . "$ROOT/lib/apply.sh" && . "$ROOT/agents/codex/adapter.sh"
+    apply_reset
+    agent_codex_role tricky "$WORK/tricky.md"
+  )
+  check "tricky role is valid TOML" _toml_ok "$d/.codex/agents/tricky.toml"
+  local py
+  for py in python3 python3.13 python3.12 python3.11; do
+    command -v "$py" >/dev/null 2>&1 || continue
+    "$py" -c 'import tomllib' 2>/dev/null || continue
+    check "backslashes, quotes, and colons round-trip" "$py" -c '
+import sys, tomllib
+d = tomllib.load(open(sys.argv[1], "rb"))
+assert d["description"] == "Checks \"quoted\" things: carefully", d["description"]
+assert d["developer_instructions"] == "Match digits with \\d+ and paths like C:\\temp.\nA triple quote \"\"\" and a \"single\" one.\n", repr(d["developer_instructions"])
+' "$d/.codex/agents/tricky.toml"
+    break
+  done
+
+  # Path-scoped rules: Codex has none, so they are in AGENTS.md with their paths.
+  check "rules routed into AGENTS.md" contains "$d/AGENTS.md" '## Rules for specific paths'
+  check "each names its paths" grep -qF 'Applies when you work on files matching: `src/solver/**`.' "$d/AGENTS.md"
+  check "rule bodies are there" contains "$d/AGENTS.md" 'Never delete, skip, or loosen an existing test'
+  check "rule titles are not repeated" test "$(grep -c '^# ' "$d/AGENTS.md")" -eq 1
+
+  # hooks.json
+  f=$d/.codex/hooks.json
+  check "hooks.json is valid" jq -e '(keys - ["description", "hooks"]) == [] and (.hooks | keys - ["PreToolUse", "PostToolUse", "Stop"]) == []' "$f"
+  check "shell guard on Bash" jq -e '.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[0].command | endswith("/.agents/hooks/guard-bash.sh\" codex")' "$f"
+  check "edit guard on apply_patch" jq -e '.hooks.PreToolUse[] | select(.matcher == "apply_patch") | .hooks[0].command | contains("guard-paths.sh")' "$f"
+  check "audit on every tool: no matcher" jq -e '.hooks.PostToolUse[] | select(has("matcher") | not) | .hooks[0].command | contains("audit-log.sh")' "$f"
+  check "stop check wired" jq -e '.hooks.Stop[0].hooks | map(.command | contains("stop-checks.sh")) | any' "$f"
+  check "handlers are commands with a timeout in seconds" jq -e '[.hooks[][].hooks[] | .type == "command" and (.timeout | type == "number" and . <= 600)] | all' "$f"
+  check "commands find the repo root themselves" jq -e '[.hooks[][].hooks[].command | startswith("\"$(git rev-parse --show-toplevel)/")] | all' "$f"
+  mkdir -p "$d/src/deep"
+  jq -r '.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[0].command' "$f" >"$WORK/codex-hook-cmd"
+  check "a hook command works from a subdirectory, through a shell" sh -c "
+    cd '$d/src/deep' && echo '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}' | sh -c \"\$(cat '$WORK/codex-hook-cmd')\""
+
+  # Hook contracts, with Codex's own payload shapes.
+  [ "$(_codex_hook "$d" guard-bash.sh Bash 'git push --force origin feat')" = 2 ] || fail "codex: force-push allowed"
+  check "a block gives Codex a reason on stderr" grep -q 'Blocked by guardrail: force-push' "$WORK/codex.err"
+  [ "$(_codex_hook "$d" guard-bash.sh Bash 'make test')" = 0 ] || fail "codex: harmless command blocked"
+  [ "$(_codex_hook "$d" guard-paths.sh apply_patch "$(_patch src/app.py)")" = 0 ] || fail "codex: ordinary patch blocked"
+  [ "$(_codex_hook "$d" guard-paths.sh apply_patch "$(_patch "$secret")")" = 2 ] || fail "codex: secret file patch allowed"
+  [ "$(_codex_hook "$d" guard-paths.sh apply_patch "$(_patch src/app.py docs/x.md "$secret")")" = 2 ] || fail "codex: secret hidden in a multi-file patch allowed"
+  [ "$(_codex_hook "$d" guard-paths.sh apply_patch "$(_patch .codex/hooks.json)")" = 2 ] || fail "codex strict: hook config patch allowed"
+  [ "$(_codex_hook "$d" guard-paths.sh apply_patch "$(_patch .agents/hooks/guard-bash.sh)")" = 2 ] || fail "codex strict: hook script patch allowed"
+  [ "$(_codex_hook "$d" guard-paths.sh apply_patch "$(printf '*** Begin Patch\n*** Add File: %s\n+A=1\n*** End Patch' "$secret")")" = 2 ] || fail "codex: added secret file allowed"
+  [ "$(_codex_hook "$d" guard-paths.sh apply_patch "$(printf '*** Begin Patch\n*** Update File: notes.txt\n*** Move to: %s\n*** End Patch' "$secret")")" = 2 ] || fail "codex: move onto a secret file allowed"
+  # Codex trims patch header lines, so the guard must too: Windows line
+  # endings and stray blanks must not hide which file is meant.
+  [ "$(_codex_hook "$d" guard-paths.sh apply_patch "$(printf '*** Begin Patch\r\n*** Update File: %s\r\n@@\r\n-a\r\n+b\r\n*** End Patch' "$secret")")" = 2 ] || fail "codex: secret patch with CRLF allowed"
+  [ "$(_codex_hook "$d" guard-paths.sh apply_patch "$(printf '*** Begin Patch\n  *** Update File: %s\n*** End Patch' "$secret")")" = 2 ] || fail "codex: indented patch header allowed"
+  [ "$(_codex_hook "$d" guard-paths.sh apply_patch "$(printf '*** Begin Patch\n*** Update File: %s  \n*** End Patch' "$secret")")" = 2 ] || fail "codex: patch header with trailing blanks allowed"
+  [ "$(_codex_hook "$d" guard-paths.sh apply_patch "$(printf '*** Begin Patch\n*** Update File:   .codex/config.toml\t\r\n*** End Patch')")" = 2 ] || fail "codex strict: padded protected path allowed"
+  [ "$(_codex_hook "$d" guard-paths.sh apply_patch "$(printf '*** Begin Patch\n*** Update File: docs/my notes.md\n*** End Patch')")" = 0 ] || fail "codex: path with a space blocked"
+  ok
+  check "blocks are logged" grep -q '"kind":"blocked".*"tool":"apply_patch"' "$d/.agents/logs/events.jsonl"
+
+  # The same guard without jq or python3.
+  local bin=$WORK/minbin-codex t
+  mkdir -p "$bin"
+  for t in bash sh cat grep sed tr head tail dirname date mkdir git printf cut awk env; do
+    [ -e "$bin/$t" ] || ln -s "$(command -v "$t")" "$bin/$t" 2>/dev/null || true
+  done
+  f=$(jq -cn --arg cwd "$d" --arg cmd "$(_patch src/app.py "$secret")" '{cwd: $cwd, tool_name: "apply_patch", tool_input: {command: $cmd}}')
+  t=0
+  printf '%s' "$f" | PATH=$bin "$d/.agents/hooks/guard-paths.sh" codex >/dev/null 2>&1 || t=$?
+  [ "$t" = 2 ] || fail "codex: secret patch allowed without jq"
+  ok
+
+  # Stop: lint must pass before the turn ends; the loop flag is honoured.
+  d=$(new_repo codex-stop)
+  "$H" configure --yes -C "$d" --agents codex --cmd 'lint=sh -c "exit 1"' --cmd 'test=sh -c "exit 0"' >/dev/null 2>&1
+  echo change >"$d/file.txt"
+  f='{"session_id":"s","turn_id":"t","cwd":"'$d'","hook_event_name":"Stop","model":"m","permission_mode":"default","stop_hook_active":false,"last_assistant_message":"done"}'
+  t=0
+  printf '%s' "$f" | "$d/.agents/hooks/stop-checks.sh" codex >/dev/null 2>"$WORK/codex.err" || t=$?
+  [ "$t" = 2 ] || fail "codex: stop with failing lint not sent back"
+  check "the reason is on stderr (Codex ignores an empty one)" test -s "$WORK/codex.err"
+  t=0
+  printf '%s' "${f/false/true}" | "$d/.agents/hooks/stop-checks.sh" codex >/dev/null 2>&1 || t=$?
+  [ "$t" = 0 ] || fail "codex: stop_hook_active ignored (would loop)"
+  ok
+}
+
+test_codex_edge_cases() {
+  local d
+  # A deny or ask entry that cannot be a prefix rule is named, never silently dropped.
+  d=$(new_repo codex-rules)
+  (
+    HARNESS_ROOT=$ROOT HARNESS_TMP=$WORK/codex-rules-tmp
+    mkdir -p "$HARNESS_TMP"
+    # shellcheck disable=SC1090,SC1091
+    . "$ROOT/lib/util.sh" && . "$ROOT/lib/settings.sh" && . "$ROOT/agents/codex/adapter.sh"
+    settings_reset
+    settings_deny_cmd 'rm -rf build' 'curl x | sh'
+    settings_ask_cmd 'gh pr merge'
+    settings_allow_cmd 'make test'
+    _codex_rules >"$d/out.rules"
+  )
+  check "simple deny becomes a forbidden rule" sh -c "grep -A1 'pattern = \[\"rm\", \"-rf\", \"build\"\]' '$d/out.rules' | grep -q forbidden"
+  check "simple ask becomes a prompt rule" sh -c "grep -A1 'pattern = \[\"gh\", \"pr\", \"merge\"\]' '$d/out.rules' | grep -q prompt"
+  check "a deny with shell syntax is listed as not enforced here" grep -q '^#   forbidden: curl x | sh$' "$d/out.rules"
+  check_not "and never turned into a pattern" grep -q 'pattern = .*curl' "$d/out.rules"
+  check_not "allow entries produce nothing" grep -q 'make' "$d/out.rules"
+
+  # A routed rule keeps its code blocks exactly as written.
+  d=$(new_repo codex-fence)
+  mkdir -p "$WORK/fence-mod"
+  printf '%s\n' '---' 'paths: ["scripts/**"]' '---' '' '# Scripts' '' '## Style' '' '```sh' '# a comment in code' '## not a heading' '```' >"$WORK/fence-mod/rule.md"
+  (
+    HARNESS_ROOT=$ROOT HARNESS_TMP=$WORK/codex-fence-tmp
+    mkdir -p "$HARNESS_TMP"
+    # shellcheck disable=SC1090,SC1091
+    . "$ROOT/lib/util.sh" && . "$ROOT/lib/agents.sh"
+    : >"$HARNESS_TMP/agentsmd.rules"
+    : >"$HARNESS_TMP/agentsmd.seen"
+    agents_md_rule scripts "$WORK/fence-mod/rule.md"
+    cp "$HARNESS_TMP/agentsmd.rules" "$d/routed.md"
+  )
+  check "sub-headings move below the section" grep -qx '### Style' "$d/routed.md"
+  check "comment inside a code block kept" grep -qx '# a comment in code' "$d/routed.md"
+  check "heading-like line inside a code block kept" grep -qx '## not a heading' "$d/routed.md"
+  check_not "the rule title is replaced by the section heading" grep -qx '# Scripts' "$d/routed.md"
+
+  # Telemetry export is a Claude Code feature.
+  check_not "--otel without Claude Code is refused" "$H" configure --yes -C "$(new_repo codex-otel)" --agents codex --otel http://otel:4317
+  check "--otel with both agents is fine" "$H" configure --yes -C "$(new_repo both-otel)" --agents claude,codex --otel http://otel:4317
+
+  # AGENTS.md is the first file to fill in.
+  d=$(new_repo codex-todo)
+  check "AGENTS.md leads the TODO list" sh -c "'$H' configure --yes -C '$d' --agents codex --skills x | grep -A1 'TODO(team) notes' | tail -n 1 | grep -q 'AGENTS.md'"
+}
+
+# Two agents, one source: the same rules, roles, skills, and guard scripts.
+test_two_agents_share_one_source() {
+  local d
+  d=$(new_repo both)
+  "$H" configure --yes -C "$d" --agents claude,codex --tier strict --owners @acme/x >/dev/null 2>&1 || fail "configure failed"
+  check "both agents configured" test -f "$d/.claude/settings.json" -a -f "$d/.codex/hooks.json"
+  check "one AGENTS.md, imported by Claude Code" grep -q '^@\.\./AGENTS\.md$' "$d/.claude/CLAUDE.md"
+  check "AGENTS.md describes both layouts" sh -c "grep -q '^- Claude Code:' '$d/AGENTS.md' && grep -q '^- Codex CLI:' '$d/AGENTS.md'"
+  check "Claude Code calls the shared guard" sh -c "jq -r '.hooks.PreToolUse[].hooks[].command' '$d/.claude/settings.json' | grep -q '/.agents/hooks/guard-bash.sh claude'"
+  check "Codex calls the same guard" sh -c "jq -r '.hooks.PreToolUse[].hooks[].command' '$d/.codex/hooks.json' | grep -q '/.agents/hooks/guard-bash.sh\" codex'"
+  # The role text is identical apart from each agent's wrapper.
+  awk 'f >= 2 && (started || NF) { started = 1; print } /^---$/ { f++ }' "$d/.claude/agents/reviewer.md" >"$WORK/role.claude"
+  awk '/^"""$/ { exit } on { print } /^developer_instructions = """$/ { on = 1 }' "$d/.codex/agents/reviewer.toml" >"$WORK/role.codex"
+  check "same role instructions for both" cmp "$WORK/role.claude" "$WORK/role.codex"
+  check "the role text is not empty" test -s "$WORK/role.codex"
+  check "Claude Code still gets path-scoped rule files" test -f "$d/.claude/rules/testing.md"
+  check "owners cover both agents" sh -c "grep -q '^/.claude/ ' '$d/.github/CODEOWNERS' && grep -q '^/.codex/ ' '$d/.github/CODEOWNERS'"
+  check "handbook states what each agent gets" sh -c "grep -q '^| Claude Code | loaded only for matching paths' '$d/docs/agents/HANDBOOK.md' && grep -q '^| Codex CLI | always loaded' '$d/docs/agents/HANDBOOK.md'"
+  # Either agent's config is protected from edits by the other.
+  [ "$(_guard "$d" guard-paths.sh Edit file_path "$d/.codex/hooks.json")" = 2 ] || fail "strict: Claude Code may edit Codex's hooks"
+  [ "$(_codex_hook "$d" guard-paths.sh apply_patch "$(_patch .claude/settings.json)")" = 2 ] || fail "strict: Codex may edit Claude Code's settings"
+  ok
+  check "the PR gate protects both" grep -q 'codex/hooks' "$d/scripts/ci/diff-guard.sh"
+
+  # Claude Code alone: rules stay out of AGENTS.md (they load by path instead).
+  d=$(new_repo claude-alone package.json)
+  "$H" configure --yes -C "$d" >/dev/null 2>&1
+  check_not "claude only: no rules section in AGENTS.md" contains "$d/AGENTS.md" 'Rules for specific paths'
+  check_not "claude only: no Codex files" test -e "$d/.codex"
+}
+
 # The checklist widget used to pick coding agents.
 test_ui_checklist() {
   command -v python3 >/dev/null 2>&1 || { ok; return; }
@@ -298,13 +540,17 @@ test_minimal_tier() {
 }
 
 # Generated files never point back at harness: the repo owns them.
+_no_footprint() { # dir
+  check_not "$(basename "$1"): no .harness" test -e "$1/.harness"
+  check_not "$(basename "$1"): no harness mentions" \
+    grep -rlEi '(^|[^-a-z])harness( (update|doctor|report|configure)|-new|:managed|/)|\.harness\b|harness-workflow|powerharnessing' "$1" --exclude-dir=.git
+}
+
 test_no_harness_footprint() {
   local d
   for d in "$WORK"/prof-*-strict "$WORK"/stack-*; do
     [ -d "$d" ] || continue
-    check_not "$(basename "$d"): no .harness" test -e "$d/.harness"
-    check_not "$(basename "$d"): no harness mentions" \
-      grep -rlEi '(^|[^-a-z])harness( (update|doctor|report|configure)|-new|:managed|/)|\.harness\b|harness-workflow|powerharnessing' "$d" --exclude-dir=.git
+    _no_footprint "$d"
   done
 }
 
@@ -1072,13 +1318,18 @@ test_wizard_flow() {
   rm -rf "$WORK/wiz"
   mkdir -p "$d"
   git -C "$d" init -q -b main
-  # profile, stack, commands, tier, artifacts, stubs (one invalid dir first), owners, telemetry, apply
-  printf '%s\n' key:1 key:2 key:1 key:2 key:1 key:2 \
+  # profile, stack, commands, agents (add Codex CLI to the preselected Claude
+  # Code), tier, artifacts, stubs (one invalid dir first), owners, telemetry, apply
+  printf '%s\n' key:1 key:2 key:1 key:2 line: key:2 key:1 key:2 \
     line:formulate line:- line:- 'line:../evil' key:x \
     line:formulate line:- line:- line:infra line: key:1 key:y |
     HARNESS_NO_CLEAR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$H" configure -C "$d"
   check "banner names the tool" grep -q 'powerharnessing11k' "$out"
-  check "nine steps while one agent is available" grep -q '\[9/9\]' "$out"
+  check "ten steps" grep -q '\[10/10\]' "$out"
+  check "agents checklist preselects Claude Code" grep -q '\[x\] Claude Code' "$out"
+  check "both agents set up" test -f "$d/.claude/settings.json" -a -f "$d/.codex/hooks.json"
+  check "the summary states each agent's limits" grep -q 'Codex CLI: rules always loaded' "$out"
+  check "next steps tell Codex users to approve the hooks" grep -q 'run /hooks and approve' "$out"
   check_not "empty folder: no stack marked" grep -q '← detected\|generic.*← ' "$out"
   check "commands one per line" grep -qE '^ +typecheck +uv run mypy$' "$out"
   check "invalid stub re-asked" grep -q "invalid directory '../evil'" "$out"
@@ -1088,6 +1339,15 @@ test_wizard_flow() {
   check "valid dir used" test -f "$d/infra/README.md"
   check_not "invalid dir not created" test -e "$WORK/wiz/evil"
   check "next steps list TODO files" grep -qE '^ +\.agents/skills/formulate/SKILL\.md$' "$out"
+
+  # Codex CLI alone: no Claude Code telemetry question, so one step fewer.
+  d=$(new_repo wiz-codex)
+  printf '%s\n' key:1 key:2 key:1 key:1 key:2 line: key:2 key:2 key:1 line: key:y |
+    HARNESS_NO_CLEAR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$H" configure -C "$d"
+  check "codex only: nine steps" grep -q '\[9/9\]  Ready to apply' "$out"
+  check_not "codex only: no telemetry question" grep -q 'Export Claude Code telemetry' "$out"
+  check "codex only: applied" test -f "$d/.codex/config.toml"
+  check_not "codex only: no Claude Code files" test -e "$d/.claude"
 
   # An existing project: its stack is marked as detected.
   d=$(new_repo wiz-go go.mod)
@@ -1101,7 +1361,7 @@ test_summary_output() {
   d=$(new_repo summ)
   out=$("$H" configure --yes -C "$d" --stack python --artifacts --skills formulate 2>&1)
   check "grouped by directory" grep -qE '^  \+ \.agents/ +.*hooks/ [0-9]' <<<"$out"
-  check "root files on one line" grep -qE '^  \+ \./ +.*AGENTS\.md, ' <<<"$out"
+  check "root files on one line" grep -qE '^  \+ \./ +.*AGENTS\.md' <<<"$out"
   check "short output" test "$(grep -c '^  [+~·] ' <<<"$out")" -lt 20
   check "TODO files listed" grep -qE '^ +\.agents/skills/formulate/SKILL\.md$' <<<"$out"
   out=$("$H" configure --yes -C "$d" --verbose --force 2>&1)

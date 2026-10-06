@@ -1,7 +1,7 @@
 # shellcheck shell=bash
-MODULE_DESC="Team MCP servers in project-scoped .mcp.json (GitHub server; credentials via \${ENV} expansion, never committed)"
+MODULE_DESC="Team MCP servers in each agent's project config (GitHub server; credentials come from the environment, never committed)"
 
 module_apply() {
-  emit seed mcp.json .mcp.json
+  settings_mcp_http github https://api.githubcopilot.com/mcp/ GITHUB_PERSONAL_ACCESS_TOKEN
   emit file MCP.md docs/agents/MCP.md
 }

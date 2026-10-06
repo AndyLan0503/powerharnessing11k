@@ -3,3 +3,10 @@
 {{> project-context.md}}
 
 {{> working-agreement.md}}
+{{#if PATH_RULES}}
+
+## Rules for specific paths
+
+Each rule below applies only when you work on files matching its paths.
+{{PATH_RULES}}
+{{/if}}

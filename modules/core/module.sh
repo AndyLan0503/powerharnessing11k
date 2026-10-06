@@ -2,9 +2,8 @@
 MODULE_DESC="AGENTS.md (project context, working agreement), path-scoped rules, permissions, review + handoff skills, reviewer role, session-start hook"
 
 module_apply() {
-  # AGENTS.md is the source of truth for every agent; adapters add whatever
-  # their agent needs to find it (see agents/<name>/adapter.sh).
-  emit file AGENTS.md.tmpl AGENTS.md
+  # AGENTS.md, the source of truth for every agent, is written by
+  # agents_md_emit (lib/agents.sh) once all modules have run.
   emit_hook hooks/lib.sh
   emit_hook hooks/session-start.sh
   emit append gitignore.tmpl .gitignore

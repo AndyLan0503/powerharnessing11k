@@ -15,7 +15,7 @@ SETTINGS_EVENTS="session-start pre-shell pre-edit post-edit post-tool stop"
 
 settings_reset() {
   local f
-  for f in allow_cmd ask_cmd deny_cmd deny_read allow_tool hooks agent; do : >"$HARNESS_TMP/settings.$f"; done
+  for f in allow_cmd ask_cmd deny_cmd deny_read allow_tool hooks agent mcp; do : >"$HARNESS_TMP/settings.$f"; done
 }
 
 # Commands are written as a prefix, e.g. 'git status' or 'make test'.
@@ -38,6 +38,11 @@ settings_hook() {
 # KIND is "string" (a top-level setting) or "env" (an environment variable).
 # Ignored when that agent is not selected.
 settings_agent() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >>"$HARNESS_TMP/settings.agent"; }
+
+# settings_mcp_http NAME URL TOKEN_ENV: a team MCP server reached over HTTP.
+# The bearer token is read from the environment variable TOKEN_ENV on each
+# engineer's machine; it is never written to the repo.
+settings_mcp_http() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"$HARNESS_TMP/settings.mcp"; }
 
 # Unique lines of a settings list, in first-seen order.
 settings_list() { awk '!seen[$0]++' "$HARNESS_TMP/settings.$1"; }

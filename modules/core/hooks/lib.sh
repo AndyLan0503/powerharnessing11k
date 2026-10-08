@@ -37,7 +37,7 @@ hook_root() { printf '%s' "$HOOK_ROOT"; }
 # Parts that do not exist yet are kept as written.
 hook_rel() {
   local p=$1 dir rest='' real_dir real_root
-  case $p in /*) ;; *) p=$PWD/$p ;; esac
+  case $p in /*) ;; *) p=$(hook_cwd)/$p ;; esac
   dir=$(dirname "$p")
   while [ ! -d "$dir" ] && [ "$dir" != / ]; do
     rest="${dir##*/}/$rest"
@@ -57,15 +57,40 @@ hook_command() { # the shell command
     *) hook_field command ;;
   esac
 }
-hook_file() { # the file being created or edited
+hook_files() { # the files being created or edited, one per line
   local f
   case $HOOK_AGENT in
+    codex)
+      # Edits arrive as one apply_patch call: the patch text is in
+      # tool_input.command and names each file on a "*** ... File:" line.
+      # (Without jq or python3 the text still has \n escapes; awk splits both.)
+      # Codex trims these header lines, so do the same: a carriage return or
+      # stray blanks around the path must not hide which file is meant.
+      hook_field command | awk '
+        { n = split($0, lines, /\\n/)
+          for (i = 1; i <= n; i++) {
+            l = lines[i]
+            gsub(/\\r|\r/, "", l)
+            sub(/^[ \t]+/, "", l); sub(/[ \t]+$/, "", l)
+            if (l ~ /^\*\*\* (Add|Update|Delete) File:/) sub(/^\*\*\* [A-Za-z]+ File:[ \t]*/, "", l)
+            else if (l ~ /^\*\*\* Move to:/) sub(/^\*\*\* Move to:[ \t]*/, "", l)
+            else continue
+            if (l != "") print l
+          } }'
+      ;;
     *)
       f=$(hook_field file_path)
       [ -n "$f" ] || f=$(hook_field notebook_path)
+      printf '%s\n' "$f"
       ;;
   esac
-  printf '%s' "$f"
+}
+# The directory relative paths in the payload are relative to.
+hook_cwd() {
+  local d
+  d=$(hook_field cwd)
+  [ -n "$d" ] && [ -d "$d" ] || d=$HOOK_ROOT
+  printf '%s' "$d"
 }
 hook_tool() {
   case $HOOK_AGENT in

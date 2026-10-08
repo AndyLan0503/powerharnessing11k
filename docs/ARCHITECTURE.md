@@ -52,11 +52,15 @@ Modules never name a coding agent's paths or syntax. See [design/providers.md](d
 | `settings_deny_read` | a path or glob, e.g. `'**/*.pem'` | each adapter's permission syntax |
 | `settings_agent AGENT string\|env KEY VALUE` | a setting only one agent understands | that adapter, when selected |
 
+| `settings_mcp_http NAME URL TOKEN_ENV` | a team MCP server; the token stays in the environment | each adapter's MCP config |
+
+An adapter whose agent has no path scoping calls `agents_md_rule NAME FILE` from its rule function; the rule then lands in `AGENTS.md` under a heading naming its paths. `AGENTS.md` is written last (`agents_md_emit`) for that reason.
+
 Guidance that applies everywhere goes in `AGENTS.md` (`modules/core/working-agreement.md` and the profile rule files it includes), which every agent reads.
 
 ### Writing an agent adapter
 
-`agents/<name>/adapter.sh` sets `AGENT_TITLE`, `AGENT_LAYOUT` (one Markdown sentence for `AGENTS.md`), `AGENT_OWNED` (paths for CODEOWNERS), and `AGENT_PROTECTED` (files that hold guardrail settings), and defines `agent_<name>_begin`, `agent_<name>_rule NAME FILE`, `agent_<name>_role NAME FILE`, and `agent_<name>_finish`. Add the name to `ALL_AGENTS` in `lib/agents.sh`, teach `modules/core/hooks/lib.sh` the agent's payload field names and block signal, and add a hook contract test.
+`agents/<name>/adapter.sh` sets `AGENT_TITLE`, `AGENT_LAYOUT` (one Markdown sentence for `AGENTS.md`), `AGENT_OWNED` (paths for CODEOWNERS), and `AGENT_PROTECTED` (files that hold guardrail settings), and also `AGENT_COVERAGE` (four cells for the handbook table) and optionally `AGENT_NEXT_STEP`, and defines `agent_<name>_begin`, `agent_<name>_skill NAME`, `agent_<name>_rule NAME FILE`, `agent_<name>_role NAME FILE`, and `agent_<name>_finish`. `agents/codex/adapter.sh` is a compact example. Add the name to `ALL_AGENTS` in `lib/agents.sh`, teach `modules/core/hooks/lib.sh` the agent's payload field names and block signal, and add a hook contract test.
 
 ## Write modes (`emit MODE ...`)
 
@@ -105,7 +109,7 @@ module_apply() {
 EOF
 ```
 
-Then add the module name to `ALL_MODULES` in `lib/modules.sh` (that list sets the order) and, if appropriate, to the tiers in `profiles/*.profile`. Hooks should source `lib.sh` (`. "$(dirname "$0")/lib.sh"`) to get `hook_command`, `hook_file`, `hook_block`, and `hook_log`, which work for every agent. Add a test to `tests/run.sh`; the `test_every_stack` test already fails on any unrendered `{{PLACEHOLDER}}`.
+Then add the module name to `ALL_MODULES` in `lib/modules.sh` (that list sets the order) and, if appropriate, to the tiers in `profiles/*.profile`. Hooks should source `lib.sh` (`. "$(dirname "$0")/lib.sh"`) to get `hook_command`, `hook_files`, `hook_rel`, `hook_block`, and `hook_log`, which work for every agent. Add a test to `tests/run.sh`; the `test_every_stack` test already fails on any unrendered `{{PLACEHOLDER}}`.
 
 ## Compatibility rules
 

@@ -19,18 +19,20 @@
 #          `access: read | read-run | write` (read files; also run commands;
 #          also edit files). Adapters translate access into tool limits.
 
-ALL_AGENTS="claude"
+ALL_AGENTS="claude codex"
 SKILLS_DIR=.agents/skills
 HOOKS_DIR=.agents/hooks
 
-agent_title() { # name
+# agent_field NAME VAR: the value of an adapter's AGENT_<VAR> declaration.
+agent_field() {
   (
-    AGENT_TITLE=$1
     # shellcheck disable=SC1090
     . "$HARNESS_ROOT/agents/$1/adapter.sh"
-    printf '%s' "$AGENT_TITLE"
+    eval "printf '%s' \"\${AGENT_$2:-}\""
   )
 }
+
+agent_title() { agent_field "$1" TITLE; }
 
 # Template variables that describe the selected agents:
 #   AGENT_LAYOUT       Markdown bullets: where each agent's own files are
@@ -38,16 +40,21 @@ agent_title() { # name
 #   PROTECTED_TEXT     ", `path`" for each file that holds guardrail settings
 #   PROTECTED_CASE     " | path" for a shell case pattern
 #   PROTECTED_REGEX    "|path$" for an extended regex
-# Adapters declare AGENT_LAYOUT, AGENT_OWNED (space-separated paths), and
-# AGENT_PROTECTED (space-separated files).
+#   AGENT_COVERAGE     Markdown table rows: what each agent gets, gaps included
+# Adapters declare AGENT_LAYOUT, AGENT_OWNED (space-separated paths),
+# AGENT_PROTECTED (space-separated files), and AGENT_COVERAGE, four cells
+# separated by "|": path-scoped rules | subagent limits | command
+# permissions | checks before finishing.
 agents_export_vars() {
-  local a p layout='' owners='' text='' pcase='' regex=''
+  local a p layout='' owners='' text='' pcase='' regex='' coverage=''
   for a in $HV_AGENTS; do
-    AGENT_LAYOUT='' AGENT_OWNED='' AGENT_PROTECTED=''
+    AGENT_LAYOUT='' AGENT_OWNED='' AGENT_PROTECTED='' AGENT_COVERAGE='|||'
     # shellcheck disable=SC1090
     . "$HARNESS_ROOT/agents/$a/adapter.sh"
     layout="${layout:+$layout
 }- $AGENT_LAYOUT"
+    coverage="${coverage:+$coverage
+}| $AGENT_TITLE | ${AGENT_COVERAGE//|/ | } |"
     for p in $AGENT_OWNED; do
       owners="${owners:+$owners
 }$(printf '%-23s %s' "/$p" "${HV_CODEOWNERS:-}")"
@@ -58,9 +65,9 @@ agents_export_vars() {
       regex="$regex|$(printf '%s' "$p" | sed 's/\./\\./g')\$"
     done
   done
-  HV_AGENT_LAYOUT=$layout HV_AGENT_CODEOWNERS=$owners
+  HV_AGENT_LAYOUT=$layout HV_AGENT_CODEOWNERS=$owners HV_AGENT_COVERAGE=$coverage
   HV_PROTECTED_TEXT=$text HV_PROTECTED_CASE=$pcase HV_PROTECTED_REGEX=$regex
-  export HV_AGENT_LAYOUT HV_AGENT_CODEOWNERS HV_PROTECTED_TEXT HV_PROTECTED_CASE HV_PROTECTED_REGEX
+  export HV_AGENT_LAYOUT HV_AGENT_CODEOWNERS HV_AGENT_COVERAGE HV_PROTECTED_TEXT HV_PROTECTED_CASE HV_PROTECTED_REGEX
 }
 
 agents_validate() {
@@ -87,7 +94,11 @@ _agents_each() { # suffix [args...]
   export MODULE_DIR
 }
 
-agents_begin() { _agents_each begin; }
+agents_begin() {
+  : >"$HARNESS_TMP/agentsmd.rules"
+  : >"$HARNESS_TMP/agentsmd.seen"
+  _agents_each begin
+}
 
 agents_finish() { _agents_each finish; }
 
@@ -97,6 +108,55 @@ _render_module_template() { # src -> sets RENDERED
   HARNESS_SEQ=$((${HARNESS_SEQ:-0} + 1))
   RENDERED=$HARNESS_TMP/render.$HARNESS_SEQ
   render_template "$src" "$RENDERED" || harness_die "module $MODULE_NAME: failed to render $1"
+}
+
+# agents_md_rule NAME FILE: for adapters whose agent cannot load a rule only
+# for matching paths. The rule goes into AGENTS.md instead, under a heading
+# that names its paths, so the agent still has it (always loaded).
+agents_md_rule() {
+  local name=$1 file=$2 seen=$HARNESS_TMP/agentsmd.seen
+  touch "$seen"
+  if grep -qx "$name" "$seen"; then return 0; fi
+  printf '%s\n' "$name" >>"$seen"
+  awk -v name="$name" '
+    NR == 1 && /^---$/ { infm = 1; next }
+    infm && /^paths: / {
+      g = $0
+      sub(/^paths: *\[/, "", g); sub(/\] *$/, "", g)
+      gsub(/"/, "`", g)
+      globs = g
+      next
+    }
+    infm && /^---$/ {
+      infm = 0
+      printf "\n### %s\n\nApplies when you work on files matching: %s.\n", name, globs
+      blank = 0
+      next
+    }
+    infm { next }
+    /^(```|~~~)/ { fence = !fence; blank = 0; print; next }
+    fence { print; next }          # code blocks are copied as written
+    /^# / { next }                 # the rule title: the heading above replaces it
+    /^[[:space:]]*$/ { if (!blank) print; blank = 1; next }
+    { blank = 0 }
+    /^#+ / { print "#" $0; next }  # keep sub-headings below the section level
+    { print }' "$file" >>"$HARNESS_TMP/agentsmd.rules"
+}
+
+# Write AGENTS.md. Runs after every module, so that rules routed to it by
+# agents_md_rule are included.
+agents_md_emit() {
+  local saved_name=${MODULE_NAME:-} saved_dir=${MODULE_DIR:-}
+  HV_PATH_RULES=''
+  if [ -s "$HARNESS_TMP/agentsmd.rules" ]; then HV_PATH_RULES=$(cat "$HARNESS_TMP/agentsmd.rules"); fi
+  export HV_PATH_RULES
+  MODULE_NAME=core
+  MODULE_DIR=$HARNESS_ROOT/modules/core
+  export MODULE_DIR
+  emit file AGENTS.md.tmpl AGENTS.md
+  MODULE_NAME=$saved_name
+  MODULE_DIR=$saved_dir
+  export MODULE_DIR
 }
 
 # emit_rule NAME SRC: a path-scoped rule.

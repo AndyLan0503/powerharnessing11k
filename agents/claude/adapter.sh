@@ -14,6 +14,8 @@ AGENT_LAYOUT='Claude Code: `.claude/CLAUDE.md` (imports this file), `.claude/set
 AGENT_OWNED=".claude/"
 # shellcheck disable=SC2034
 AGENT_PROTECTED=".claude/settings.json"
+# shellcheck disable=SC2034
+AGENT_COVERAGE="loaded only for matching paths|a tool list per role|allow, ask, and deny lists|lint and typecheck must pass"
 
 agent_claude_begin() {
   emit file CLAUDE.md.tmpl .claude/CLAUDE.md
@@ -44,8 +46,26 @@ agent_claude_role() { # name file
   apply_rendered file "$out" ".claude/agents/$1.md"
 }
 
+# Team MCP servers: .mcp.json at the repo root, the only place Claude Code
+# reads project servers from. ${VAR} is expanded from the environment.
+_claude_mcp() { # -> stdout
+  local name url token first=1
+  printf '{\n  "mcpServers": {'
+  while IFS="$(printf '\t')" read -r name url token; do
+    [ $first -eq 1 ] || printf ','
+    first=0
+    printf '\n    "%s": {\n      "type": "http",\n      "url": "%s",\n      "headers": {\n        "Authorization": "Bearer ${%s}"\n      }\n    }' \
+      "$(json_escape "$name")" "$(json_escape "$url")" "$token"
+  done <"$HARNESS_TMP/settings.mcp"
+  printf '\n  }\n}\n'
+}
+
 agent_claude_finish() {
   local out=$HARNESS_TMP/claude.settings.json link=$TARGET/.claude/skills
+  if [ -s "$HARNESS_TMP/settings.mcp" ]; then
+    _claude_mcp >"$HARNESS_TMP/claude.mcp.json"
+    apply_rendered file "$HARNESS_TMP/claude.mcp.json" .mcp.json
+  fi
   if [ -L "$link" ] && [ "$(readlink "$link")" != "../$SKILLS_DIR" ]; then
     ui_warn ".claude/skills links to $(readlink "$link"), so Claude Code will not see the skills in $SKILLS_DIR. Re-run with --force to repoint it."
   fi

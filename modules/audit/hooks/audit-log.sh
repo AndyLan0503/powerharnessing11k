@@ -7,8 +7,10 @@
 if hook_is_stop; then
   hook_log turn_end ""
 else
-  detail=$(hook_command)
-  [ -n "$detail" ] || detail=$(hook_file)
+  # For a file edit, log the files; for anything else, the command.
+  detail=$(hook_files | tr '\n' ' ')
+  detail=${detail% }
+  [ -n "$detail" ] || detail=$(hook_command)
   [ -n "$detail" ] || detail=$(hook_field pattern)
   [ -n "$detail" ] || detail=$(hook_field url)
   hook_log tool "$(printf '%s' "$detail" | cut -c 1-300)"

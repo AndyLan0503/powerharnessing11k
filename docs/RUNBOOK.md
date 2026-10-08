@@ -143,21 +143,22 @@ cd ~/work/my-project        # an empty folder is fine; it offers to run git init
 ~/powerharnessing11k/setup.sh
 ```
 
-Nine screens, one key each. `r` restarts, `q` quits without writing anything.
+Ten screens, one key each. `r` restarts, `q` quits without writing anything.
 
 | # | Screen | Tip |
 |:-:|---|---|
 | 1 | What is this repository for? | Your profile from Step 1 |
 | 2 | Language or toolchain | Detected from existing files; pick one in an empty folder |
 | 3 | Commands | Check these carefully. Hooks, CI, and the agent's instructions all use them. Choose "Edit them" if any are wrong |
-| 4 | How much harness | `Recommended` to start |
-| 5 | Version data or model files? | Your decision from Step 1 |
-| 6 | Project-specific stubs | Type the names from Step 1 |
-| 7 | Who must review changes | CODEOWNERS entries, for example `@acme/platform` |
-| 8 | Telemetry | "No" unless you already run an OpenTelemetry collector |
-| 9 | Ready to apply | Read the summary, then `y` |
+| 4 | Which coding agents | A checklist. Tick every agent your team uses (Claude Code, Codex CLI); number keys toggle, Enter continues |
+| 5 | How much harness | `Recommended` to start |
+| 6 | Version data or model files? | Your decision from Step 1 |
+| 7 | Project-specific stubs | Type the names from Step 1 |
+| 8 | Who must review changes | CODEOWNERS entries, for example `@acme/platform` |
+| 9 | Telemetry | "No" unless you already run an OpenTelemetry collector. Asked only when Claude Code is selected |
+| 10 | Ready to apply | Read the summary, including what each agent does and does not get, then `y` |
 
-Today the tool sets up Claude Code's own files (settings, rules, subagents) and the shared ones every agent reads (`AGENTS.md`, skills). A screen for choosing other coding agents appears once their adapters ship.
+If you pick Codex CLI: after the bootstrap, open the repo with `codex`, trust the project, and run `/hooks` to approve the hooks. Codex ignores a project's hooks until you do, and asks again whenever one changes.
 
 To preview first, add `--dry-run`. To skip the questions entirely, pass flags:
 
@@ -381,7 +382,8 @@ Agent context fills up. When a session has been running for a long time, run the
 | A harmless command is blocked because its text contains a dangerous one | The guard matches command text, including quoted strings | Rephrase the command or put the text in a file. Narrow the hook pattern if it recurs |
 | The agent cannot finish; lint or typecheck keeps failing | The stop hook is doing its job | Let the agent fix it, or run `make lint` yourself to see the error |
 | The agent keeps asking permission for the same command | The command is missing from the allow list | Add it to `permissions.allow` in `.claude/settings.json` |
-| Hooks do not run at all | Files lost their executable bit, or settings were not loaded | `chmod +x .agents/hooks/*.sh`, then restart Claude Code |
+| Hooks do not run at all | Files lost their executable bit, or settings were not loaded | `chmod +x .agents/hooks/*.sh`, then restart your agent |
+| Hooks do not run in Codex CLI | The project is not trusted, or the hooks were not approved (or changed since) | Trust the project when Codex asks, then run `/hooks` and approve them |
 | Claude Code finds no skills on Windows | `.claude/skills` is a symbolic link, and git checked it out as a text file | Enable Developer Mode, run `git config --global core.symlinks true`, and clone again |
 | A rule never seems to apply | Its `paths:` pattern does not match the files | Compare the pattern with real paths in the repo |
 | A skill is never used | Its `description` does not say when to use it | Rewrite the description around trigger situations |

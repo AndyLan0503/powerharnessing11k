@@ -13,18 +13,19 @@
 
 **`p10k configure`, but for your repo's AI agents.**
 
-One wizard. Nine questions. A repository that's ready for humans and coding agents to work in together,<br>
+One wizard. Ten questions. A repository that's ready for humans and coding agents to work in together,<br>
 with guardrails, CI, an AI review gate, and monitoring. Then it gets out of your way, for good.
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![bash 3.2+](https://img.shields.io/badge/bash-3.2%2B-4EAA25?logo=gnubash&logoColor=white)
 ![macOS | Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
 ![Dependencies: none](https://img.shields.io/badge/dependencies-none-success)
-![Built for Claude Code](https://img.shields.io/badge/built%20for-Claude%20Code-D97757)
+![Agents: Claude Code | Codex CLI](https://img.shields.io/badge/agents-Claude%20Code%20%7C%20Codex%20CLI-D97757)
 
 [Quick start](#-quick-start) •
 [The wizard](#-the-wizard) •
 [What you get](#-what-you-get) •
+[Agents](#-coding-agents) •
 [Profiles](#-profiles) •
 [PR gate](#-the-pr-gate) •
 [Runbook](docs/RUNBOOK.md) •
@@ -79,7 +80,7 @@ mkdir opt-engine && cd opt-engine
 ~/powerharnessing11k/setup.sh
 ```
 
-**3. Answer nine questions.** Then fill in the `TODO(team)` notes it lists, commit, and open a PR. Collaborators just pull.
+**3. Answer ten questions.** Then fill in the `TODO(team)` notes it lists, commit, and open a PR. Collaborators just pull.
 
 Prefer no questions? Everything has a flag. Run this from inside the project folder too:
 
@@ -101,7 +102,7 @@ Prefer no questions? Everything has a flag. Run this from inside the project fol
 
   powerharnessing11k  one-shot agentic harness configurator · v0.1.0
 
-  [3/9]  These commands will be used by hooks, CI, and agent docs. OK?
+  [3/10]  These commands will be used by hooks, CI, and agent docs. OK?
 
   (1)  Use them
        install     uv sync
@@ -125,14 +126,13 @@ Prefer no questions? Everything has a flag. Run this from inside the project fol
 | 1 | What is this repository for? | One of the five [profiles](#-profiles) |
 | 2 | Language or toolchain? | Node, Python, Go, Rust, or generic; detected from the repo's files |
 | 3 | These commands OK? | Install, lint, typecheck, fast tests, full tests, format (and eval for ml/agentic) |
-| 4 | How much harness? | Minimal, recommended, strict, or pick modules one by one |
-| 5 | Version data or model files? | Local `data/` + `models/` pinned by hash in `artifacts.lock` |
-| 6 | Project-specific stubs? | Skills, subagents, path-scoped rules, folders: blank files with `TODO(team)` notes |
-| 7 | Who reviews changes? | CODEOWNERS entries |
-| 8 | Export telemetry? | Claude Code OpenTelemetry to your collector |
-| 9 | Ready to apply | Every answer and module, one last look |
-
-A "which coding agents?" checklist joins the wizard as soon as a second agent adapter ships (Codex CLI is next; see [docs/design/providers.md](docs/design/providers.md)).
+| 4 | Which coding agents? | A checklist: Claude Code, Codex CLI. Pick every one your team uses |
+| 5 | How much harness? | Minimal, recommended, strict, or pick modules one by one |
+| 6 | Version data or model files? | Local `data/` + `models/` pinned by hash in `artifacts.lock` |
+| 7 | Project-specific stubs? | Skills, subagents, path-scoped rules, folders: blank files with `TODO(team)` notes |
+| 8 | Who reviews changes? | CODEOWNERS entries |
+| 9 | Export telemetry? | Claude Code OpenTelemetry to your collector (asked only when Claude Code is selected) |
+| 10 | Ready to apply | Every answer and module, and what each selected agent does and doesn't get |
 
 When it's done you get a short summary and your next steps:
 
@@ -208,6 +208,31 @@ The root stays small on purpose. Only what tools require there is visible (`AGEN
 | **Roles** (subagents, scoped tools) | `reviewer` (fresh-context, profile-aware; all but study), `test-writer` (engineering profiles) | none: only these two near-universal roles ship; add domain roles as stubs |
 | **Hooks** | guard-bash, guard-paths, format-on-edit, stop-checks, audit-log, session-start | `data/raw/` read-only (ml, research, artifacts); `exercises/` read-only (study) |
 | **Tools** | permissions (allow your lint/test commands; deny secrets); `.mcp.json` with the GitHub MCP server (strict tier) | WebSearch pre-approved (research); Learning output style (study) |
+
+## 🤝 Coding agents
+
+Choose the agents your team uses (`--agents claude,codex`, or the checklist in the wizard). Shared content is written once; each agent then gets its own files in its own format.
+
+| | Claude Code | Codex CLI |
+|---|---|---|
+| Project instructions | `.claude/CLAUDE.md`, an import of `AGENTS.md` | `AGENTS.md`, read directly |
+| Skills | `.claude/skills`, a link to `.agents/skills/` | `.agents/skills/`, read directly |
+| Path-scoped rules | `.claude/rules/*.md`, loaded only for matching files | inside `AGENTS.md`, each under a heading naming its paths (always loaded) |
+| Subagents | `.claude/agents/*.md`, with a tool list per role | `.codex/agents/*.toml`, with a sandbox level per role |
+| Command permissions | allow, ask, and deny lists in `.claude/settings.json` | prompt and forbid rules in `.codex/rules/default.rules`; everything else runs inside the sandbox set in `.codex/config.toml` |
+| Guard hooks | wired in `.claude/settings.json` | wired in `.codex/hooks.json` |
+| Lint must pass before finishing | yes | yes |
+| Team MCP servers | `.mcp.json` | `.codex/config.toml` |
+| Usage telemetry | optional OpenTelemetry export | not set up |
+
+Both agents call the same scripts in `.agents/hooks/`, so a blocked command is blocked for either.
+
+Two things to know about Codex CLI:
+
+- It loads `.codex/` only for a project you have trusted, and runs a project hook only after you approve it with `/hooks`. It asks again whenever a hook changes. Until then the hooks do nothing.
+- It has no per-file read rules at project level. Reads of secret files through the shell are still blocked by the guard hook.
+
+The generated `docs/agents/HANDBOOK.md` carries the same table for the agents you picked.
 
 ## 🎯 Profiles
 
@@ -331,7 +356,7 @@ setup.sh version | help
 | `--stack NAME` | `node` · `python` · `go` · `rust` · `generic` (default: detected) |
 | `--modules LIST` | comma-separated modules, overriding the tier |
 | `--guard LEVEL` | `relaxed` · `standard` · `strict` |
-| `--agents LIST` | coding agents to set up, comma-separated (available now: `claude`) |
+| `--agents LIST` | coding agents to set up, comma-separated: `claude`, `codex` (default: `claude`) |
 | `--owners LIST` | CODEOWNERS entries, e.g. `"@acme/platform"` |
 | `--otel URL` | OTLP endpoint; enables telemetry |
 | `--artifacts` / `--no-artifacts` | local data/model versioning on or off |
@@ -362,9 +387,11 @@ No. It only creates files that don't exist, and `.gitignore` only gains the line
 </details>
 
 <details>
-<summary><b>Does it work with agents other than Claude Code?</b></summary>
+<summary><b>Which coding agents does it support?</b></summary>
 
-Partly today, fully soon. `AGENTS.md` is always written and is the source of truth, and skills live in `.agents/skills/`: Codex CLI, Cursor, GitHub Copilot, and Gemini CLI read both without any extra setup. The guard hooks, permissions, path-scoped rules, and subagents are currently wired up for Claude Code only. Adapters for the other agents are being added one at a time, Codex CLI first; [docs/design/providers.md](docs/design/providers.md) has the plan and what each agent will and won't get. CI checks and the PR gate apply to every PR whoever wrote it.
+Claude Code and OpenAI Codex CLI today. Pick one or both; a mixed team shares one `AGENTS.md`, one set of skills, and one set of guard scripts. See [Coding agents](#-coding-agents) for what each gets.
+
+Cursor, GitHub Copilot, and Gemini CLI read `AGENTS.md` and `.agents/skills/` on their own, so they already get the project context and the skills. Their adapters (hooks, permissions, subagents) are planned; [docs/design/providers.md](docs/design/providers.md) has the order. CI checks and the PR gate apply to every PR whichever tool wrote it.
 
 </details>
 

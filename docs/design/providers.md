@@ -123,7 +123,7 @@ The research flagged these as not confirmed from documentation. Each gets a cont
 - Claude Code: confirm it still reads skills from `.claude/skills/` only, since the symlink in decision 1 depends on it.
 - Gemini and Copilot: the exact payload field that carries the shell command.
 - Cursor, Copilot, Gemini: whether a stop-type hook can send the agent back to work, as Claude's and Codex's can.
-- Codex: the sub-keys of `[permissions.*]` for denying file reads.
+- Codex (adapter shipped): hook payloads, the `stop_hook_active` flag, matchers, timeouts, config keys, the rules syntax, and the subagent format were checked against the Codex source and docs. Still open: whether a project-level `[permissions.*]` profile can deny file reads (so the adapter writes none), and a run against a signed-in Codex CLI, which no test here performs.
 - Copilot: whether `.github/copilot/settings.json` accepts permission rules.
 - Codex loads `.codex/config.toml` only for trusted projects. The next-steps text must say so.
 
@@ -222,7 +222,7 @@ Each PR is releasable on its own.
 | # | Scope | Visible change |
 |:-:|---|---|
 | 1 | Engine: neutral emitters, adapter interface, Claude adapter only. `AGENTS.md` as the source of truth, commands become skills, skills in `.agents/skills/`, hooks in `.agents/hooks/`, CI scripts in `scripts/ci/` | Same protection as today for Claude Code; file layout changes as described |
-| 2 | Codex adapter. Multi-select agents screen and coverage table | Codex teams get a harness |
+| 2 | Codex adapter. Multi-select agents screen and coverage table (done) | Codex teams get a harness |
 | 3 | Copilot adapter | Copilot teams get a harness |
 | 4 | Review backends: Bedrock, Vertex, Codex, Gemini, Copilot | The gate no longer needs an Anthropic API key |
 | 5 | Host adapter: GitLab, and `none` | GitLab repos get CI, the gate, and templates |

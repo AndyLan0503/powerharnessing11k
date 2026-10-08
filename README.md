@@ -20,7 +20,7 @@ with guardrails, CI, an AI review gate, and monitoring. Then it gets out of your
 ![bash 3.2+](https://img.shields.io/badge/bash-3.2%2B-4EAA25?logo=gnubash&logoColor=white)
 ![macOS | Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
 ![Dependencies: none](https://img.shields.io/badge/dependencies-none-success)
-![Agents: Claude Code | Codex CLI](https://img.shields.io/badge/agents-Claude%20Code%20%7C%20Codex%20CLI-D97757)
+![Agents: Claude Code | Codex CLI | GitHub Copilot](https://img.shields.io/badge/agents-Claude%20Code%20%7C%20Codex%20CLI%20%7C%20Copilot-D97757)
 
 [Quick start](#-quick-start) •
 [The wizard](#-the-wizard) •
@@ -126,7 +126,7 @@ Prefer no questions? Everything has a flag. Run this from inside the project fol
 | 1 | What is this repository for? | One of the five [profiles](#-profiles) |
 | 2 | Language or toolchain? | Node, Python, Go, Rust, or generic; detected from the repo's files |
 | 3 | These commands OK? | Install, lint, typecheck, fast tests, full tests, format (and eval for ml/agentic) |
-| 4 | Which coding agents? | A checklist: Claude Code, Codex CLI. Pick every one your team uses |
+| 4 | Which coding agents? | A checklist: Claude Code, Codex CLI, GitHub Copilot. Pick every one your team uses |
 | 5 | How much harness? | Minimal, recommended, strict, or pick modules one by one |
 | 6 | Version data or model files? | Local `data/` + `models/` pinned by hash in `artifacts.lock` |
 | 7 | Project-specific stubs? | Skills, subagents, path-scoped rules, folders: blank files with `TODO(team)` notes |
@@ -211,26 +211,32 @@ The root stays small on purpose. Only what tools require there is visible (`AGEN
 
 ## 🤝 Coding agents
 
-Choose the agents your team uses (`--agents claude,codex`, or the checklist in the wizard). Shared content is written once; each agent then gets its own files in its own format.
+Choose the agents your team uses (`--agents claude,codex,copilot`, or the checklist in the wizard). Shared content is written once; each agent then gets its own files in its own format.
 
-| | Claude Code | Codex CLI |
-|---|---|---|
-| Project instructions | `.claude/CLAUDE.md`, an import of `AGENTS.md` | `AGENTS.md`, read directly |
-| Skills | `.claude/skills`, a link to `.agents/skills/` | `.agents/skills/`, read directly |
-| Path-scoped rules | `.claude/rules/*.md`, loaded only for matching files | inside `AGENTS.md`, each under a heading naming its paths (always loaded) |
-| Subagents | `.claude/agents/*.md`, with a tool list per role | `.codex/agents/*.toml`, with a sandbox level per role |
-| Command permissions | allow, ask, and deny lists in `.claude/settings.json` | prompt and forbid rules in `.codex/rules/default.rules`; everything else runs inside the sandbox set in `.codex/config.toml` |
-| Guard hooks | wired in `.claude/settings.json` | wired in `.codex/hooks.json` |
-| Lint must pass before finishing | yes | yes |
-| Team MCP servers | `.mcp.json` | `.codex/config.toml` |
-| Usage telemetry | optional OpenTelemetry export | not set up |
+| | Claude Code | Codex CLI | GitHub Copilot |
+|---|---|---|---|
+| Project instructions | `.claude/CLAUDE.md`, an import of `AGENTS.md` | `AGENTS.md`, read directly | `AGENTS.md`, read directly; `.github/copilot-instructions.md` points other IDEs at it |
+| Skills | `.claude/skills`, a link to `.agents/skills/` | `.agents/skills/`, read directly | `.agents/skills/`, read directly |
+| Path-scoped rules | `.claude/rules/*.md`, loaded only for matching files | inside `AGENTS.md`, each under a heading naming its paths (always loaded) | `.github/instructions/*.instructions.md`, loaded only for matching files |
+| Subagents | `.claude/agents/*.md`, with a tool list per role | `.codex/agents/*.toml`, with a sandbox level per role | `.github/agents/*.agent.md`, with a tool list per agent |
+| Command permissions | allow, ask, and deny lists in `.claude/settings.json` | prompt and forbid rules in `.codex/rules/default.rules`; everything else runs inside the sandbox set in `.codex/config.toml` | none at repository level; the guard hooks do the blocking |
+| Guard hooks | wired in `.claude/settings.json` | wired in `.codex/hooks.json` | wired in `.github/hooks/guardrails.json` |
+| Lint must pass before finishing | yes | yes | yes (CLI and cloud agent) |
+| Team MCP servers | `.mcp.json` | `.codex/config.toml` | `.github/mcp.json` for the CLI; repository settings for the cloud agent |
+| Usage telemetry | optional OpenTelemetry export | not set up | not set up |
 
-Both agents call the same scripts in `.agents/hooks/`, so a blocked command is blocked for either.
+All three call the same scripts in `.agents/hooks/`, so a blocked command is blocked whichever agent runs it.
 
-Two things to know about Codex CLI:
+Things to know about Codex CLI:
 
 - It loads `.codex/` only for a project you have trusted, and runs a project hook only after you approve it with `/hooks`. It asks again whenever a hook changes. Until then the hooks do nothing.
 - It has no per-file read rules at project level. Reads of secret files through the shell are still blocked by the guard hook.
+
+Things to know about GitHub Copilot:
+
+- The CLI loads repository hooks once you trust the folder. The cloud agent reads hooks, custom agents, and instructions from the default branch, so they take effect after the bootstrap PR is merged.
+- Copilot cannot pre-approve or deny commands from a file in the repository. The guard hooks block what must be blocked; everything else follows each person's own approval settings.
+- In VS Code agent mode the same hooks file is loaded, but VS Code talks to hooks in a different format that this setup has not been verified against. Treat hooks there as best effort; the PR gate still applies.
 
 The generated `docs/agents/HANDBOOK.md` carries the same table for the agents you picked.
 
@@ -356,7 +362,7 @@ setup.sh version | help
 | `--stack NAME` | `node` · `python` · `go` · `rust` · `generic` (default: detected) |
 | `--modules LIST` | comma-separated modules, overriding the tier |
 | `--guard LEVEL` | `relaxed` · `standard` · `strict` |
-| `--agents LIST` | coding agents to set up, comma-separated: `claude`, `codex` (default: `claude`) |
+| `--agents LIST` | coding agents to set up, comma-separated: `claude`, `codex`, `copilot` (default: `claude`) |
 | `--owners LIST` | CODEOWNERS entries, e.g. `"@acme/platform"` |
 | `--otel URL` | OTLP endpoint; enables telemetry |
 | `--artifacts` / `--no-artifacts` | local data/model versioning on or off |
@@ -389,9 +395,9 @@ No. It only creates files that don't exist, and `.gitignore` only gains the line
 <details>
 <summary><b>Which coding agents does it support?</b></summary>
 
-Claude Code and OpenAI Codex CLI today. Pick one or both; a mixed team shares one `AGENTS.md`, one set of skills, and one set of guard scripts. See [Coding agents](#-coding-agents) for what each gets.
+Claude Code, OpenAI Codex CLI, and GitHub Copilot today. Pick any combination; a mixed team shares one `AGENTS.md`, one set of skills, and one set of guard scripts. See [Coding agents](#-coding-agents) for what each gets.
 
-Cursor, GitHub Copilot, and Gemini CLI read `AGENTS.md` and `.agents/skills/` on their own, so they already get the project context and the skills. Their adapters (hooks, permissions, subagents) are planned; [docs/design/providers.md](docs/design/providers.md) has the order. CI checks and the PR gate apply to every PR whichever tool wrote it.
+Cursor and Gemini CLI read `AGENTS.md` and `.agents/skills/` (Gemini after a one-line setting), so they already get the project context and the skills. Their adapters (hooks, permissions, subagents) are planned; [docs/design/providers.md](docs/design/providers.md) has the order. CI checks and the PR gate apply to every PR whichever tool wrote it.
 
 </details>
 

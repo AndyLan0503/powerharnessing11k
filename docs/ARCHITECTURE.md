@@ -60,7 +60,7 @@ Guidance that applies everywhere goes in `AGENTS.md` (`modules/core/working-agre
 
 ### Writing an agent adapter
 
-`agents/<name>/adapter.sh` sets `AGENT_TITLE`, `AGENT_LAYOUT` (one Markdown sentence for `AGENTS.md`), `AGENT_OWNED` (paths for CODEOWNERS), and `AGENT_PROTECTED` (files that hold guardrail settings), and also `AGENT_COVERAGE` (four cells for the handbook table) and optionally `AGENT_NEXT_STEP`, and defines `agent_<name>_begin`, `agent_<name>_skill NAME`, `agent_<name>_rule NAME FILE`, `agent_<name>_role NAME FILE`, and `agent_<name>_finish`. `agents/codex/adapter.sh` is a compact example. Add the name to `ALL_AGENTS` in `lib/agents.sh`, teach `modules/core/hooks/lib.sh` the agent's payload field names and block signal, and add a hook contract test.
+`agents/<name>/adapter.sh` sets `AGENT_TITLE`, `AGENT_LAYOUT` (one Markdown sentence for `AGENTS.md`), `AGENT_OWNED` (paths for CODEOWNERS), and `AGENT_PROTECTED` (files that hold guardrail settings), and also `AGENT_COVERAGE` (four cells for the handbook table) and optionally `AGENT_NEXT_STEP`, and defines `agent_<name>_begin`, `agent_<name>_skill NAME`, `agent_<name>_rule NAME FILE`, `agent_<name>_role NAME FILE`, and `agent_<name>_finish`. `agents/codex/adapter.sh` and `agents/copilot/adapter.sh` are compact examples: Codex shares Claude Code's hook protocol, Copilot has its own payload and answers with JSON. Add the name to `ALL_AGENTS` in `lib/agents.sh`, teach `modules/core/hooks/lib.sh` the agent's payload field names and block signal, and add a hook contract test.
 
 ## Write modes (`emit MODE ...`)
 

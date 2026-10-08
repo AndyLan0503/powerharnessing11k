@@ -46,7 +46,7 @@ Options:
       --stack NAME      node | python | go | rust | generic (default: detected)
       --modules LIST    Comma-separated modules (overrides the tier's list)
       --guard LEVEL     relaxed | standard | strict (overrides the tier's level)
-      --agents LIST     Comma-separated coding agents: claude, codex (default: claude).
+      --agents LIST     Comma-separated coding agents: claude, codex, copilot (default: claude).
                         AGENTS.md is always written and is the source of truth
       --owners LIST     CODEOWNERS entries, e.g. "@acme/platform"
       --otel URL        OTLP endpoint; enables the telemetry module

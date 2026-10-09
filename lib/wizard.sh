@@ -218,12 +218,21 @@ _wizard_steps() {
   while :; do
     ui_header "$WIZ_STEP" "$WIZ_TOTAL" "Ready to apply"
     _wizard_summary
-    printf '  %s  Apply to %s\n' "${C_ACCENT}${C_BOLD}(y)${C_RESET}" "${C_BOLD}$TARGET${C_RESET}"
+    printf '  %s  Apply to %s\n\n' "${C_ACCENT}${C_BOLD}(y)${C_RESET}" "${C_BOLD}$TARGET${C_RESET}"
+    if [ -n "${LOCAL_ONLY:-}" ]; then
+      printf '  %s  Local only: %s\n' "${C_ACCENT}${C_BOLD}(l)${C_RESET}" "${C_BOLD}on${C_RESET}${C_DIM}, everything written stays out of git on this machine (press l to turn off)${C_RESET}"
+    else
+      printf '  %s  Local only: %s\n' "${C_ACCENT}${C_BOLD}(l)${C_RESET}" "off${C_DIM}, the files are meant to be committed (press l to keep them out of git on this machine instead)${C_RESET}"
+    fi
     ui_footer
-    printf '  %s ' "${C_BOLD}Choice [yrq]:${C_RESET}"
+    printf '  %s ' "${C_BOLD}Choice [ylrq]:${C_RESET}"
     ui_key
     printf '\n'
     case $UI_KEY in
+      l | L)
+        if [ -n "${LOCAL_ONLY:-}" ]; then LOCAL_ONLY=''; else LOCAL_ONLY=1; fi
+        export LOCAL_ONLY
+        ;;
       y | Y) return 0 ;;
       r | R) return 10 ;;
       q | Q | n | N) ui_quit ;;

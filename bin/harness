@@ -39,6 +39,8 @@ Options:
   -y, --yes             Non-interactive: accept detected defaults
   -n, --dry-run         Show what would be written without writing anything
   -f, --force           Overwrite files that already exist
+      --local-only      Keep everything written out of git on this machine
+                        (listed in .git/info/exclude; nothing to commit)
       --verbose         List every file written, not a summary
       --profile NAME    software | ml | agentic | study | research (default: software)
       --tier NAME       minimal | recommended | strict (default: recommended;
@@ -74,7 +76,7 @@ case ${1:-} in
   '' | -*) ;;
   *) harness_die "unknown command: $1 (see: setup.sh help)" ;;
 esac
-TARGET=. YES='' DRY_RUN='' FORCE='' VERBOSE='' OPT_PROFILE='' OPT_TIER='' OPT_STACK='' OPT_MODULES=''
+TARGET=. YES='' DRY_RUN='' FORCE='' VERBOSE='' LOCAL_ONLY='' OPT_PROFILE='' OPT_TIER='' OPT_STACK='' OPT_MODULES=''
 OPT_GUARD='' OPT_AGENTS='' OPT_OWNERS='' OPT_OWNERS_SET='' OPT_OTEL='' OPT_ARTIFACTS=''
 OPT_SKILLS='' OPT_ROLES='' OPT_RULES='' OPT_DIRS='' OPT_CUSTOM_SET='' OPT_CMDS=''
 while [ $# -gt 0 ]; do
@@ -84,6 +86,7 @@ while [ $# -gt 0 ]; do
     -n | --dry-run) DRY_RUN=1 ;;
     -f | --force) FORCE=1 ;;
     --verbose) VERBOSE=1 ;;
+    --local-only) LOCAL_ONLY=1 ;;
     --profile) OPT_PROFILE=${2:?}; shift ;;
     --tier | --preset) OPT_TIER=${2:?}; shift ;;
     --stack) OPT_STACK=${2:?}; shift ;;
@@ -112,7 +115,7 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-export DRY_RUN FORCE
+export DRY_RUN FORCE LOCAL_ONLY
 ui_init
 
 resolve_target() {
@@ -222,6 +225,19 @@ do_apply() {
   if [ "$APPLY_SKIPPED" -gt 0 ]; then
     ui_warn "Existing files were left as they are. Use --force to overwrite them."
   fi
+  if [ -n "$LOCAL_ONLY" ]; then
+    apply_local_exclude
+    if [ -n "$DRY_RUN" ]; then
+      ui_info "${C_BOLD}Local only:${C_RESET} $LOCAL_EXCLUDED file(s) would be kept out of git on this machine (listed in ${LOCAL_EXCLUDE_FILE#"$TARGET"/})."
+    else
+      ui_info "${C_BOLD}Local only:${C_RESET} $LOCAL_EXCLUDED file(s) are kept out of git on this machine (listed in ${LOCAL_EXCLUDE_FILE#"$TARGET"/})."
+    fi
+    [ -z "$LOCAL_TRACKED" ] || ui_warn "Already tracked by git, so they cannot be ignored:$LOCAL_TRACKED"
+    printf '\n'
+  elif local_block_present; then
+    ui_warn "An earlier --local-only run still hides its files from git on this machine. To commit them, delete the marked block in $(git -C "$TARGET" rev-parse --git-path info/exclude)."
+    printf '\n'
+  fi
 }
 
 next_steps() {
@@ -243,13 +259,20 @@ EOF
     ui_info "  $n. make setup && make check     (installs dev tools with uv, then runs every fast check)"
     n=$((n + 1))
   fi
-  ui_info "  $n. Review, commit, and open a PR:  git add -A && git commit -m 'chore: bootstrap agent harness'"
-  n=$((n + 1))
-  if list_has "$HV_MODULES" ci; then
+  if [ -n "$LOCAL_ONLY" ]; then
+    ui_info "  $n. Nothing to commit: this setup stays on this machine. Your agents use it as usual."
+    ui_info "       ${C_DIM}CI workflows and anything read from the default branch (such as Copilot's cloud agent) only work once committed.${C_RESET}"
+    ui_info "       ${C_DIM}To share it later, delete the marked block in ${LOCAL_EXCLUDE_FILE#"$TARGET"/}, then commit.${C_RESET}"
+    n=$((n + 1))
+  else
+    ui_info "  $n. Review, commit, and open a PR:  git add -A && git commit -m 'chore: bootstrap agent harness'"
+    n=$((n + 1))
+  fi
+  if [ -z "$LOCAL_ONLY" ] && list_has "$HV_MODULES" ci; then
     ui_info "  $n. Protect '$HV_DEFAULT_BRANCH': require PR review and the CI checks (Settings → Branches)"
     n=$((n + 1))
   fi
-  if list_has "$HV_MODULES" review; then
+  if [ -z "$LOCAL_ONLY" ] && list_has "$HV_MODULES" review; then
     ui_info "  $n. Add the ANTHROPIC_API_KEY repository secret for the Claude workflows"
     n=$((n + 1))
   fi

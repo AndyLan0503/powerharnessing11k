@@ -357,6 +357,7 @@ setup.sh version | help
 | `-n, --dry-run` | show what would be written, write nothing |
 | `-f, --force` | overwrite files that already exist (never your `Makefile`, `pyproject.toml`, or code) |
 | `--verbose` | list every file instead of the grouped summary |
+| `--local-only` | keep everything written out of git on this machine (see the FAQ) |
 | `--profile NAME` | `software` · `ml` · `agentic` · `study` · `research` |
 | `--tier NAME` | `minimal` · `recommended` · `strict` |
 | `--stack NAME` | `node` · `python` · `go` · `rust` · `generic` (default: detected) |
@@ -398,6 +399,17 @@ No. It only creates files that don't exist, and `.gitignore` only gains the line
 Claude Code, OpenAI Codex CLI, and GitHub Copilot today. Pick any combination; a mixed team shares one `AGENTS.md`, one set of skills, and one set of guard scripts. See [Coding agents](#-coding-agents) for what each gets.
 
 Cursor and Gemini CLI read `AGENTS.md` and `.agents/skills/` (Gemini after a one-line setting), so they already get the project context and the skills. Their adapters (hooks, permissions, subagents) are planned; [docs/design/providers.md](docs/design/providers.md) has the order. CI checks and the PR gate apply to every PR whichever tool wrote it.
+
+</details>
+
+<details>
+<summary><b>Can I use it on a repo without committing anything?</b></summary>
+
+Yes: `--local-only`, or press `l` on the wizard's last screen. Everything is written as usual, then listed in `.git/info/exclude`, git's per-machine ignore file, which is never committed or shared. Nothing new shows up in `git status`, the repository's own `.gitignore` is not touched, and your agents use the setup as normal. (With `--force`, a file git already tracks is overwritten like any other and shows as modified: tracked files cannot be ignored.)
+
+Useful for trying it out, or for using it on a repository whose team has not adopted it. What it cannot do: CI workflows only run once committed, and anything read from the default branch (such as Copilot's cloud agent) will not see it. Files that git already tracks cannot be ignored and are reported. Some agents skip ignored files when they search your code; they still load their own configuration.
+
+To share the setup later, delete the marked block in `.git/info/exclude` and commit.
 
 </details>
 

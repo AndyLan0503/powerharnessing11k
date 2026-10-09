@@ -1518,6 +1518,15 @@ test_wizard_flow() {
   check_not "invalid dir not created" test -e "$WORK/wiz/evil"
   check "next steps list TODO files" grep -qE '^ +\.agents/skills/formulate/SKILL\.md$' "$out"
 
+  # The confirm screen can switch on local-only mode.
+  d=$(new_repo wiz-local)
+  printf '%s\n' key:1 key:2 key:1 line: key:2 key:2 key:1 line: key:1 key:l key:y |
+    HARNESS_NO_CLEAR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$H" configure -C "$d"
+  check "confirm screen offers local only" grep -q '(l)  Local only: off' "$out"
+  check "pressing l turns it on" grep -q '(l)  Local only: on' "$out"
+  check "and it is applied" git -C "$d" check-ignore -q AGENTS.md
+  check "git sees nothing" test -z "$(git -C "$d" status --porcelain --untracked-files=all)"
+
   # Codex CLI alone: no Claude Code telemetry question, so one step fewer.
   d=$(new_repo wiz-codex)
   printf '%s\n' key:1 key:2 key:1 key:1 key:2 line: key:2 key:2 key:1 line: key:y |
@@ -1601,6 +1610,111 @@ test_tidy_root() {
   "$H" configure --yes -C "$d" --profile study >/dev/null 2>&1
   check "study: plan and progress stay at the root" test -f "$d/LEARNING_PLAN.md" -a -f "$d/PROGRESS.md"
   check "study: visible root" test "$(_visible_root "$d")" = "AGENTS.md LEARNING_PLAN.md PROGRESS.md exercises/ notes/ "
+}
+
+# --local-only: everything the bootstrap writes stays out of git on this
+# machine, through .git/info/exclude; nothing in the repository changes.
+test_local_only() {
+  local d out f
+  d=$(new_repo local)
+  printf 'node_modules/\n' >"$d/.gitignore"
+  echo hello >"$d/README.md"
+  git -C "$d" add -A && git -C "$d" commit -qm init
+  out=$("$H" configure --yes -C "$d" --agents claude,codex,copilot --stack python --tier strict --owners @acme/x \
+    --skills formulate --local-only 2>&1) || fail "configure failed: $out"
+
+  check "git sees no change at all" test -z "$(git -C "$d" status --porcelain --untracked-files=all)"
+  check "the tracked .gitignore is untouched" test "$(cat "$d/.gitignore")" = 'node_modules/'
+  check "files were written" test -f "$d/AGENTS.md" -a -f "$d/.claude/settings.json" -a -f "$d/.github/hooks/guardrails.json"
+  check "each written file is ignored" sh -c "
+    cd '$d' && for f in AGENTS.md .claude/settings.json .claude/skills .codex/config.toml .github/hooks/guardrails.json \
+      .github/workflows/ci.yml .agents/skills/formulate/SKILL.md Makefile pyproject.toml; do git check-ignore -q \"\$f\" || exit 1; done"
+  check "the patterns the .gitignore would have had apply too" git -C "$d" check-ignore -q .agents/logs/events.jsonl
+  check "existing user files are not ignored" sh -c "! git -C '$d' check-ignore -q README.md"
+  f=$d/.git/info/exclude
+  check "one marked block" test "$(grep -c '^# >>> agent setup files' "$f")" -eq 1 -a "$(grep -c '^# <<< agent setup files' "$f")" -eq 1
+  check "git's own template comments are kept" grep -q '^# git ls-files --others --exclude-from' "$f"
+  check "entries are anchored to the root" grep -qx '/AGENTS.md' "$f"
+  check "the summary says so" grep -q 'Local only: [0-9]* file(s) are kept out of git' <<<"$out"
+  check "no commit step" sh -c "! grep -q 'Review, commit, and open a PR' <<'EOF'
+$out
+EOF"
+  check "next steps explain how to share it later" grep -q 'delete the marked block in .git/info/exclude' <<<"$out"
+  _no_footprint "$d"
+
+  # The hooks work the same while ignored.
+  [ "$(_guard "$d" guard-bash.sh Bash command 'git push --for''ce origin x')" = 2 ] || fail "local only: guard does not block"
+  ok
+
+  # A re-run merges into the block: new files added, nothing duplicated.
+  "$H" configure --yes -C "$d" --agents claude,codex,copilot --skills formulate,run-solver --local-only >/dev/null 2>&1
+  check "re-run: still one block" test "$(grep -c '^# >>> agent setup files' "$f")" -eq 1
+  check "re-run: the new skill is ignored" git -C "$d" check-ignore -q .agents/skills/run-solver/SKILL.md
+  check "re-run: no duplicate entries" test -z "$(grep -v '^#' "$f" | grep . | sort | uniq -d)"
+  check "re-run: git still sees nothing" test -z "$(git -C "$d" status --porcelain --untracked-files=all)"
+
+  # Removing the block brings everything back into view.
+  awk '/^# >>> agent setup files/ { skip = 1; next } /^# <<< agent setup files/ { skip = 0; next } !skip' "$f" >"$f.new" && mv "$f.new" "$f"
+  check "without the block the files show up to be committed" sh -c "git -C '$d' status --porcelain | grep -q 'AGENTS.md'"
+
+  # A later run without --local-only says the earlier files are still hidden.
+  "$H" configure --yes -C "$d" --local-only >/dev/null 2>&1
+  out=$("$H" configure --yes -C "$d" 2>&1)
+  check "a normal run warns about the hidden files" grep -q 'An earlier --local-only run still hides its files' <<<"$out"
+
+  # Profiles whose ignore patterns re-include files (data/README.md) must not
+  # un-hide the files this run wrote.
+  d=$(new_repo local-ml)
+  "$H" configure --yes -C "$d" --profile ml --stack python --local-only >/dev/null 2>&1
+  check "ml: git sees no change" test -z "$(git -C "$d" status --porcelain --untracked-files=all)"
+  check "ml: data/README.md hidden" git -C "$d" check-ignore -q data/README.md
+  "$H" configure --yes -C "$d" --profile ml --stack python --skills x --local-only >/dev/null 2>&1
+  check "ml re-run: still nothing visible" test -z "$(git -C "$d" status --porcelain --untracked-files=all)"
+
+  # The user's own lines around the block are never moved or swallowed.
+  d=$(new_repo local-hand)
+  "$H" configure --yes -C "$d" --local-only >/dev/null 2>&1
+  f=$d/.git/info/exclude
+  printf '# mine\n/scratch/\n' >>"$f"
+  "$H" configure --yes -C "$d" --skills extra --local-only >/dev/null 2>&1
+  check "user lines after the block stay after it" sh -c "tail -n 2 '$f' | head -n 1 | grep -qx '# mine' && tail -n 1 '$f' | grep -qx '/scratch/'"
+  check "the block is updated in place" git -C "$d" check-ignore -q .agents/skills/extra/SKILL.md
+  # A block whose end marker was deleted is left alone; a fresh block follows.
+  grep -v '^# <<< agent setup files' "$f" >"$f.new" && mv "$f.new" "$f"
+  printf '# also mine\n/notes/\n' >>"$f"
+  "$H" configure --yes -C "$d" --local-only >/dev/null 2>&1
+  check "user lines after a broken block are kept" grep -qx '/notes/' "$f"
+  check "and are not inside the new block" sh -c "awk '/^# >>> agent setup files/ { n++ } n == 2 && /^\/notes\/\$/ { bad = 1 } END { exit bad }' '$f'"
+  check "the files are still hidden" test -z "$(git -C "$d" status --porcelain --untracked-files=all)"
+
+  # A file git already tracks cannot be ignored: it is reported, not listed.
+  d=$(new_repo local-tracked)
+  echo '# ours' >"$d/AGENTS.md"
+  git -C "$d" add -A && git -C "$d" commit -qm init
+  out=$("$H" configure --yes --force -C "$d" --local-only 2>&1)
+  check "tracked file reported" grep -q 'Already tracked by git, so they cannot be ignored: AGENTS.md' <<<"$out"
+  check_not "tracked file not listed" grep -qx '/AGENTS.md' "$d/.git/info/exclude"
+  # Files that were already there and kept are the team's, not ours to hide.
+  d=$(new_repo local-kept)
+  mkdir -p "$d/.github"
+  echo mine >"$d/.github/pull_request_template.md"
+  "$H" configure --yes -C "$d" --local-only >/dev/null 2>&1
+  check_not "a kept file is not listed" grep -q 'pull_request_template' "$d/.git/info/exclude"
+
+  # In a linked worktree the exclude file is the repository's shared one.
+  d=$(new_repo local-main)
+  git -C "$d" commit -q --allow-empty -m init
+  git -C "$d" worktree add -q "$WORK/local-wt" -b wt 2>/dev/null
+  "$H" configure --yes -C "$WORK/local-wt" --local-only >/dev/null 2>&1
+  check "worktree: files ignored" git -C "$WORK/local-wt" check-ignore -q AGENTS.md
+  check "worktree: git sees nothing" test -z "$(git -C "$WORK/local-wt" status --porcelain --untracked-files=all)"
+  check_not "worktree: no stray info/exclude written into the worktree" test -e "$WORK/local-wt/.git/info/exclude"
+
+  # A dry run writes nothing, the exclude file included.
+  d=$(new_repo local-dry)
+  cp "$d/.git/info/exclude" "$WORK/exclude.before" 2>/dev/null || : >"$WORK/exclude.before"
+  "$H" configure --yes --dry-run -C "$d" --local-only >/dev/null 2>&1
+  check "dry run: exclude file untouched" sh -c "cmp -s '$WORK/exclude.before' '$d/.git/info/exclude' || { [ ! -s '$WORK/exclude.before' ] && [ ! -e '$d/.git/info/exclude' ]; }"
 }
 
 test_cli_errors() {

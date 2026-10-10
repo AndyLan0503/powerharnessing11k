@@ -15,7 +15,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Force stock bash 3.2 and BSD awk
         run: |
           mkdir -p "$RUNNER_TEMP/stock"

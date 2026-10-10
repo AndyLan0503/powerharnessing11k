@@ -475,6 +475,184 @@ test_codex_edge_cases() {
   check "AGENTS.md leads the TODO list" sh -c "'$H' configure --yes -C '$d' --agents codex --skills x | grep -A1 'TODO(team) notes' | tail -n 1 | grep -q 'AGENTS.md'"
 }
 
+# A Copilot hook call. The payload shape is from the Copilot hooks reference:
+# toolArgs is documented as a JSON string and also seen as an object, so both
+# forms are exercised. ARGS is a JSON object; FORM is "string" or "object".
+_copilot_hook() { # dir script tool args-json [form] -> exit code; stdout in $WORK/copilot.out
+  local form=${5:-string} rc=0
+  jq -cn --arg cwd "$1" --arg tool "$3" --argjson args "$4" --arg form "$form" \
+    '{sessionId: "sess-1", timestamp: 1791300000000, cwd: $cwd, toolName: $tool,
+      toolArgs: (if $form == "string" then ($args | tojson) else $args end)}' |
+    "$1/.agents/hooks/$2" copilot >"$WORK/copilot.out" 2>"$WORK/copilot.err" || rc=$?
+  echo $rc
+}
+# 0 when the last hook call printed exactly one JSON object that denies.
+_copilot_denied() {
+  jq -es 'length == 1 and .[0].permissionDecision == "deny" and (.[0].permissionDecisionReason | test("Blocked by guardrail"))' "$WORK/copilot.out" >/dev/null
+}
+
+test_copilot_adapter() {
+  local d f secret=.e'nv' push='git push --for''ce origin feat'
+  d=$(new_repo copilot-only)
+  f=$("$H" configure --yes -C "$d" --agents copilot --stack python --tier strict --owners @acme/x --roles model-checker \
+    --rules 'solver=src/solver/**,tests/solver/**' 2>&1) || fail "configure failed: $f"
+
+  # Only Copilot's files, plus what every agent shares.
+  check_not "no Claude Code files" test -e "$d/.claude"
+  check_not "no Codex files" test -e "$d/.codex"
+  check_not "no root .mcp.json" test -e "$d/.mcp.json"
+  check "shared instructions" contains "$d/AGENTS.md" 'Working agreement'
+  check "shared skills, read natively" test -f "$d/.agents/skills/review/SKILL.md"
+  check "pointer file for IDEs that do not read AGENTS.md" contains "$d/.github/copilot-instructions.md" 'AGENTS.md'
+  check_not "the pointer repeats nothing" grep -q 'Working agreement\|TODO(team)' "$d/.github/copilot-instructions.md"
+  check "AGENTS.md says where Copilot's files are" contains "$d/AGENTS.md" '- GitHub Copilot: reads this file directly'
+  check "next steps: default branch and folder trust" grep -q 'cloud agent uses the hooks, agents, and instructions on the default branch' <<<"$f"
+  check_not "rules are not routed into AGENTS.md (Copilot scopes by path)" contains "$d/AGENTS.md" 'Rules for specific paths'
+  _no_footprint "$d"
+
+  # Path-scoped instructions
+  f=$d/.github/instructions/solver.instructions.md
+  check "applyTo is one comma-separated string" grep -qx 'applyTo: "src/solver/\*\*,tests/solver/\*\*"' "$f"
+  check_not "no neutral key left" grep -q '^paths:' "$f"
+  check "built-in rule converted too" grep -q '^applyTo: "\*\*/\*.test.\*,' "$d/.github/instructions/testing.instructions.md"
+  check "frontmatter is closed" test "$(sed -n 3p "$f")" = '---'
+
+  # Custom agents
+  check "read-run agent" grep -qx 'tools: \["read", "search", "execute"\]' "$d/.github/agents/reviewer.agent.md"
+  check "write agent" grep -qx 'tools: \["read", "search", "edit", "execute"\]' "$d/.github/agents/test-writer.agent.md"
+  check "read-only stub agent" grep -qx 'tools: \["read", "search"\]' "$d/.github/agents/model-checker.agent.md"
+  check "agents have a description" grep -q '^description: ' "$d/.github/agents/reviewer.agent.md"
+  check_not "no neutral keys left" grep -rq '^access:' "$d/.github/agents"
+
+  # MCP for the CLI
+  check "mcp server entry" jq -e '.mcpServers.github | .type == "http" and .tools == ["*"] and .headers.Authorization == "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}"' "$d/.github/mcp.json"
+
+  # Hook file
+  f=$d/.github/hooks/guardrails.json
+  check "hooks file shape" jq -e '.version == 1 and (keys - ["version", "hooks"]) == [] and (.hooks | keys - ["preToolUse", "postToolUse", "agentStop"]) == []' "$f"
+  check "handlers are bash commands with a timeout" jq -e '[.hooks[][] | .type == "command" and (.bash | endswith(" copilot")) and (.timeoutSec | type == "number") and .cwd == "."] | all' "$f"
+  check "shell guard matches shell tools" jq -e '.hooks.preToolUse[] | select(.bash | contains("guard-bash")) | .matcher == "bash|powershell"' "$f"
+  check "edit guard matches every edit tool" jq -e '.hooks.preToolUse[] | select(.bash | contains("guard-paths")) | .matcher | test("create") and test("edit") and test("apply_patch")' "$f"
+  check "audit has no matcher (every tool)" jq -e '.hooks.postToolUse[] | select(.bash | contains("audit-log")) | has("matcher") | not' "$f"
+  check "stop check on agentStop" jq -e '.hooks.agentStop | map(.bash | contains("stop-checks")) | any' "$f"
+  check "every hook script exists and is executable" sh -c "
+    jq -r '.hooks[][].bash' '$f' | sed 's/ copilot\$//' | sort -u | while read -r h; do [ -x '$d'/\"\$h\" ] || exit 1; done"
+  check "a handler runs from the repository root, through a shell" sh -c "
+    cd '$d' && echo '{\"toolName\":\"bash\",\"toolArgs\":\"{\\\\\"command\\\\\":\\\\\"ls\\\\\"}\"}' | sh -c \"\$(jq -r '.hooks.preToolUse[0].bash' '$f')\""
+
+  # Hook contracts: shell commands, arguments as a JSON string and as an object.
+  [ "$(_copilot_hook "$d" guard-bash.sh bash "$(jq -cn --arg c "$push" '{command: $c}')" string)" != 0 ] || fail "copilot: force-push allowed (string args)"
+  check "deny is one JSON decision on stdout" _copilot_denied
+  [ "$(_copilot_hook "$d" guard-bash.sh bash "$(jq -cn --arg c "$push" '{command: $c}')" object)" != 0 ] || fail "copilot: force-push allowed (object args)"
+  check "deny decision for object args too" _copilot_denied
+  [ "$(_copilot_hook "$d" guard-bash.sh bash '{"command":"git status"}')" = 0 ] || fail "copilot: harmless command blocked"
+  check "an allowed call prints nothing" test ! -s "$WORK/copilot.out"
+
+  # File edits: the edit tools, and apply_patch.
+  [ "$(_copilot_hook "$d" guard-paths.sh edit "$(jq -cn --arg p "$secret" '{path: $p, old_str: "a", new_str: "b"}')")" != 0 ] || fail "copilot: secret edit allowed"
+  check "secret edit denied with a decision" _copilot_denied
+  [ "$(_copilot_hook "$d" guard-paths.sh create "$(jq -cn --arg p "$d/$secret" '{path: $p, file_text: "A=1"}')" object)" != 0 ] || fail "copilot: secret create (absolute path) allowed"
+  [ "$(_copilot_hook "$d" guard-paths.sh edit '{"path":"src/app.py","old_str":"a","new_str":"b"}')" = 0 ] || fail "copilot: ordinary edit blocked"
+  check "an allowed edit prints nothing" test ! -s "$WORK/copilot.out"
+  [ "$(_copilot_hook "$d" guard-paths.sh edit '{"path":".github/hooks/guardrails.json","old_str":"a","new_str":"b"}')" != 0 ] || fail "copilot strict: hook config edit allowed"
+  [ "$(_copilot_hook "$d" guard-paths.sh edit '{"path":".agents/hooks/guard-bash.sh","old_str":"a","new_str":"b"}')" != 0 ] || fail "copilot strict: hook script edit allowed"
+  [ "$(_copilot_hook "$d" guard-paths.sh apply_patch "$(jq -cn --arg p "$(_patch src/app.py "$secret")" '{patch: $p}')")" != 0 ] || fail "copilot: secret in an apply_patch allowed"
+  check "one decision even for a multi-file patch" _copilot_denied
+  # A patch sent as bare text (not wrapped in a JSON object) is still read.
+  f=$(jq -cn --arg cwd "$d" --arg p "$(_patch .agents/hooks/lib.sh)" '{sessionId: "s", cwd: $cwd, toolName: "apply_patch", toolArgs: $p}')
+  t=0
+  printf '%s' "$f" | "$d/.agents/hooks/guard-paths.sh" copilot >"$WORK/copilot.out" 2>/dev/null || t=$?
+  [ "$t" != 0 ] || fail "copilot strict: bare-text patch to a hook script allowed"
+  check "bare-text patch denied with a decision" _copilot_denied
+  f=$(jq -cn --arg cwd "$d" --arg p "$(_patch "$secret")" '{sessionId: "s", cwd: $cwd, toolName: "apply_patch", toolArgs: $p}')
+  t=0
+  printf '%s' "$f" | "$d/.agents/hooks/guard-paths.sh" copilot >/dev/null 2>&1 || t=$?
+  [ "$t" != 0 ] || fail "copilot: bare-text patch to a secret file allowed"
+  # Copilot loads every file in .github/hooks/, so adding one is blocked too.
+  [ "$(_copilot_hook "$d" guard-paths.sh create '{"path":".github/hooks/extra.json","file_text":"{}"}')" != 0 ] || fail "copilot strict: new hook file allowed"
+  check "the PR gate protects the hooks folder" grep -q 'github/hooks/' "$d/scripts/ci/diff-guard.sh"
+  ok
+
+  # Without jq or python3, arguments sent as a JSON string are still read.
+  local bin=$WORK/minbin-copilot t
+  mkdir -p "$bin"
+  for t in bash sh cat grep sed tr head tail dirname date mkdir git printf cut awk env; do
+    [ -e "$bin/$t" ] || ln -s "$(command -v "$t")" "$bin/$t" 2>/dev/null || true
+  done
+  f=$(jq -cn --arg cwd "$d" --arg c "$push" '{sessionId: "s", cwd: $cwd, toolName: "bash", toolArgs: ({command: $c} | tojson)}')
+  t=0
+  printf '%s' "$f" | PATH=$bin "$d/.agents/hooks/guard-bash.sh" copilot >"$WORK/copilot.out" 2>/dev/null || t=$?
+  [ "$t" != 0 ] || fail "copilot: force-push allowed without jq"
+  check "decision is still valid JSON without jq" _copilot_denied
+  f=$(jq -cn --arg cwd "$d" --arg p "$(_patch "$secret")" '{sessionId: "s", cwd: $cwd, toolName: "apply_patch", toolArgs: $p}')
+  t=0
+  printf '%s' "$f" | PATH=$bin "$d/.agents/hooks/guard-paths.sh" copilot >/dev/null 2>&1 || t=$?
+  [ "$t" != 0 ] || fail "copilot: bare-text secret patch allowed without jq"
+  f=$(jq -cn --arg cwd "$d" --arg p "$secret" '{sessionId: "s", cwd: $cwd, toolName: "edit", toolArgs: ({path: $p} | tojson)}')
+  t=0
+  printf '%s' "$f" | PATH=$bin "$d/.agents/hooks/guard-paths.sh" copilot >/dev/null 2>&1 || t=$?
+  [ "$t" != 0 ] || fail "copilot: secret edit allowed without jq"
+  ok
+
+  # Audit: Copilot's field names end up in the same log.
+  jq -cn --arg cwd "$d" '{sessionId: "sess-9", cwd: $cwd, toolName: "bash", toolArgs: "{\"command\":\"make test\"}", toolResult: {resultType: "success", textResultForLlm: "ok"}}' |
+    "$d/.agents/hooks/audit-log.sh" copilot
+  check "audit records tool, session, and command" grep -q '"kind":"tool","session_id":"sess-9","tool":"bash","detail":"make test"' "$d/.agents/logs/events.jsonl"
+  jq -cn --arg cwd "$d" '{sessionId: "sess-10", cwd: $cwd, toolName: "bash", toolArgs: {command: "echo hi", stopReason: "nope"}}' |
+    "$d/.agents/hooks/audit-log.sh" copilot
+  check "a tool argument named stopReason is not the end of a turn" grep -q '"kind":"tool","session_id":"sess-10"' "$d/.agents/logs/events.jsonl"
+
+  # agentStop: lint must pass before the turn ends.
+  d=$(new_repo copilot-stop)
+  # The lint output includes a quote, a backslash, a tab, and a byte that is
+  # not valid UTF-8; the decision must still be valid JSON.
+  printf '#!/bin/sh\nprintf '"'"'bad style: "x" C:\\\\tmp\\t\\351nd\\n'"'"'\nexit 1\n' >"$d/lint.sh"
+  chmod +x "$d/lint.sh"
+  "$H" configure --yes -C "$d" --agents copilot --cmd 'lint=./lint.sh' --cmd 'test=sh -c "exit 0"' >/dev/null 2>&1
+  echo change >"$d/file.txt"
+  f=$(jq -cn --arg cwd "$d" '{sessionId: "s", timestamp: 1, cwd: $cwd, stopReason: "end_turn", stop_hook_active: false}')
+  t=0
+  printf '%s' "$f" | "$d/.agents/hooks/stop-checks.sh" copilot >"$WORK/copilot.out" 2>/dev/null || t=$?
+  check "a failing check exits 0 with a decision (Copilot's protocol)" test "$t" = 0
+  check "the decision sends the agent back with the output" jq -es 'length == 1 and .[0].decision == "block" and (.[0].reason | test("lint failed") and test("bad style"))' "$WORK/copilot.out"
+  t=0
+  printf '%s' "${f/false/true}" | "$d/.agents/hooks/stop-checks.sh" copilot >"$WORK/copilot.out" 2>/dev/null || t=$?
+  check "the loop flag ends it" test "$t" = 0 -a ! -s "$WORK/copilot.out"
+  printf '%s' "$f" | "$d/.agents/hooks/audit-log.sh" copilot
+  check "the end of a turn is logged" grep -q '"kind":"turn_end"' "$d/.agents/logs/events.jsonl"
+}
+
+# All three agents in one repo.
+test_three_agents_together() {
+  local d
+  d=$(new_repo three)
+  "$H" configure --yes -C "$d" --agents claude,codex,copilot --tier strict --owners @acme/x >/dev/null 2>&1 || fail "configure failed"
+  check "all three configured" test -f "$d/.claude/settings.json" -a -f "$d/.codex/hooks.json" -a -f "$d/.github/hooks/guardrails.json"
+  local out
+  out=$("$H" configure --yes -C "$(new_repo three-steps)" --agents claude,codex,copilot 2>&1)
+  check "each agent's next step is printed once" test "$(grep -c 'GitHub Copilot: the CLI loads the hooks' <<<"$out")" -eq 1 -a "$(grep -c 'Codex CLI: open the repo' <<<"$out")" -eq 1
+  check "AGENTS.md describes all three" test "$(grep -cE '^- (Claude Code|Codex CLI|GitHub Copilot):' "$d/AGENTS.md")" -eq 3
+  check "handbook has a row for each" test "$(grep -cE '^\| (Claude Code|Codex CLI|GitHub Copilot) \|' "$d/docs/agents/HANDBOOK.md")" -eq 3
+  # The rule text is the same for Claude Code and Copilot; only the frontmatter differs.
+  sed '1,3d' "$d/.claude/rules/testing.md" >"$WORK/rule.claude"
+  sed '1,3d' "$d/.github/instructions/testing.instructions.md" >"$WORK/rule.copilot"
+  check "same rule text" cmp "$WORK/rule.claude" "$WORK/rule.copilot"
+  # ... and the same agent instructions.
+  awk 'f >= 2 { print } /^---$/ { f++ }' "$d/.claude/agents/reviewer.md" >"$WORK/role.claude"
+  awk 'f >= 2 { print } /^---$/ { f++ }' "$d/.github/agents/reviewer.agent.md" >"$WORK/role.copilot"
+  check "same agent instructions" cmp "$WORK/role.claude" "$WORK/role.copilot"
+  # Each agent's guard config is protected from the others.
+  [ "$(_guard "$d" guard-paths.sh Edit file_path "$d/.github/hooks/guardrails.json")" = 2 ] || fail "strict: Claude Code may edit Copilot's hooks"
+  [ "$(_copilot_hook "$d" guard-paths.sh edit '{"path":".claude/settings.json"}')" != 0 ] || fail "strict: Copilot may edit Claude Code's settings"
+  [ "$(_copilot_hook "$d" guard-paths.sh edit '{"path":".codex/hooks.json"}')" != 0 ] || fail "strict: Copilot may edit Codex's hooks"
+  ok
+  # Copilot CLI also loads hooks from .claude/settings.json, where Claude Code's
+  # own variable is not set; the command must still find the script.
+  jq -r '.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[0].command' "$d/.claude/settings.json" >"$WORK/claude-hook-cmd"
+  check "Claude Code's hook command works without its variable, from the repo root" sh -c "
+    cd '$d' && echo '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}' | env -u CLAUDE_PROJECT_DIR sh -c \"\$(cat '$WORK/claude-hook-cmd')\""
+}
+
 # Two agents, one source: the same rules, roles, skills, and guard scripts.
 test_two_agents_share_one_source() {
   local d

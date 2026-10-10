@@ -19,13 +19,16 @@
 #          `access: read | read-run | write` (read files; also run commands;
 #          also edit files). Adapters translate access into tool limits.
 
-ALL_AGENTS="claude codex"
+ALL_AGENTS="claude codex copilot"
 SKILLS_DIR=.agents/skills
 HOOKS_DIR=.agents/hooks
 
 # agent_field NAME VAR: the value of an adapter's AGENT_<VAR> declaration.
 agent_field() {
   (
+    # Start clean: an adapter that does not declare a field must not inherit
+    # one from an adapter sourced earlier in this shell.
+    unset AGENT_TITLE AGENT_LAYOUT AGENT_OWNED AGENT_PROTECTED AGENT_COVERAGE AGENT_NEXT_STEP
     # shellcheck disable=SC1090
     . "$HARNESS_ROOT/agents/$1/adapter.sh"
     eval "printf '%s' \"\${AGENT_$2:-}\""
@@ -42,7 +45,8 @@ agent_title() { agent_field "$1" TITLE; }
 #   PROTECTED_REGEX    "|path$" for an extended regex
 #   AGENT_COVERAGE     Markdown table rows: what each agent gets, gaps included
 # Adapters declare AGENT_LAYOUT, AGENT_OWNED (space-separated paths),
-# AGENT_PROTECTED (space-separated files), and AGENT_COVERAGE, four cells
+# AGENT_PROTECTED (space-separated files, or "dir/*" for everything in a
+# directory), and AGENT_COVERAGE, four cells
 # separated by "|": path-scoped rules | subagent limits | command
 # permissions | checks before finishing.
 agents_export_vars() {
@@ -59,11 +63,16 @@ agents_export_vars() {
       owners="${owners:+$owners
 }$(printf '%-23s %s' "/$p" "${HV_CODEOWNERS:-}")"
     done
+    set -f # entries may end in /* (a whole directory): keep the * literal
     for p in $AGENT_PROTECTED; do
       text="$text, \`$p\`"
       pcase="$pcase | $p"
-      regex="$regex|$(printf '%s' "$p" | sed 's/\./\\./g')\$"
+      case $p in
+        */\*) regex="$regex|$(printf '%s' "${p%\*}" | sed 's/\./\\./g')" ;;
+        *) regex="$regex|$(printf '%s' "$p" | sed 's/\./\\./g')\$" ;;
+      esac
     done
+    set +f
   done
   HV_AGENT_LAYOUT=$layout HV_AGENT_CODEOWNERS=$owners HV_AGENT_COVERAGE=$coverage
   HV_PROTECTED_TEXT=$text HV_PROTECTED_CASE=$pcase HV_PROTECTED_REGEX=$regex

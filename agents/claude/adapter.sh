@@ -161,7 +161,7 @@ _claude_settings() { # -> stdout
           h_first=0
           printf '\n          {\n'
           printf '            "type": "command",\n'
-          printf '            "command": "\\"$CLAUDE_PROJECT_DIR\\"/%s/%s claude",\n' "$HOOKS_DIR" "$(json_escape "$script")"
+          printf '            "command": "\\"${CLAUDE_PROJECT_DIR:-.}\\"/%s/%s claude",\n' "$HOOKS_DIR" "$(json_escape "$script")"
           printf '            "timeout": %s\n' "$timeout"
           printf '          }'
         done < <(awk -F '\t' -v e="$event" -v m="$matcher" '$1 == e && $2 == m { print $3 "\t" $4 }' "$hooks")

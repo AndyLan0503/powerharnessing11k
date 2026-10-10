@@ -83,12 +83,13 @@ unless-block
 {{/if}}
 x{{#if YES}}-inline{{/if}}{{#if NO}}-hidden{{/if}}{{#unless NO}}-un{{/if}}
 {{> part.md}}
+cache: ${{ hashFiles('{{NAME}}') != '' && 'x' || '' }}
 EOF
   echo 'partial {{NAME}}' >"$t/part.md"
   HARNESS_ROOT=$ROOT MODULE_DIR=$t HV_NAME='a&b\1' HV_YES=1 HV_NO=false \
     bash -c ". '$ROOT/lib/render.sh'; render_template '$t/in' '$t/out'"
   local expected
-  expected=$(printf '%s\n' 'a a&b\1 {{UNKNOWN}} ${{ github.ref }}' yes-block unless-block 'x-inline-un' 'partial a&b\1')
+  expected=$(printf '%s\n' 'a a&b\1 {{UNKNOWN}} ${{ github.ref }}' yes-block unless-block 'x-inline-un' 'partial a&b\1' "cache: \${{ hashFiles('a&b\\1') != '' && 'x' || '' }}")
   if [ "$(cat "$t/out")" = "$expected" ]; then ok; else fail "render output: $(cat "$t/out")"; fi
 }
 
@@ -1715,6 +1716,43 @@ EOF"
   cp "$d/.git/info/exclude" "$WORK/exclude.before" 2>/dev/null || : >"$WORK/exclude.before"
   "$H" configure --yes --dry-run -C "$d" --local-only >/dev/null 2>&1
   check "dry run: exclude file untouched" sh -c "cmp -s '$WORK/exclude.before' '$d/.git/info/exclude' || { [ ! -s '$WORK/exclude.before' ] && [ ! -e '$d/.git/info/exclude' ]; }"
+}
+
+# A new repository whose project does not exist yet (no package.json, go.mod,
+# ...): checks have nothing to run against, so they wait instead of failing.
+test_project_not_created_yet() {
+  local d out
+  d=$(new_repo empty-node)
+  out=$("$H" configure --yes -C "$d" --stack node 2>&1)
+  check "next steps say to create the project" grep -q 'Create the project itself: there is no package.json yet' <<<"$out"
+  check "with a hint for Node" grep -q "your framework's generator" <<<"$out"
+  echo change >"$d/notes.txt"
+  _stop() { echo '{"session_id":"s","stop_hook_active":false,"hook_event_name":"Stop"}' | "$d/.agents/hooks/stop-checks.sh" claude >/dev/null 2>&1; echo $?; }
+  check "stop check waits while there is no package.json" test "$(_stop)" = 0
+  echo '{"name":"web","private":true,"scripts":{"lint":"echo lint-broke >&2; exit 1"}}' >"$d/package.json"
+  check "and runs once there is one" test "$(_stop)" = 2
+  f=$d/.github/workflows/ci.yml
+  check "CI steps wait for the project" test "$(grep -c "if: \${{ hashFiles('package.json') != '' }}" "$f")" -ge 3
+  check "the npm cache waits for a lockfile" grep -qF "cache: \${{ hashFiles('package-lock.json') != '' && 'npm' || '' }}" "$f"
+  check "no unrendered names in workflows" sh -c "! grep -n '{{[A-Z]' '$d'/.github/workflows/*.yml"
+
+  d=$(new_repo existing-node package.json)
+  out=$("$H" configure --yes -C "$d" 2>&1)
+  check_not "an existing project gets no such step" grep -q 'Create the project itself' <<<"$out"
+
+  # The Python skeleton is the project, so nothing waits there.
+  d=$(new_repo empty-python)
+  out=$("$H" configure --yes -C "$d" --stack python 2>&1)
+  check_not "python scaffold: no create step" grep -q 'Create the project itself' <<<"$out"
+  check "python scaffold: CI condition matches its pyproject" grep -qF "hashFiles('pyproject.toml', 'requirements.txt', 'setup.py')" "$d/.github/workflows/ci.yml"
+
+  d=$(new_repo empty-go)
+  "$H" configure --yes -C "$d" --stack go >/dev/null 2>&1
+  check "go: toolchain setup waits for go.mod" sh -c "grep -A1 'actions/setup-go' '$d/.github/workflows/ci.yml' | grep -qF \"if: \\\${{ hashFiles('go.mod') != '' }}\""
+
+  d=$(new_repo empty-generic)
+  "$H" configure --yes -C "$d" >/dev/null 2>&1
+  check_not "generic stack: nothing to wait for" grep -q 'hashFiles' "$d/.github/workflows/ci.yml"
 }
 
 test_cli_errors() {

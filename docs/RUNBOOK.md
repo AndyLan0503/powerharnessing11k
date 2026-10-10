@@ -384,6 +384,7 @@ Agent context fills up. When a session has been running for a long time, run the
 |---|---|---|
 | "Blocked by guardrail: ..." | A hook stopped a risky action | Read the reason. Usually there is a safer route. If the rule is wrong, see 3.2 |
 | A harmless command is blocked because its text contains a dangerous one | The guard matches command text, including quoted strings | Rephrase the command or put the text in a file. Narrow the hook pattern if it recurs |
+| CI shows Install, Lint, and Test as skipped | The project does not exist yet (no `package.json`, `go.mod`, ...) | Expected in a new repo: create the project (for Node, your framework's generator); the steps run once its manifest is committed |
 | The agent cannot finish; lint or typecheck keeps failing | The stop hook is doing its job | Let the agent fix it, or run `make lint` yourself to see the error |
 | The agent keeps asking permission for the same command | The command is missing from the allow list | Add it to `permissions.allow` in `.claude/settings.json` |
 | Hooks do not run at all | Files lost their executable bit, or settings were not loaded | `chmod +x .agents/hooks/*.sh`, then restart your agent |

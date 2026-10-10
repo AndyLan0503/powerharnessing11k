@@ -7,6 +7,13 @@
 hook_stop_active && exit 0
 cd "$(hook_root)" || exit 0
 [ -n "$(git status --porcelain 2>/dev/null)" ] || exit 0
+{{#if STACK_MANIFESTS}}
+# Until the project itself exists ({{STACK_MANIFESTS}}), there is nothing
+# for lint or typecheck to run against: skip instead of failing every turn.
+found=''
+for m in {{STACK_MANIFESTS}}; do [ ! -e "$m" ] || found=1; done
+[ -n "$found" ] || exit 0
+{{/if}}
 
 out=$(mktemp)
 trap 'rm -f "$out"' EXIT

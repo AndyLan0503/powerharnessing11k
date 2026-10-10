@@ -9,7 +9,8 @@
         with:
           node-version: lts/*
 {{#unless PM_BUN}}
-          cache: {{PKG_MANAGER}}
+          # The dependency cache needs a lockfile; a new project has none yet.
+          cache: ${{ hashFiles('{{NODE_LOCKFILE}}') != '' && '{{PKG_MANAGER}}' || '' }}
 {{/if}}
 {{/if}}
 {{#if STACK_PYTHON}}
@@ -27,6 +28,7 @@
 {{/if}}
 {{#if STACK_GO}}
       - uses: actions/setup-go@v5
+        if: ${{ {{CI_HAS_PROJECT}} }}
         with:
           go-version-file: go.mod
 {{/if}}
@@ -38,6 +40,10 @@
 {{/if}}
 {{#if INSTALL_CMD}}
       - name: Install
+{{#if CI_HAS_PROJECT}}
+        # Skipped until the project exists (its manifest is committed).
+        if: ${{ {{CI_HAS_PROJECT}} }}
+{{/if}}
         run: |
 {{#if USE_MAKE}}
           make setup

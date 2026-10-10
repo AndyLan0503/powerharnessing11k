@@ -161,6 +161,30 @@ derive_vars() {
     if list_has "$HV_MODULES" "$m"; then set_var "HV_MOD_$up" 1; else set_var "HV_MOD_$up" ''; fi
     export "HV_MOD_$up"
   done
+  # The files that mean "the project exists" for this stack. Until one does,
+  # lint, typecheck, and tests have nothing to run against: the stop check
+  # and the CI steps skip instead of failing.
+  case $HV_STACK in
+    node) HV_STACK_MANIFESTS='package.json' ;;
+    python) HV_STACK_MANIFESTS='pyproject.toml requirements.txt setup.py' ;;
+    go) HV_STACK_MANIFESTS='go.mod' ;;
+    rust) HV_STACK_MANIFESTS='Cargo.toml' ;;
+    *) HV_STACK_MANIFESTS='' ;;
+  esac
+  HV_CI_HAS_PROJECT='' HV_PROJECT_MISSING=''
+  if [ -n "$HV_STACK_MANIFESTS" ]; then
+    # A GitHub Actions expression; the quotes are part of the text.
+    HV_CI_HAS_PROJECT=$(printf "hashFiles('%s') != ''" "$(printf '%s' "$HV_STACK_MANIFESTS" | sed "s/ /', '/g")")
+    HV_PROJECT_MISSING=1
+    for m in $HV_STACK_MANIFESTS; do [ ! -e "$TARGET/$m" ] || HV_PROJECT_MISSING=''; done
+    [ -z "$HV_SCAFFOLD_PYTHON" ] || HV_PROJECT_MISSING=''
+  fi
+  case $HV_PKG_MANAGER in
+    pnpm) HV_NODE_LOCKFILE=pnpm-lock.yaml ;;
+    yarn) HV_NODE_LOCKFILE=yarn.lock ;;
+    *) HV_NODE_LOCKFILE=package-lock.json ;;
+  esac
+  export HV_STACK_MANIFESTS HV_CI_HAS_PROJECT HV_PROJECT_MISSING HV_NODE_LOCKFILE
   for m in node python go rust generic; do
     up=$(printf '%s' "$m" | tr 'a-z' 'A-Z')
     if [ "$HV_STACK" = "$m" ]; then set_var "HV_STACK_$up" 1; else set_var "HV_STACK_$up" ''; fi

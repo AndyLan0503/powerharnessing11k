@@ -162,6 +162,8 @@ If you pick GitHub Copilot: the CLI uses the hooks once you trust the folder, an
 
 If you pick Codex CLI: after the bootstrap, open the repo with `codex`, trust the project, and run `/hooks` to approve the hooks. Codex ignores a project's hooks until you do, and asks again whenever one changes.
 
+To try it on a repository without committing anything, add `--local-only` (or press `l` on the last screen): the files are written as usual and listed in `.git/info/exclude`, so git ignores them on your machine only. Skip Steps 8 and 9 in that case.
+
 To preview first, add `--dry-run`. To skip the questions entirely, pass flags:
 
 ```sh

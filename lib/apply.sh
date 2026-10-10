@@ -14,6 +14,7 @@
 
 apply_reset() {
   : >"$HARNESS_TMP/status"
+  : >"$HARNESS_TMP/local.patterns"
   APPLY_APPENDED=''
 }
 
@@ -90,6 +91,12 @@ emit_symlink() {
 
 _apply_append() { # tmp dest
   local tmp=$1 dest=$2 path=$TARGET/$2 missing=$HARNESS_TMP/append.missing
+  # --local-only: the repository's own .gitignore is not touched; the
+  # patterns go to this machine's .git/info/exclude with everything else.
+  if [ -n "${LOCAL_ONLY:-}" ] && [ "$dest" = .gitignore ]; then
+    grep -Ev '^[[:space:]]*(#|$)' "$tmp" >>"$HARNESS_TMP/local.patterns" || true
+    return 0
+  fi
   if [ ! -e "$path" ]; then
     _write "$tmp" "$dest"
     _status created "$dest"
@@ -200,4 +207,82 @@ apply_todo_files() {
     $0 == "AGENTS.md" { first = $0; next }   # the one everybody must fill in
     { rest[++n] = $0 }
     END { if (first != "") print first; for (i = 1; i <= n; i++) print rest[i] }'
+}
+
+# --local-only: keep everything this run wrote out of git on this machine,
+# by listing it in .git/info/exclude (never committed, never shared). Files
+# that were already there and kept are the user's and are not listed; files
+# git already tracks cannot be ignored and are reported. The entries live in
+# one marked block, so a re-run merges into it and removing it undoes it.
+# Sets LOCAL_EXCLUDE_FILE, LOCAL_EXCLUDED (count), and LOCAL_TRACKED (paths).
+LOCAL_BLOCK_BEGIN='# >>> agent setup files, kept out of git on this machine (remove this block to track them)'
+LOCAL_BLOCK_END='# <<< agent setup files'
+LOCAL_BLOCK_FILES='# files written by the bootstrap:'
+
+apply_local_exclude() {
+  local file entries=$HARNESS_TMP/local.entries patterns=$HARNESS_TMP/local.pats kind path _ old
+  LOCAL_EXCLUDED=0 LOCAL_TRACKED=''
+  file=$(git -C "$TARGET" rev-parse --git-path info/exclude 2>/dev/null) || harness_die "--local-only needs a git repository"
+  case $file in /*) ;; *) file=$TARGET/$file ;; esac
+  LOCAL_EXCLUDE_FILE=$file
+  : >"$entries"
+  while IFS="$(printf '\t')" read -r kind path _; do
+    case $kind in created | overwritten | unchanged) ;; *) continue ;; esac
+    if git -C "$TARGET" ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
+      LOCAL_TRACKED="$LOCAL_TRACKED $path"
+      continue
+    fi
+    # Anchored to the repository root; glob characters escaped.
+    printf '/%s\n' "$path" | sed 's/[][*?\\]/\\&/g' >>"$entries"
+  done <"$HARNESS_TMP/status"
+  cp "$HARNESS_TMP/local.patterns" "$patterns"
+  LOCAL_EXCLUDED=$(grep -c '^/' "$entries" || true)
+  [ -z "${DRY_RUN:-}" ] || return 0
+
+  old=$HARNESS_TMP/local.old
+  : >"$old"
+  [ -f "$file" ] && cp "$file" "$old"
+  mkdir -p "$(dirname "$file")"
+  # The block has two sections: the patterns a .gitignore would have had,
+  # then one line per written file. The files come last because in an ignore
+  # file a later line wins: a pattern such as "!/data/**/README.md" must not
+  # un-ignore a file listed here. A re-run merges into each section; the
+  # block stays where it is, and a begin marker without an end marker after
+  # it is left alone as an ordinary line (a fresh block is appended).
+  awk -v b="$LOCAL_BLOCK_BEGIN" -v e="$LOCAL_BLOCK_END" -v sep="$LOCAL_BLOCK_FILES" \
+    -v newpats="$patterns" -v newfiles="$entries" '
+    { line[++n] = $0 }
+    END {
+      start = 0; stop = 0
+      for (i = 1; i <= n; i++) if (line[i] == b) { for (j = i + 1; j <= n; j++) if (line[j] == e) { start = i; stop = j; break } if (start) break }
+      np = 0; nf = 0; section = "p"
+      for (i = start + 1; start && i < stop; i++) {
+        if (line[i] == sep) { section = "f"; continue }
+        if (line[i] == "") continue
+        if (section == "p") pats[++np] = line[i]; else files[++nf] = line[i]
+      }
+      while ((getline l < newpats) > 0) pats[++np] = l
+      while ((getline l < newfiles) > 0) files[++nf] = l
+      for (i = 1; i <= n; i++) {
+        if (start && i == start) { emit(); i = stop; continue }
+        print line[i]
+      }
+      if (!start) emit()
+    }
+    function emit(   i) {
+      print b
+      for (i = 1; i <= np; i++) if (pats[i] != "" && !seen[pats[i]]++) print pats[i]
+      print sep
+      for (i = 1; i <= nf; i++) if (files[i] != "" && !seen[files[i]]++) print files[i]
+      print e
+    }' "$old" >"$file"
+}
+
+# 0 when an earlier --local-only run left its block in this repository's
+# exclude file (its files are still hidden from git).
+local_block_present() {
+  local file
+  file=$(git -C "$TARGET" rev-parse --git-path info/exclude 2>/dev/null) || return 1
+  case $file in /*) ;; *) file=$TARGET/$file ;; esac
+  [ -f "$file" ] && grep -qxF "$LOCAL_BLOCK_BEGIN" "$file" && grep -qxF "$LOCAL_BLOCK_END" "$file"
 }

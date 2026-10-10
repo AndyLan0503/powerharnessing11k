@@ -22,6 +22,9 @@ jobs:
 {{> workflows/toolchain.yml.part}}
 {{#if LINT_CMD}}
       - name: Lint
+{{#if CI_HAS_PROJECT}}
+        if: ${{ {{CI_HAS_PROJECT}} }}
+{{/if}}
         run: |
 {{#if USE_MAKE}}
           make lint
@@ -32,6 +35,9 @@ jobs:
 {{/if}}
 {{#if TYPECHECK_CMD}}
       - name: Typecheck
+{{#if CI_HAS_PROJECT}}
+        if: ${{ {{CI_HAS_PROJECT}} }}
+{{/if}}
         run: |
 {{#if USE_MAKE}}
           make typecheck
@@ -42,6 +48,9 @@ jobs:
 {{/if}}
 {{#if TEST_CMD}}
       - name: Test
+{{#if CI_HAS_PROJECT}}
+        if: ${{ {{CI_HAS_PROJECT}} }}
+{{/if}}
         run: |
 {{#if USE_MAKE}}
           make test

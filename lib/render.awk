@@ -46,10 +46,13 @@ function subst(line,    out, start, rest, cl, name) {
     name = substr(rest, 1, cl - 1)
     if (name ~ /^[A-Z][A-Z0-9_]*$/ && (("HV_" name) in ENVIRON)) {
       out = out substr(line, 1, start - 1) ENVIRON["HV_" name]
+      line = substr(rest, cl + 2)
     } else {
-      out = out substr(line, 1, start + 1 + cl + 1)
+      # Not ours (e.g. GitHub's ${{ ... }}): keep the braces and keep looking,
+      # so one of our names inside such an expression is still filled in.
+      out = out substr(line, 1, start + 1)
+      line = rest
     }
-    line = substr(rest, cl + 2)
   }
   return out line
 }

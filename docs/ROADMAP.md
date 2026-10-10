@@ -32,6 +32,7 @@ powerharnessing11k turns the team's agentic-engineering practices into a one-sho
 - [x] Codex CLI adapter: `.codex/config.toml`, command rules, hooks, and subagents from the same neutral content; path rules routed into `AGENTS.md`; multi-select agents step in the wizard; per-agent coverage in the handbook
 - [x] GitHub Copilot adapter: path-scoped instruction files, custom agents, hooks (JSON decisions, arguments as string or object), CLI MCP config
 - [x] `--local-only`: keep everything a bootstrap writes out of git on one machine, through `.git/info/exclude` (wizard: `l` on the last screen)
+- [x] New repos whose project does not exist yet (no `package.json`, `go.mod`, ...): the stop check and the CI steps wait for it instead of failing, and the next steps say to create it
 - [ ] Provider support, remaining steps: review backends, GitLab, then Cursor and Gemini. Choose the coding agents (Claude Code, Codex CLI, Cursor, Copilot, Gemini CLI), the git host (GitHub, GitLab, none), and the AI review backend. Design: `docs/design/providers.md`, ADR 0005
 
 - [ ] First real GitHub run of the PR gate; confirm `claude -p --json-schema` output shape and inline-comment posting on a live PR

@@ -280,6 +280,8 @@ The `devtools` module (software, ml, agentic; research from recommended) gives e
 
 `docs/TESTING.md` lays out the tiers (unit, integration, property-based, regression against golden results, performance) and the rules: determinism, explicit tolerances, golden results reviewed and never regenerated to go green, pinned inputs.
 
+In an empty repo for another stack, the project itself is yours to create (for a Node site, your framework's generator): until its manifest exists, the agent's end-of-turn check and the CI steps wait instead of failing.
+
 In an **empty Python repo** you also get a working uv project (`pyproject.toml`, `src/<package>/`, `tests/`). An existing `Makefile` or `pyproject.toml` is never touched, even with `--force`; CI then calls your own commands. Override any detected command with `--cmd KEY=CMD`.
 
 ### 📦 Data and model versioning, local first

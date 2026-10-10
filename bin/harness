@@ -255,6 +255,13 @@ $todos
 EOF
     n=$((n + 1))
   fi
+  if [ -n "$HV_PROJECT_MISSING" ]; then
+    local hint=''
+    [ -z "$HV_STACK_NODE" ] || hint=" For a Node site or app, use your framework's generator (for example: npm create vite@latest .)."
+    ui_info "  $n. Create the project itself: there is no ${HV_STACK_MANIFESTS%% *} yet.$hint"
+    ui_info "       ${C_DIM}Lint, typecheck, and tests start running, in the agent's checks and in CI, once it exists.${C_RESET}"
+    n=$((n + 1))
+  fi
   if [ -n "$HV_SCAFFOLD_PYTHON" ]; then
     ui_info "  $n. make setup && make check     (installs dev tools with uv, then runs every fast check)"
     n=$((n + 1))

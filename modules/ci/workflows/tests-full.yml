@@ -23,6 +23,9 @@ jobs:
       - uses: actions/checkout@v4
 {{> workflows/toolchain.yml.part}}
       - name: Test (full tier)
+{{#if CI_HAS_PROJECT}}
+        if: ${{ {{CI_HAS_PROJECT}} }}
+{{/if}}
         run: |
 {{#if USE_MAKE}}
           make test-all

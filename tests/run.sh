@@ -1312,6 +1312,74 @@ test_custom_stubs() {
   check_not "absolute dir rejected" "$H" configure --yes -C "$d" --dirs '/tmp/evil'
 }
 
+# A role's neutral `tier` becomes each agent's own way of choosing a model,
+# always by alias or effort level: a versioned model id would go stale.
+test_role_tiers() {
+  local d e f a
+  d=$(new_repo tiers pyproject.toml)
+  f=$("$H" configure --yes -C "$d" --agents claude,codex,copilot \
+    --roles 'log-triage=fast summarizer=standard,planner=deep model-checker' 2>&1) || fail "configure failed: $f"
+
+  # Claude Code: a model alias.
+  check "claude: fast" grep -qx 'model: haiku' "$d/.claude/agents/log-triage.md"
+  check "claude: standard" grep -qx 'model: sonnet' "$d/.claude/agents/summarizer.md"
+  check "claude: deep" grep -qx 'model: opus' "$d/.claude/agents/planner.md"
+  check "claude: the name is kept without its tier" grep -qx 'name: log-triage' "$d/.claude/agents/log-triage.md"
+
+  # Codex has no model aliases, so the tier is a reasoning effort.
+  check "codex: fast" grep -qx 'model_reasoning_effort = "low"' "$d/.codex/agents/log-triage.toml"
+  check "codex: standard" grep -qx 'model_reasoning_effort = "medium"' "$d/.codex/agents/summarizer.toml"
+  check "codex: deep" grep -qx 'model_reasoning_effort = "high"' "$d/.codex/agents/planner.toml"
+  check "codex: tiered role is valid TOML" _toml_ok "$d/.codex/agents/planner.toml"
+  check_not "codex: no model is named" grep -rq '^model = ' "$d/.codex/agents"
+
+  # Copilot has neither on every surface, so its agents inherit.
+  check "copilot: tiered agent keeps its name" grep -qx 'name: planner' "$d/.github/agents/planner.agent.md"
+  check "copilot: tiered agent keeps its tools" grep -qx 'tools: \["read", "search"\]' "$d/.github/agents/planner.agent.md"
+  check_not "copilot: no model key" grep -rqE '^(model|models|reasoning[A-Za-z-]*):' "$d/.github/agents"
+
+  # No tier means the role inherits the caller's model. The shipped roles rely
+  # on this: a reviewer must never run on a weaker model than the author.
+  for f in model-checker reviewer test-writer; do
+    check_not "claude: $f inherits" grep -q '^model:' "$d/.claude/agents/$f.md"
+    check_not "codex: $f inherits" grep -qE '^model[a-z_]* = ' "$d/.codex/agents/$f.toml"
+  done
+
+  for a in .claude/agents .codex/agents .github/agents; do
+    check_not "$a: no neutral key left" grep -rq '^tier:' "$d/$a"
+    check_not "$a: no versioned model id" grep -rqiE '(claude|gpt|gemini)-[a-z0-9.]*[0-9]' "$d/$a"
+  done
+
+  check "stub says when a cheaper model fits" contains "$d/.claude/agents/model-checker.md" 'only for bounded lookups and summaries'
+  check_not "stub does not mention the bootstrap flag" grep -rq 'name=tier' "$d/.claude/agents" "$d/.codex/agents" "$d/.github/agents"
+  check "guidance on which role gets which work" contains "$d/AGENTS.md" 'Match the model to the work'
+
+  # A bad tier stops the run before anything is written.
+  e=$(new_repo tiers-bad pyproject.toml)
+  for a in 'x=turbo' 'x=' 'x=fast=deep'; do
+    check "tier '$a' rejected by name" sh -c '"$1" configure --yes -C "$2" --roles "$3" 2>&1 | grep -q "invalid tier in role"' _ "$H" "$e" "$a"
+  done
+  check_not "skills take no tier" "$H" configure --yes -C "$e" --skills 'x=fast'
+  check "a rejected run writes nothing" test -z "$(git -C "$e" status --porcelain --untracked-files=all | grep -v pyproject.toml)"
+
+  # A module's own role template is held to the same values, in its
+  # frontmatter; the body may say anything.
+  mkdir -p "$WORK/tiermod"
+  printf '%s\n' '---' 'name: r' 'description: d' 'access: read' 'tier: fast' '---' 'tier: turbo' >"$WORK/tiermod/good.md"
+  printf '%s\n' '---' 'name: r' 'description: d' 'access: read' 'tier: turbo' '---' 'tier: fast' >"$WORK/tiermod/bad.md"
+  printf '%s\n' '---' 'name: r' 'description: d' 'access: read' 'tier: fast' 'tier: deep' '---' 'Body.' >"$WORK/tiermod/twice.md"
+  _emit_role_alone() { # template -> emit_role's output and status, adapters stubbed out
+    env HARNESS_ROOT="$ROOT" HARNESS_TMP="$WORK" bash -c '
+      . "$HARNESS_ROOT/lib/util.sh" && . "$HARNESS_ROOT/lib/render.sh" && . "$HARNESS_ROOT/lib/agents.sh"
+      _agents_each() { :; }
+      MODULE_NAME=tiermod MODULE_DIR=$1 emit_role r "$2"' _ "$WORK/tiermod" "$1" 2>&1
+  }
+  check "emit_role accepts a known tier" _emit_role_alone good.md
+  for f in bad.md twice.md; do
+    if _emit_role_alone "$f" | grep -q 'unknown or repeated tier'; then ok; else fail "emit_role rejects $f"; fi
+  done
+}
+
 # Local data/model versioning: files out of git, hashes in artifacts.lock.
 test_artifacts_module() {
   local d out

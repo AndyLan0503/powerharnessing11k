@@ -289,7 +289,7 @@ _wizard_stubs() {
     ui_note "Skills (.agents/skills/<name>/SKILL.md), e.g. run-solver"
     ui_line "Skills  " "${HV_SKILLS:--}"
     HV_SKILLS=$UI_LINE
-    ui_note "Subagents, e.g. model-checker"
+    ui_note "Subagents, e.g. model-checker; add =fast, =standard, or =deep to set a model tier"
     ui_line "Roles   " "${HV_ROLES:--}"
     HV_ROLES=$UI_LINE
     ui_note "Path-scoped rules as name=glob[,glob], e.g. solver=src/*/solver/**"

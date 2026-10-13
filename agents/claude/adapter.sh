@@ -5,7 +5,8 @@
 #                 resolves imports relative to the importing file)
 #   rules         .claude/rules/<name>.md (the neutral format is Claude's own)
 #   skills        .claude/skills -> ../.agents/skills (Claude reads only .claude/skills)
-#   roles         .claude/agents/<name>.md, access translated to a tool list
+#   roles         .claude/agents/<name>.md, access translated to a tool list,
+#                 tier to a model alias
 #   settings      .claude/settings.json: permissions, hooks, env
 AGENT_TITLE="Claude Code"
 # shellcheck disable=SC2034 # read by lib/agents.sh
@@ -42,6 +43,10 @@ agent_claude_role() { # name file
     /^access: read$/ { print "tools: Read, Grep, Glob"; next }
     /^access: read-run$/ { print "tools: Read, Grep, Glob, Bash"; next }
     /^access: write$/ { print "tools: Read, Grep, Glob, Edit, Write, Bash"; next }
+    /^---$/ { fm++ }
+    fm == 1 && /^tier: fast$/ { print "model: haiku"; next }
+    fm == 1 && /^tier: standard$/ { print "model: sonnet"; next }
+    fm == 1 && /^tier: deep$/ { print "model: opus"; next }
     { print }' "$2" >"$out"
   apply_rendered file "$out" ".claude/agents/$1.md"
 }

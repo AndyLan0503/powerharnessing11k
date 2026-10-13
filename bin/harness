@@ -60,7 +60,8 @@ Options:
 
 Project-specific stubs (blank files with instructions for the team to fill in):
       --skills LIST     Skill names, e.g. "model-formulation,solver-tuning"
-      --roles LIST      Subagent role names, e.g. "formulation-reviewer"
+      --roles LIST      Subagent role names, e.g. "formulation-reviewer"; name=fast|standard|deep
+                        sets a model tier (default: the caller's model)
       --rules LIST      Path-scoped rules as name=glob[,glob], space-separated,
                         e.g. "solver=src/solver/** benchmarks=benchmarks/**"
       --dirs LIST       Extra directories to scaffold with a README, e.g. "infra"

@@ -2,12 +2,18 @@
 name: {{ITEM_NAME}}
 description: "TODO(team): what this role does and when to delegate to it. The agent reads this to decide when to use the subagent."
 access: read
+{{#if ITEM_TIER}}
+tier: {{ITEM_TIER}}
+{{/if}}
 ---
 
 <!-- TODO(team): write this role's instructions, then delete this comment.
 
 A role (subagent) runs in its own fresh context with limited tools (read-only
 by default; widen it only if the role truly needs to run commands or edit).
+It runs on the caller's model unless this file says otherwise. Give it a
+cheaper, faster setting only for bounded lookups and summaries; a role that
+judges someone else's work should keep the caller's model.
 Describe:
 
 1. Who it is and what it is responsible for (one paragraph).

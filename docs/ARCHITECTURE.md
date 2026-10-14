@@ -4,7 +4,7 @@
 setup.sh             the entry point users run (wizard by default)
 bin/harness          CLI: argument parsing and commands
 lib/
-  ui.sh              p10k-style terminal UI (one question per screen, single keys)
+  ui.sh              p10k-style terminal UI (one question per screen, mark with a key, confirm with Enter)
   wizard.sh          the configuration questions
   detect.sh          stack, package-manager, and default-branch detection; per-stack commands
   modules.sh         module registry, profiles and tiers, derived template flags

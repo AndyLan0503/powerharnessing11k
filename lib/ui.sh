@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 # Terminal UI for the configuration wizard, in the spirit of `p10k configure`:
-# one question per screen, single-key answers, (r)estart and (q)uit everywhere.
+# one question per screen, a key marks the answer and Enter confirms it,
+# (r)estart and (q)uit everywhere.
 
 HARNESS_TTY=${HARNESS_TTY:-/dev/tty}
 
@@ -65,12 +66,13 @@ ui_line() { # prompt default
 }
 
 # ui_choose "Title" step total "opt1|desc1" "opt2|desc2" ...
-# Shows numbered options; sets UI_CHOICE to the 1-based index.
+# Shows numbered options. A number key marks that option and echoes it after
+# the prompt; Enter confirms the marked one. Sets UI_CHOICE to its 1-based index.
 # Returns 10 on restart, exits on quit.
 ui_choose() {
   local title=$1 step=$2 total=$3
   shift 3
-  local n=0 opt label desc
+  local n=0 opt label desc sel=''
   while :; do
     ui_header "$step" "$total" "$title"
     n=0
@@ -78,26 +80,42 @@ ui_choose() {
       n=$((n + 1))
       label=${opt%%|*}
       desc=${opt#*|}
-      printf '  %s  %s\n' "${C_ACCENT}${C_BOLD}($n)${C_RESET}" "${C_BOLD}$label${C_RESET}"
+      printf '%s%s  %s\n' "$(_ui_marker "$n" "$sel")" "${C_ACCENT}${C_BOLD}($n)${C_RESET}" "$(_ui_label "$label" "$n" "$sel")"
       # A description may span lines; keep them all indented under the label.
       [ "$desc" = "$opt" ] || printf '       %s\n' "${C_DIM}${desc//$'\n'/$'\n'       }${C_RESET}"
       printf '\n'
     done
     ui_footer
-    printf '  %s ' "${C_BOLD}Choice [1-$n, r, q]:${C_RESET}"
-    ui_key
-    printf '\n'
+    _ui_prompt "1-$n, Enter, r, q" "$sel"
     case $UI_KEY in
       q | Q) ui_quit ;;
       r | R) return 10 ;;
-      [1-9])
-        if [ "$UI_KEY" -le "$n" ]; then
-          UI_CHOICE=$UI_KEY
+      '')
+        if [ -n "$sel" ]; then
+          UI_CHOICE=$sel
           return 0
         fi
         ;;
+      [1-9]) [ "$UI_KEY" -gt "$n" ] || sel=$UI_KEY ;;
     esac
   done
+}
+
+# "> " in front of the marked option, two spaces in front of the others.
+_ui_marker() { # index marked
+  if [ "$1" = "$2" ]; then printf '%s ' "${C_ACCENT}${C_BOLD}>${C_RESET}"; else printf '  '; fi
+}
+
+# A label, in the accent color when its option is marked.
+_ui_label() { # label index marked
+  if [ "$2" = "$3" ]; then printf '%s' "${C_ACCENT}${C_BOLD}$1${C_RESET}"; else printf '%s' "${C_BOLD}$1${C_RESET}"; fi
+}
+
+# The choice prompt, with the marked answer echoed after it. Reads one key into UI_KEY.
+_ui_prompt() { # keys marked
+  printf '  %s %s' "${C_BOLD}Choice [$1]:${C_RESET}" "${2:+${C_ACCENT}${C_BOLD}$2${C_RESET}  ${C_DIM}Enter to confirm${C_RESET}}"
+  ui_key
+  printf '\n'
 }
 
 # ui_checklist "Title" step total "note" "preselected indexes" "opt1" "opt2" ...
@@ -139,19 +157,23 @@ ui_checklist() {
 }
 
 ui_yesno() { # title step total question -> returns 0 yes / 1 no / 10 restart
-  local title=$1 step=$2 total=$3 q=$4
+  local title=$1 step=$2 total=$3 q=$4 sel=''
   while :; do
     ui_header "$step" "$total" "$title"
     printf '  %s\n\n' "$q"
-    printf '  %s  Yes\n\n' "${C_ACCENT}${C_BOLD}(y)${C_RESET}"
-    printf '  %s  No\n' "${C_ACCENT}${C_BOLD}(n)${C_RESET}"
+    printf '%s%s  %s\n\n' "$(_ui_marker y "$sel")" "${C_ACCENT}${C_BOLD}(y)${C_RESET}" "$(_ui_label Yes y "$sel")"
+    printf '%s%s  %s\n' "$(_ui_marker n "$sel")" "${C_ACCENT}${C_BOLD}(n)${C_RESET}" "$(_ui_label No n "$sel")"
     ui_footer
-    printf '  %s ' "${C_BOLD}Choice [ynrq]:${C_RESET}"
-    ui_key
-    printf '\n'
+    _ui_prompt "y, n, Enter, r, q" "$sel"
     case $UI_KEY in
-      y | Y) return 0 ;;
-      n | N) return 1 ;;
+      y | Y) sel=y ;;
+      n | N) sel=n ;;
+      '')
+        case $sel in
+          y) return 0 ;;
+          n) return 1 ;;
+        esac
+        ;;
       r | R) return 10 ;;
       q | Q) ui_quit ;;
     esac

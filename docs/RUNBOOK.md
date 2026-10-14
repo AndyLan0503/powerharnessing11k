@@ -143,7 +143,7 @@ cd ~/work/my-project        # an empty folder is fine; it offers to run git init
 ~/powerharnessing11k/setup.sh
 ```
 
-Ten screens, one key each. `r` restarts, `q` quits without writing anything.
+Ten screens. Press a key to mark your answer (it is highlighted and echoed after the prompt), then Enter to confirm it; pressing another key first changes the answer. `r` restarts, `q` quits without writing anything.
 
 | # | Screen | Tip |
 |:-:|---|---|
@@ -156,7 +156,7 @@ Ten screens, one key each. `r` restarts, `q` quits without writing anything.
 | 7 | Project-specific stubs | Type the names from Step 1 |
 | 8 | Who must review changes | CODEOWNERS entries, for example `@acme/platform` |
 | 9 | Telemetry | "No" unless you already run an OpenTelemetry collector. Asked only when Claude Code is selected |
-| 10 | Ready to apply | Read the summary, including what each agent does and does not get, then `y` |
+| 10 | Ready to apply | Read the summary, including what each agent does and does not get, then `y` and Enter |
 
 If you pick GitHub Copilot: the CLI uses the hooks once you trust the folder, and the cloud agent reads the hooks, agents, and instructions from the default branch, so they apply after your bootstrap PR is merged.
 

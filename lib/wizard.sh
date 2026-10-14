@@ -1,6 +1,6 @@
 # shellcheck shell=bash
-# The interactive configuration wizard (`harness configure`). Every question
-# can be answered with one key; (r) restarts, (q) quits without changes.
+# The interactive configuration wizard (`harness configure`). A key marks an
+# answer and Enter confirms it; (r) restarts, (q) quits without changes.
 
 # Steps are numbered as they run; the agents step is skipped while only one
 # coding agent is available.
@@ -215,27 +215,27 @@ _wizard_steps() {
   # Confirm ---------------------------------------------------------------
   WIZ_STEP=$((WIZ_STEP + 1))
   derive_vars
+  local sel=''
   while :; do
     ui_header "$WIZ_STEP" "$WIZ_TOTAL" "Ready to apply"
     _wizard_summary
-    printf '  %s  Apply to %s\n\n' "${C_ACCENT}${C_BOLD}(y)${C_RESET}" "${C_BOLD}$TARGET${C_RESET}"
+    printf '%s%s  Apply to %s\n\n' "$(_ui_marker y "$sel")" "${C_ACCENT}${C_BOLD}(y)${C_RESET}" "$(_ui_label "$TARGET" y "$sel")"
     if [ -n "${LOCAL_ONLY:-}" ]; then
       printf '  %s  Local only: %s\n' "${C_ACCENT}${C_BOLD}(l)${C_RESET}" "${C_BOLD}on${C_RESET}${C_DIM}, everything written stays out of git on this machine (press l to turn off)${C_RESET}"
     else
       printf '  %s  Local only: %s\n' "${C_ACCENT}${C_BOLD}(l)${C_RESET}" "off${C_DIM}, the files are meant to be committed (press l to keep them out of git on this machine instead)${C_RESET}"
     fi
     ui_footer
-    printf '  %s ' "${C_BOLD}Choice [ylrq]:${C_RESET}"
-    ui_key
-    printf '\n'
+    _ui_prompt "y, Enter, l, r, q" "$sel"
     case $UI_KEY in
       l | L)
         if [ -n "${LOCAL_ONLY:-}" ]; then LOCAL_ONLY=''; else LOCAL_ONLY=1; fi
         export LOCAL_ONLY
         ;;
-      y | Y) return 0 ;;
+      y | Y) sel=y ;;
+      '') [ -z "$sel" ] || return 0 ;;
       r | R) return 10 ;;
-      q | Q | n | N) ui_quit ;;
+      q | Q) ui_quit ;;
     esac
   done
 }

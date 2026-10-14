@@ -56,7 +56,7 @@ Working with coding agents in a shared repository goes well when a handful of th
 
 powerharnessing11k does it in about a minute, from the practices in Anthropic's Claude Certified Architect exam guides ([how they map](docs/CCAR-ALIGNMENT.md)), and then **leaves**. Everything it writes is plain files your team owns.
 
-- 🧙 **A p10k-style wizard.** One question per screen, single-key answers, `r` to restart, `q` to quit and change nothing.
+- 🧙 **A p10k-style wizard.** One question per screen: press a key to mark your answer, Enter to confirm it, `r` to restart, `q` to quit and change nothing.
 - 🎯 **Five profiles.** Software, data science & ML, agentic apps, self-paced study, and research, each in minimal / recommended / strict tiers.
 - 🛡️ **Guardrails that hold.** Hooks block force-pushes, `--no-verify`, `curl | sh`, secret access, and pushes to `main`. Every block is logged and explained to the agent.
 - 🔍 **An independent AI review gate.** A fresh Claude instance reviews every PR against your own criteria; a scorecard and weekly digest keep score.
@@ -92,34 +92,11 @@ Prefer no questions? Everything has a flag. Run this from inside the project fol
 
 ## 🧙 The wizard
 
-```
-           _   _   _
-   _ __   / | / | | | __
-  | '_ \  | | | | | |/ /
-  | |_) | | | | | |   <
-  | .__/  |_| |_| |_|\_\
-  |_|
+<p align="center">
+  <img src="docs/demo/wizard.gif" alt="The powerharnessing11k wizard setting up an empty folder: ten questions, each answer marked and then confirmed with Enter, then a summary of the files written and the next steps" width="900">
+</p>
 
-  powerharnessing11k  one-shot agentic harness configurator · v0.1.0
-
-  [3/10]  These commands will be used by hooks, CI, and agent docs. OK?
-
-  (1)  Use them
-       install     uv sync
-       lint        uv run ruff check . && uv run ruff format --check .
-       typecheck   uv run mypy
-       test        uv run pytest -m "not slow and not benchmark"
-       full tests  uv run pytest
-       format      uv run ruff format {file}
-
-  (2)  Edit them
-       Type each command; Enter keeps the default, '-' clears it
-
-  (r)  Restart from the beginning.
-  (q)  Quit and do nothing.
-
-  Choice [1-2, r, q]:
-```
+Press a key to mark an answer, then Enter to confirm it; the marked option is highlighted, so you can change your mind first. `r` restarts and `q` quits without writing anything, on every screen.
 
 | Step | Question | Notes |
 |:-:|---|---|

@@ -710,6 +710,46 @@ EOF
   check "out-of-range keys are ignored and r restarts" grep -q 'RESULT=\[1\] rc=10' "$out"
 }
 
+# A number key only marks an answer; Enter confirms it.
+test_ui_choose() {
+  command -v python3 >/dev/null 2>&1 || { ok; return; }
+  local out=$WORK/choose.out script=$WORK/choose.sh
+  cat >"$script" <<EOF
+#!/usr/bin/env bash
+HARNESS_ROOT='$ROOT'
+. '$ROOT/lib/util.sh'
+. '$ROOT/lib/ui.sh'
+ui_init
+rc=0
+if [ "\${1:-}" = yesno ]; then
+  ui_yesno "Ask" 1 1 "Include it?" || rc=\$?
+  echo "RESULT=yesno rc=\$rc"
+else
+  ui_choose "Pick" 1 1 "Alpha|a" "Beta|b" "Gamma|c" || rc=\$?
+  echo "RESULT=[\${UI_CHOICE:-}] rc=\$rc"
+fi
+EOF
+  chmod +x "$script"
+  # Enter alone picks nothing; a key marks, another key changes the mark.
+  printf '%s\n' 'line:' key:2 key:3 'line:' | HARNESS_NO_CLEAR=1 NO_COLOR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$script"
+  check "enter without a mark is ignored, the last mark wins" grep -q 'RESULT=\[3\] rc=0' "$out"
+  check "the marked option is shown" grep -q '^> (3)  Gamma$' "$out"
+  check "the marked key is echoed" grep -q 'Choice \[1-3, Enter, r, q\]: 3  Enter to confirm' "$out"
+  printf '%s\n' key:9 'line:' 'line:2' | HARNESS_NO_CLEAR=1 NO_COLOR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$script"
+  check_not "an out-of-range key is not marked" grep -q ': 9  Enter to confirm' "$out"
+  check "nor confirmed by Enter" grep -q 'RESULT=\[2\] rc=0' "$out"
+  printf '%s\n' key:2 key:r | HARNESS_NO_CLEAR=1 NO_COLOR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$script"
+  check "r restarts, even with a mark" grep -q 'RESULT=\[\] rc=10' "$out"
+  printf '%s\n' key:1 key:q | HARNESS_NO_CLEAR=1 NO_COLOR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$script"
+  check "q quits without confirming" grep -q 'Nothing was changed' "$out"
+  check_not "q never returns a choice" grep -q 'RESULT=' "$out"
+  printf '%s\n' key:y 'line:n' | HARNESS_NO_CLEAR=1 NO_COLOR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$script" yesno
+  check "yes/no: the last mark is confirmed" grep -q 'RESULT=yesno rc=1' "$out"
+  check "yes/no: the mark is shown" grep -q '^> (y)  Yes$' "$out"
+  printf '%s\n' 'line:' key:y key:r | HARNESS_NO_CLEAR=1 NO_COLOR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$script" yesno
+  check "yes/no: Enter without a mark is ignored, r restarts" grep -q 'RESULT=yesno rc=10' "$out"
+}
+
 test_minimal_tier() {
   local d
   d=$(new_repo minimal package.json)
@@ -1567,9 +1607,9 @@ test_wizard_flow() {
   git -C "$d" init -q -b main
   # profile, stack, commands, agents (add Codex CLI to the preselected Claude
   # Code), tier, artifacts, stubs (one invalid dir first), owners, telemetry, apply
-  printf '%s\n' key:1 key:2 key:1 key:2 line: key:2 key:1 key:2 \
+  printf '%s\n' line:1 line:2 line:1 key:2 line: line:2 line:1 line:2 \
     line:formulate line:- line:- 'line:../evil' key:x \
-    line:formulate line:- line:- line:infra line: key:1 key:y |
+    line:formulate line:- line:- line:infra line: line:1 line:y |
     HARNESS_NO_CLEAR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$H" configure -C "$d"
   check "banner names the tool" grep -q 'powerharnessing11k' "$out"
   check "ten steps" grep -q '\[10/10\]' "$out"
@@ -1579,6 +1619,9 @@ test_wizard_flow() {
   check "next steps tell Codex users to approve the hooks" grep -q 'run /hooks and approve' "$out"
   check_not "empty folder: no stack marked" grep -q '← detected\|generic.*← ' "$out"
   check "commands one per line" grep -qE '^ +typecheck +uv run mypy$' "$out"
+  check "the picked option is marked before Enter" grep -q '^> (2)  python$' "$out"
+  check "and echoed after the prompt" grep -q 'Choice \[1-5, Enter, r, q\]: 2  Enter to confirm' "$out"
+  check "applying is confirmed with Enter too" grep -q '^> (y)  Apply to ' "$out"
   check "invalid stub re-asked" grep -q "invalid directory '../evil'" "$out"
   check "summary before apply" grep -q 'Skills       formulate' "$out"
   check "applied" test -f "$d/.agents/skills/formulate/SKILL.md"
@@ -1587,18 +1630,21 @@ test_wizard_flow() {
   check_not "invalid dir not created" test -e "$WORK/wiz/evil"
   check "next steps list TODO files" grep -qE '^ +\.agents/skills/formulate/SKILL\.md$' "$out"
 
-  # The confirm screen can switch on local-only mode.
+  # The confirm screen can switch on local-only mode. Enter without a mark
+  # does nothing there, and l keeps the mark on Apply.
   d=$(new_repo wiz-local)
-  printf '%s\n' key:1 key:2 key:1 line: key:2 key:2 key:1 line: key:1 key:l key:y |
+  printf '%s\n' line:1 line:2 line:1 line: line:2 line:2 line:1 line: line:1 line: key:y key:l line: |
     HARNESS_NO_CLEAR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$H" configure -C "$d"
   check "confirm screen offers local only" grep -q '(l)  Local only: off' "$out"
   check "pressing l turns it on" grep -q '(l)  Local only: on' "$out"
+  check "Enter without a mark only redraws the confirm screen" test "$(grep -c 'Ready to apply' "$out")" -eq 4
+  check "l keeps Apply marked" sh -c "grep -B2 '(l)  Local only: on' '$out' | grep -q '^> (y)  Apply to '"
   check "and it is applied" git -C "$d" check-ignore -q AGENTS.md
   check "git sees nothing" test -z "$(git -C "$d" status --porcelain --untracked-files=all)"
 
   # Codex CLI alone: no Claude Code telemetry question, so one step fewer.
   d=$(new_repo wiz-codex)
-  printf '%s\n' key:1 key:2 key:1 key:1 key:2 line: key:2 key:2 key:1 line: key:y |
+  printf '%s\n' line:1 line:2 line:1 key:1 key:2 line: line:2 line:2 line:1 line: line:y |
     HARNESS_NO_CLEAR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$H" configure -C "$d"
   check "codex only: nine steps" grep -q '\[9/9\]  Ready to apply' "$out"
   check_not "codex only: no telemetry question" grep -q 'Export Claude Code telemetry' "$out"
@@ -1607,9 +1653,75 @@ test_wizard_flow() {
 
   # An existing project: its stack is marked as detected.
   d=$(new_repo wiz-go go.mod)
-  printf '%s\n' key:1 key:q | HARNESS_NO_CLEAR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$H" configure -C "$d"
+  printf '%s\n' line:1 key:q | HARNESS_NO_CLEAR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$H" configure -C "$d"
   check "detected stack marked" grep -q 'Go modules  ← detected' "$out"
   check "quit writes nothing" test ! -e "$d/AGENTS.md"
+}
+
+# Visible keystrokes of a VHS tape as drive-tty.py inputs: a Type followed by
+# Enter is a line, any other Type is a single key, and a bare Enter is an
+# empty line; "Enter N" repeats. Hide/Show sections (the demo's setup and
+# cleanup) are skipped. Any other visible keystroke command (Backspace, Tab,
+# Ctrl+..., a backtick-quoted Type) fails, so the replay never differs from
+# what the recording shows.
+_tape_inputs() {
+  awk '
+    function flush() { if (have) print "key:" pending; have = 0 }
+    function bad() { print "unsupported visible tape command at line " NR ": " $0 > "/dev/stderr"; failed = 1; exit 1 }
+    $1 == "Hide" { hidden = 1; next }
+    $1 == "Show" { hidden = 0; next }
+    hidden || NF == 0 || $1 ~ /^#/ { next }
+    $1 ~ /^(Output|Require|Set|Env|Sleep|Wait|Screenshot)$/ || $1 ~ /^Wait[@+]/ { next }
+    $1 ~ /^Type(@[^ ]+)?$/ {
+      s = $0
+      if (!sub(/^Type(@[^ ]+)? "/, "", s) || !sub(/"[ \t]*$/, "", s)) bad()
+      flush()
+      pending = s; have = 1
+      next
+    }
+    $1 ~ /^Enter(@[^ ]+)?$/ {
+      n = (NF > 1) ? $2 : 1
+      if (n !~ /^[0-9]+$/ || NF > 2) bad()
+      for (i = 0; i < n; i++) { print "line:" (have ? pending : ""); have = 0 }
+      next
+    }
+    { bad() }
+    END { if (!failed) flush() }
+  ' "$1"
+}
+
+demo_test_tape_inputs() {
+  local t=$WORK/t.tape
+  printf '%s\n' 'Hide' 'Type `secret`' 'Enter' 'Show' '# note' 'Type "1"' 'Sleep 1s' 'Type@100ms "ab"' 'Enter 2' 'Type "q"' >"$t"
+  check "keys, lines, and repeated Enter" test "$(_tape_inputs "$t" | tr '\n' ' ')" = 'key:1 line:ab line: key:q '
+  printf '%s\n' 'Type "formulat"' 'Backspace' 'Type "e"' 'Enter' >"$t"
+  check_not "a visible Backspace is refused" _tape_inputs "$t"
+  printf '%s\n' 'Type `ls`' 'Enter' >"$t"
+  check_not "a visible backtick Type is refused" _tape_inputs "$t"
+}
+
+# The README demo (docs/demo/wizard.tape) replays against the real wizard.
+# Opt-in (DEMO_TESTS=1): `make demo` runs it before re-recording, so a tape
+# that no longer drives the wizard fails before anything is recorded.
+demo_test_tape() {
+  command -v python3 >/dev/null 2>&1 || { ok; return; }
+  local tape=$ROOT/docs/demo/wizard.tape d=$WORK/demo/opt-engine out=$WORK/demo.out inputs
+  inputs=$(_tape_inputs "$tape") || { fail "the demo tape uses keystrokes the replay does not support"; return; }
+  check "the demo starts by running setup.sh" test "$(head -n 1 <<<"$inputs")" = 'line:~/powerharnessing11k/setup.sh'
+  rm -rf "$WORK/demo"
+  mkdir -p "$d"
+  # An empty, non-git folder, like the demo's; the first input is the command
+  # itself, so run the same entry point.
+  tail -n +2 <<<"$inputs" | (cd "$d" && python3 "$ROOT/tests/drive-tty.py" "$out" "$ROOT/setup.sh")
+  check "the demo offers git init" grep -q 'is not a git repository. Initialize one here?' "$out"
+  check "the demo walks all ten steps" grep -q '\[10/10\]  Ready to apply' "$out"
+  check "the demo finishes" grep -q 'Bootstrapped ' "$out"
+  check_not "the demo never re-asks" grep -q 'invalid\|timed out' "$out"
+  check "the demo sets up both agents" test -f "$d/.claude/settings.json" -a -f "$d/.codex/config.toml"
+  check "the demo's stubs exist" test -f "$d/.agents/skills/run-solver/SKILL.md" -a -f "$d/.claude/rules/solver.md"
+  check "the demo's owners are used" grep -q '@acme/opt' "$d/.github/CODEOWNERS"
+  check "the demo versions artifacts" test -f "$d/artifacts.lock"
+  check "the recorded GIF is committed" test -s "$ROOT/docs/demo/wizard.gif"
 }
 
 test_summary_output() {
@@ -1832,7 +1944,10 @@ test_cli_errors() {
   check "list works" "$H" list
 }
 
-for t in $(declare -F | awk '{print $3}' | grep '^test_'); do run_test "$t"; done
+# demo_test_* functions check the README demo; they run only with DEMO_TESTS=1.
+demo='^test_'
+[ -z "${DEMO_TESTS:-}" ] || demo='^demo_test_'
+for t in $(declare -F | awk '{print $3}' | grep -e '^test_' -e "$demo"); do run_test "$t"; done
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

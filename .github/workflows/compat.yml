@@ -2,10 +2,35 @@
 # i.e. bash 3.2 and BSD awk/sed. ci.yml covers Linux.
 name: macOS compatibility
 
+# Only changes to shell code (the engine, the templates whose hooks run on
+# users' machines, and the tests) can break bash 3.2; docs-only changes skip
+# this slow macOS job. If bash32 becomes a required check, replace the path
+# filters with a job that always starts and exits early, or such PRs will
+# wait for it forever.
 on:
   pull_request:
+    paths: # keep in sync with push.paths
+      - 'bin/**'
+      - 'lib/**'
+      - 'modules/**'
+      - 'agents/**'
+      - 'profiles/**'
+      - 'tests/**'
+      - 'setup.sh'
+      - 'Makefile'
+      - '.github/workflows/compat.yml'
   push:
     branches: [main]
+    paths:
+      - 'bin/**'
+      - 'lib/**'
+      - 'modules/**'
+      - 'agents/**'
+      - 'profiles/**'
+      - 'tests/**'
+      - 'setup.sh'
+      - 'Makefile'
+      - '.github/workflows/compat.yml'
 
 permissions:
   contents: read

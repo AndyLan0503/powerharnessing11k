@@ -15,7 +15,7 @@ This repo is built by humans and coding agents together. The rules and the check
 
 - Lint: `make lint`
 - Test: `make test`
-- Demo: `make demo` re-records the README's wizard GIF with [VHS](https://github.com/charmbracelet/vhs). `make test` replays the keystrokes in `docs/demo/wizard.tape` against the wizard, so it fails if the tape no longer drives the wizard to the end. It also fails when the tape, `lib/ui.sh`, or `lib/wizard.sh` changed after the last `make demo` (`docs/demo/wizard.fingerprint`); re-record then. Other text on the screens (profile, module, and agent descriptions) is not tracked, so re-record after changing those too.
+- Demo: `make demo` re-records the README's wizard GIF with [VHS](https://github.com/charmbracelet/vhs). Re-record only when the wizard changes visibly enough that the GIF misleads (new or reordered steps, different keys); small wording changes don't need it. `make demo` first runs `make demo-check`, which replays the keystrokes in `docs/demo/wizard.tape` against the wizard and stops if the tape no longer drives it to the end. These checks are not part of `make test` or CI.
 
 ## Working with agents
 

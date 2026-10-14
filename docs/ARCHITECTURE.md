@@ -45,7 +45,7 @@ Modules never name a coding agent's paths or syntax. See [design/providers.md](d
 |---|---|---|
 | `emit_skill NAME SRC` | Agent Skills format (`name`, `description`) | `.agents/skills/NAME/SKILL.md`, one copy for all agents |
 | `emit_rule NAME SRC` | Markdown whose second line is `paths: ["glob", ...]` | each adapter, e.g. `.claude/rules/NAME.md` |
-| `emit_role NAME SRC` | frontmatter `name`, `description`, `access: read \| read-run \| write` | each adapter, e.g. `.claude/agents/NAME.md` with a tool list |
+| `emit_role NAME SRC` | frontmatter `name`, `description`, `access: read \| read-run \| write`, optional `tier: fast \| standard \| deep` | each adapter, e.g. `.claude/agents/NAME.md` with a tool list and, for a tier, a model alias |
 | `emit_hook SRC` | a script that sources `lib.sh` and uses `hook_command`, `hook_file`, `hook_block` | `.agents/hooks/`, called as `<script> <agent>` |
 | `settings_hook EVENT SCRIPT [TIMEOUT]` | `session-start`, `pre-shell`, `pre-edit`, `post-edit`, `post-tool`, `stop` | each adapter's hook config |
 | `settings_allow_cmd` / `settings_ask_cmd` / `settings_deny_cmd` | a command prefix, e.g. `'make test'` | each adapter's permission syntax |

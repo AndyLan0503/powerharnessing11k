@@ -7,7 +7,7 @@
 #   agent_<name>_begin               files the agent always needs
 #   agent_<name>_skill NAME          a skill was written to .agents/skills/NAME
 #   agent_<name>_rule NAME FILE      a rendered rule (frontmatter: paths)
-#   agent_<name>_role NAME FILE      a rendered role (frontmatter: name, description, access)
+#   agent_<name>_role NAME FILE      a rendered role (frontmatter: name, description, access, tier)
 #   agent_<name>_finish              settings, from lib/settings.sh's store
 #
 # Neutral formats:
@@ -18,6 +18,10 @@
 #   role   Markdown with frontmatter name, description, and
 #          `access: read | read-run | write` (read files; also run commands;
 #          also edit files). Adapters translate access into tool limits.
+#          Optional `tier: fast | standard | deep` says how much model the
+#          role needs; adapters translate it into a model alias or an effort
+#          level, never a versioned model id. Without it the role inherits
+#          the caller's model.
 
 ALL_AGENTS="claude codex copilot"
 SKILLS_DIR=.agents/skills
@@ -187,6 +191,11 @@ emit_role() {
   _render_module_template "$2"
   grep -Eq '^access: (read|read-run|write)$' "$RENDERED" ||
     harness_die "module $MODULE_NAME: role $2 needs 'access: read|read-run|write' in its frontmatter"
+  # The tier is read from the frontmatter only: at most one, and a known one.
+  awk '/^---$/ { fm++; next }
+    fm == 1 && /^tier:/ { n++; if ($0 !~ /^tier: (fast|standard|deep)$/) bad = 1 }
+    END { exit (bad || n > 1) }' "$RENDERED" ||
+    harness_die "module $MODULE_NAME: role $2 has an unknown or repeated tier (use one 'tier: fast|standard|deep', or leave it out to inherit)"
   _agents_each role "$1" "$RENDERED"
 }
 

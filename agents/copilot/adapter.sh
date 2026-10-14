@@ -7,7 +7,9 @@
 #                 the remaining IDEs at it
 #   rules         .github/instructions/<name>.instructions.md with applyTo
 #   skills        .agents/skills/, read natively
-#   roles         .github/agents/<name>.agent.md, access translated to tool aliases
+#   roles         .github/agents/<name>.agent.md, access translated to tool aliases;
+#                 tier dropped (no model alias or effort key works on every
+#                 Copilot surface), so agents inherit the session's model
 #   settings      .github/hooks/guardrails.json   hook wiring
 #                 .github/mcp.json                team MCP servers (CLI)
 # Copilot has no repository-level file for allowing or denying commands, so
@@ -53,6 +55,8 @@ agent_copilot_role() { # name file
     /^access: read$/ { print "tools: [\"read\", \"search\"]"; next }
     /^access: read-run$/ { print "tools: [\"read\", \"search\", \"execute\"]"; next }
     /^access: write$/ { print "tools: [\"read\", \"search\", \"edit\", \"execute\"]"; next }
+    /^---$/ { fm++ }
+    fm == 1 && /^tier: / { next }
     { print }' "$2" >"$out"
   apply_rendered file "$out" ".github/agents/$1.agent.md"
 }

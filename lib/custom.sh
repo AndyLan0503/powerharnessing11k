@@ -4,7 +4,7 @@
 # blank, correctly placed files that tell the team what to write:
 #
 #   HV_SKILLS  "name name"            -> .agents/skills/<name>/SKILL.md
-#   HV_ROLES   "name name"            -> a subagent, per selected agent
+#   HV_ROLES   "name[=tier] name"     -> a subagent, per selected agent
 #   HV_RULES   "name=glob[,glob] ..." -> a path-scoped rule, per selected agent
 #   HV_DIRS    "dir dir/sub"          -> <dir>/README.md
 #
@@ -22,8 +22,18 @@ _dir_ok() {
 custom_validate() {
   local item name globs g
   set -f
-  for item in ${HV_SKILLS:-} ${HV_ROLES:-}; do
-    _name_ok "$item" || harness_die "invalid skill/role name '$item' (use lowercase letters, digits, and hyphens)"
+  for item in ${HV_SKILLS:-}; do
+    _name_ok "$item" || harness_die "invalid skill name '$item' (use lowercase letters, digits, and hyphens)"
+  done
+  for item in ${HV_ROLES:-}; do
+    _name_ok "${item%%=*}" || harness_die "invalid role name '${item%%=*}' (use lowercase letters, digits, and hyphens)"
+    case $item in *=*)
+      case ${item#*=} in
+        fast | standard | deep) ;;
+        *) harness_die "invalid tier in role '$item' (expected name=fast, name=standard, or name=deep)" ;;
+      esac
+      ;;
+    esac
   done
   for item in ${HV_RULES:-}; do
     case $item in *=*) ;; *) harness_die "invalid rule '$item' (expected name=glob[,glob])" ;; esac
@@ -54,9 +64,10 @@ custom_apply() {
     emit_skill "$item" skill.md
   done
   for item in ${HV_ROLES:-}; do
-    HV_ITEM_NAME=$item
-    export HV_ITEM_NAME
-    emit_role "$item" role.md
+    HV_ITEM_NAME=${item%%=*} HV_ITEM_TIER=''
+    case $item in *=*) HV_ITEM_TIER=${item#*=} ;; esac
+    export HV_ITEM_NAME HV_ITEM_TIER
+    emit_role "$HV_ITEM_NAME" role.md
   done
   set -f
   for item in ${HV_RULES:-}; do

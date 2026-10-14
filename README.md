@@ -219,6 +219,7 @@ Choose the agents your team uses (`--agents claude,codex,copilot`, or the checkl
 | Skills | `.claude/skills`, a link to `.agents/skills/` | `.agents/skills/`, read directly | `.agents/skills/`, read directly |
 | Path-scoped rules | `.claude/rules/*.md`, loaded only for matching files | inside `AGENTS.md`, each under a heading naming its paths (always loaded) | `.github/instructions/*.instructions.md`, loaded only for matching files |
 | Subagents | `.claude/agents/*.md`, with a tool list per role | `.codex/agents/*.toml`, with a sandbox level per role | `.github/agents/*.agent.md`, with a tool list per agent |
+| Model tier per role (`fast`, `standard`, `deep`) | a model alias (`haiku`, `sonnet`, `opus`) | a reasoning effort (`low`, `medium`, `high`) | none: agents use the session's model |
 | Command permissions | allow, ask, and deny lists in `.claude/settings.json` | prompt and forbid rules in `.codex/rules/default.rules`; everything else runs inside the sandbox set in `.codex/config.toml` | none at repository level; the guard hooks do the blocking |
 | Guard hooks | wired in `.claude/settings.json` | wired in `.codex/hooks.json` | wired in `.github/hooks/guardrails.json` |
 | Lint must pass before finishing | yes | yes | yes (CLI and cloud agent) |
@@ -260,6 +261,7 @@ powerharnessing11k doesn't know your domain (your solver, your data sources, you
 |---|---|
 | `--skills formulate,run-solver` | `.agents/skills/<name>/SKILL.md` with frontmatter and a step-by-step template |
 | `--roles model-checker` | a subagent for each selected agent (`.claude/agents/<name>.md`), read-only by default |
+| `--roles "log-triage=fast planner=deep"` | the same, with a model tier (`fast`, `standard`, or `deep`). Without one, a role runs on the caller's model, as the shipped `reviewer` and `test-writer` do. No versioned model name is ever written |
 | `--rules "solver=src/solver/** bench=benchmarks/**"` | a path-scoped rule for each selected agent (`.claude/rules/<name>.md`), loaded only for matching paths |
 | `--dirs "infra experiments"` | `<dir>/README.md` |
 

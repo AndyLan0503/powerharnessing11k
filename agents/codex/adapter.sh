@@ -4,7 +4,8 @@
 #   instructions  AGENTS.md, read natively
 #   rules         no path scoping: routed into AGENTS.md (always loaded)
 #   skills        .agents/skills/, read natively
-#   roles         .codex/agents/<name>.toml, access translated to a sandbox mode
+#   roles         .codex/agents/<name>.toml, access translated to a sandbox mode,
+#                 tier to a reasoning effort (Codex has no model aliases)
 #   settings      .codex/config.toml   approval policy, sandbox, MCP servers
 #                 .codex/rules/default.rules   allowed, prompted, forbidden commands
 #                 .codex/hooks.json    hook wiring (same events and payloads as
@@ -34,7 +35,7 @@ agent_codex_rule() { # name file
 _codex_toml_str() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 
 agent_codex_role() { # name file
-  local name=$1 file=$2 out=$2.codex desc access sandbox
+  local name=$1 file=$2 out=$2.codex desc access sandbox effort
   desc=$(awk '/^description: / { sub(/^description: */, ""); print; exit }' "$file")
   # A quoted YAML description: drop the quotes and their escapes, keep the text.
   case $desc in
@@ -46,10 +47,17 @@ agent_codex_role() { # name file
     write) sandbox=workspace-write ;;
     *) sandbox=read-only ;;
   esac
+  case $(awk '/^---$/ { fm++ } fm == 1 && /^tier: / { print $2; exit }' "$file") in
+    fast) effort=low ;;
+    standard) effort=medium ;;
+    deep) effort=high ;;
+    *) effort='' ;;
+  esac
   {
     printf 'name = "%s"\n' "$(printf '%s' "$name" | tr '-' '_')"
     printf 'description = "%s"\n' "$(_codex_toml_str "$desc")"
     printf 'sandbox_mode = "%s"\n' "$sandbox"
+    [ -z "$effort" ] || printf 'model_reasoning_effort = "%s"\n' "$effort"
     printf 'developer_instructions = """\n'
     # The body after the frontmatter, escaped for a TOML multi-line string:
     # backslashes doubled, and a run of three quotes broken up. sed does the

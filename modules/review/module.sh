@@ -1,11 +1,12 @@
 # shellcheck shell=bash
-MODULE_DESC="AI review in the PR gate (claude -p, JSON-schema findings, per-file + cross-file passes), @claude mentions, docs/REVIEW.md (needs ANTHROPIC_API_KEY)"
+MODULE_DESC="AI review in the PR gate (claude -p, JSON-schema findings, per-file + cross-file passes), @claude mentions (with Claude Code), docs/REVIEW.md (needs ANTHROPIC_API_KEY)"
 
 module_apply() {
   emit exec ci/ai-review.sh scripts/ci/ai-review.sh
   emit file ci/findings.schema.json scripts/ci/review/findings.schema.json
   emit seed ci/criteria.md scripts/ci/review/criteria.md
-  emit file github/claude.yml .github/workflows/claude.yml
+  # @claude mentions in issues and PRs: only for teams that use Claude Code.
+  if list_has "$HV_AGENTS" claude; then emit file github/claude.yml .github/workflows/claude.yml; fi
   emit file REVIEW.md docs/REVIEW.md
   # The gate workflow normally comes with diff-guard; provide it if that's off.
   if [ -z "$HV_MOD_DIFF_GUARD" ]; then

@@ -66,7 +66,7 @@ paths: ["src/solver/**"]
 - ...
 ```
 
-**Skills: `.agents/skills/<name>/SKILL.md`.** A skill is a written procedure: numbered steps, how to verify the result, what to report. The agent sees only each skill's one-line description until the skill is needed, then loads the whole thing. You can also invoke one yourself with `/<name>`. Use skills for anything you would otherwise explain repeatedly: "how we run an experiment", "how we take a PR to green". This harness ships `review` (run the independent reviewer) and `handoff` (write a summary so a fresh session can continue the work). Skills live in `.agents/skills/`, a folder most agents read; Claude Code reaches it through the `.claude/skills` link.
+**Skills: `.agents/skills/<name>/SKILL.md`.** A skill is a written procedure: numbered steps, how to verify the result, what to report. The agent sees only each skill's one-line description until the skill is needed, then loads the whole thing. You can also invoke one yourself with `/<name>`. Use skills for anything you would otherwise explain repeatedly: "how we run an experiment", "how we take a PR to green". This harness ships `onboard` (draft the project context from the code), `review` (run the independent reviewer), and `handoff` (write a summary so a fresh session can continue the work). Skills live in `.agents/skills/`, a folder most agents read; Claude Code reaches it through the `.claude/skills` link.
 
 **Subagents (roles)** (for Claude Code: `.claude/agents/<name>.md`). A subagent is a separate agent with its own fresh context and its own restricted tool list. The main agent hands it a task and receives a summary back. Two reasons to use one:
 - *Independence.* The context that wrote a change is the worst one to review it, because it already believes its own reasoning. A `reviewer` subagent sees only the diff.
@@ -83,7 +83,7 @@ paths: ["src/solver/**"]
 | Before a file edit | `guard-paths.sh` | Blocks edits to secrets and protected paths |
 | After a file edit | `format-on-edit.sh` | Formats the file the agent just changed |
 | After any tool call | `audit-log.sh` | Appends one line to the audit log |
-| Agent tries to finish | `stop-checks.sh` | Runs lint and typecheck; a failure sends the agent back to fix it |
+| Agent tries to finish | `stop-checks.sh` | Runs lint and typecheck; a failure sends the agent back to fix what its change caused |
 
 When a hook blocks something, the agent is told why and what to do instead. A block is the system working as designed.
 
@@ -123,7 +123,7 @@ The wizard is quick. The decisions behind the answers deserve a few minutes of t
 | Decision | How to think about it |
 |---|---|
 | **Profile** | What is the repo for? `software` for apps, services, and libraries. `ml` when notebooks, datasets, and experiments are central. `agentic` when the product itself is an LLM app. `study` and `research` for solo learning and research work. A numerical or optimisation codebase is `software` plus data versioning. |
-| **Tier** | Start with `recommended`. `strict` adds AI review on every PR (needs an API key and has a running cost) and tighter guardrails. Move to strict once the team is comfortable. |
+| **Tier** | Start with `recommended`. `strict` adds AI review on every PR (needs an API key and has a running cost), tighter guardrails, a Makefile with test tiers, and security scanning (CodeQL, dependency review, Dependabot). Move to strict once the team is comfortable. |
 | **Data and models** | Does the project depend on data or model files that should not be in git yet must be reproducible? If yes, turn on artifact versioning. |
 | **Your domain** | List two or three procedures you expect to explain repeatedly (skills), any specialist reviewer you want (role), and the areas of code with their own conventions (rules). Names only. You fill them in later. |
 | **Who approves** | Which GitHub users or teams must review changes? They go in CODEOWNERS. |
@@ -181,10 +181,10 @@ Spend five minutes here before changing anything. Open these in order:
 1. `AGENTS.md` - what the agent reads first. Note the empty **Project context** section.
 2. `.claude/CLAUDE.md` - one import line. Then `.claude/settings.json` - the `allow` and `deny` lists, and which hook runs at which moment.
 3. `.agents/hooks/guard-bash.sh` - plain bash. Read the list of blocked patterns so you know what your agent cannot do.
-4. `Makefile` - the commands everyone shares. Run `make help`.
+4. The **Commands** section of `AGENTS.md` - the lint and test commands that hooks, CI, and agents all use. (Strict tier: the `Makefile` wraps them; run `make help`.)
 5. `.github/workflows/ci.yml` and `pr-gate.yml` - what happens to every PR.
 6. `docs/agents/HANDBOOK.md` - the team policy in plain language.
-7. `docs/TESTING.md` - the test tiers and rules.
+7. `docs/TESTING.md` (strict tier) - the test tiers and rules.
 
 ### Step 5: Prove the guardrails work
 
@@ -205,14 +205,14 @@ exit code: 2
 
 The last word on the command line names the agent calling the hook. Exit code 2 is the signal that tells Claude Code to stop the action. A harmless command such as `git status` in the same test exits 0.
 
-Then check the project itself is healthy:
+Then check the project itself is healthy: run the install, lint, and test commands listed under **Commands** in `AGENTS.md`. With the strict tier that is:
 
 ```sh
 make setup     # install dependencies and dev tools
 make check     # lint + typecheck + fast tests: the bar every PR must clear
 ```
 
-On a fresh Python scaffold both pass immediately.
+On a fresh strict-tier Python scaffold both pass immediately.
 
 ### Step 6: Write your project's context (the important step)
 
@@ -223,6 +223,8 @@ grep -rl 'TODO(team)' .
 ```
 
 Work through them in this order.
+
+**The shortcut:** ask your agent to run the `onboard` skill (`/onboard` in Claude Code). It reads the repository and drafts the entries below, leaving anything it cannot confirm as a `TODO(team)` question for you. Review its draft against the table below as carefully as you would a teammate's: every line will be read at the start of every session.
 
 **6a. `AGENTS.md`, the Project context section.** Six short entries. Aim for a page in total.
 
@@ -245,7 +247,7 @@ A test for each line: would a capable engineer who is new to this repo make a mi
 
 **6d. Role stubs, `.claude/agents/<name>.md`.** Write what this specialist checks, what it should ignore, and the exact shape of its report. Leave the tool list read-only unless the role truly needs to change files. A reviewer that can edit is no longer independent.
 
-**6e. The remaining TODOs.** `docs/TESTING.md` (your domain's invariants, reference cases with known answers, runtime budgets), `data/README.md` and `models/README.md` (where the files come from), and the description in `pyproject.toml`.
+**6e. The remaining TODOs.** `data/README.md` and `models/README.md` (where the files come from), if you version data. With the strict tier, also `docs/TESTING.md` (your domain's invariants, reference cases with known answers, runtime budgets) and the description in `pyproject.toml`.
 
 ### Step 7: Record your data and models (if you enabled artifacts)
 
@@ -295,7 +297,7 @@ claude
 and give it the task. Watch what the harness does:
 
 1. The agent starts already knowing your project, because it read `AGENTS.md`.
-2. It runs `make test` without asking, because that command is on the allow list.
+2. It runs your test command without asking, because that command is on the allow list.
 3. When it edits a test file, the testing rule loads.
 4. Its edits are formatted automatically.
 5. If it tries to finish with lint failing, the stop hook sends it back.
@@ -321,7 +323,7 @@ When an agent makes a mistake, ask which layer should have prevented it, and fix
 
 | What you observed | Fix |
 |---|---|
-| The agent lacked a fact about the project | Add one line to `AGENTS.md` |
+| The agent lacked a fact about the project | Add one line to `AGENTS.md` (or run the `onboard` skill to refresh the whole section) |
 | It broke a convention in one area of the code | Add or extend a rule in `.claude/rules/` |
 | You explained the same procedure a second time | Write a skill |
 | It did something that must never happen | Add a hook pattern or a deny rule |
@@ -353,7 +355,7 @@ Create the file by hand in the matching folder, copying the frontmatter from an 
 
 - **Each PR:** read the scorecard before the diff. It tells you where to look.
 - **Weekly:** read the digest issue. Rising reverts point to weak tasks or weak context. Review findings that people keep dismissing point to criteria that need editing or switching off.
-- **Monthly:** reread `AGENTS.md` as a team and delete what is stale. Shorter is better.
+- **Monthly:** reread `AGENTS.md` as a team and delete what is stale. Shorter is better. The `onboard` skill can propose the cuts: run it and review its diff.
 
 ### 3.5 When the gate blocks a PR
 
@@ -361,7 +363,7 @@ Read the scorecard. Fix what it names and push again. If a finding is wrong and 
 
 ### 3.6 Tests in tiers
 
-`make test` runs the fast tier on every change. `make test-all` runs everything, including slow, regression, and benchmark tests, and runs nightly in CI. Mark slow tests so the fast tier stays fast:
+With the strict tier's Makefile, `make test` runs the fast tier on every change. `make test-all` runs everything, including slow, regression, and benchmark tests, and runs nightly in CI. Mark slow tests so the fast tier stays fast:
 
 ```python
 @pytest.mark.slow
@@ -385,7 +387,8 @@ Agent context fills up. When a session has been running for a long time, run the
 | "Blocked by guardrail: ..." | A hook stopped a risky action | Read the reason. Usually there is a safer route. If the rule is wrong, see 3.2 |
 | A harmless command is blocked because its text contains a dangerous one | The guard matches command text, including quoted strings | Rephrase the command or put the text in a file. Narrow the hook pattern if it recurs |
 | CI shows Install, Lint, and Test as skipped | The project does not exist yet (no `package.json`, `go.mod`, ...) | Expected in a new repo: create the project (for Node, your framework's generator); the steps run once its manifest is committed |
-| The agent cannot finish; lint or typecheck keeps failing | The stop hook is doing its job | Let the agent fix it, or run `make lint` yourself to see the error |
+| The agent cannot finish; lint or typecheck keeps failing | The stop hook is doing its job | Let the agent fix it, or run the lint command yourself to see the error |
+| The agent reports lint or type errors it did not fix | They were there before its change, so it left them out of the task's scope | Fix them in a separate cleanup PR |
 | The agent keeps asking permission for the same command | The command is missing from the allow list | Add it to `permissions.allow` in `.claude/settings.json` |
 | Hooks do not run at all | Files lost their executable bit, or settings were not loaded | `chmod +x .agents/hooks/*.sh`, then restart your agent |
 | Hooks do not run in Copilot | The folder is not trusted (CLI), or the files are not on the default branch yet (cloud agent) | Trust the folder; merge the bootstrap PR |

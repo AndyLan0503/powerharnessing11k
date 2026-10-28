@@ -201,7 +201,9 @@ apply_todo_files() {
   while IFS="$(printf '\t')" read -r kind path _; do
     case $kind in created | appended | overwritten) ;; *) continue ;; esac
     [ -f "$TARGET/$path" ] || continue
-    if grep -q 'TODO(team)' "$TARGET/$path" 2>/dev/null; then printf '%s\n' "$path"; fi
+    # A marker inside `inline code` is text about the notes (as in the onboard
+    # skill), not a note to fill in.
+    if sed 's/`[^`]*`//g' "$TARGET/$path" 2>/dev/null | grep -q 'TODO(team)'; then printf '%s\n' "$path"; fi
   done <"$HARNESS_TMP/status" | awk '
     seen[$0]++ { next }
     $0 == "AGENTS.md" { first = $0; next }   # the one everybody must fill in

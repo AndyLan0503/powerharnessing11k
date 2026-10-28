@@ -1,5 +1,5 @@
 name: Agent task
-description: A well-scoped task intended for a coding agent (Claude Code, @claude, etc.)
+description: A well-scoped task intended for a coding agent
 labels: [agent-task]
 body:
   - type: markdown

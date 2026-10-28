@@ -254,6 +254,7 @@ next_steps() {
     while IFS= read -r f; do ui_info "       ${C_DIM}$f${C_RESET}"; done <<EOF
 $todos
 EOF
+    ui_info "     Or ask your coding agent to run the onboard skill: it drafts the project context from your code and helps with the rest."
     n=$((n + 1))
   fi
   if [ -n "$HV_PROJECT_MISSING" ]; then

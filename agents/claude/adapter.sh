@@ -17,6 +17,8 @@ AGENT_OWNED=".claude/"
 AGENT_PROTECTED=".claude/settings.json"
 # shellcheck disable=SC2034
 AGENT_COVERAGE="loaded only for matching paths|a tool list per role|allow, ask, and deny lists|lint and typecheck must pass"
+# shellcheck disable=SC2034
+AGENT_MCP='**Claude Code** reads `.mcp.json` and asks each person to approve its servers the first time; `/mcp` shows their status. Personal servers: `claude mcp add --scope user <name> ...`.'
 
 agent_claude_begin() {
   emit file CLAUDE.md.tmpl .claude/CLAUDE.md

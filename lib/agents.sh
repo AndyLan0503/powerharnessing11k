@@ -32,7 +32,7 @@ agent_field() {
   (
     # Start clean: an adapter that does not declare a field must not inherit
     # one from an adapter sourced earlier in this shell.
-    unset AGENT_TITLE AGENT_LAYOUT AGENT_OWNED AGENT_PROTECTED AGENT_COVERAGE AGENT_NEXT_STEP
+    unset AGENT_TITLE AGENT_LAYOUT AGENT_OWNED AGENT_PROTECTED AGENT_COVERAGE AGENT_NEXT_STEP AGENT_MCP
     # shellcheck disable=SC1090
     . "$HARNESS_ROOT/agents/$1/adapter.sh"
     eval "printf '%s' \"\${AGENT_$2:-}\""
@@ -48,21 +48,25 @@ agent_title() { agent_field "$1" TITLE; }
 #   PROTECTED_CASE     " | path" for a shell case pattern
 #   PROTECTED_REGEX    "|path$" for an extended regex
 #   AGENT_COVERAGE     Markdown table rows: what each agent gets, gaps included
+#   AGENT_MCP          Markdown bullets: where each agent reads team MCP servers,
+#                      and where a person adds their own
 # Adapters declare AGENT_LAYOUT, AGENT_OWNED (space-separated paths),
 # AGENT_PROTECTED (space-separated files, or "dir/*" for everything in a
 # directory), and AGENT_COVERAGE, four cells
 # separated by "|": path-scoped rules | subagent limits | command
 # permissions | checks before finishing.
 agents_export_vars() {
-  local a p layout='' owners='' text='' pcase='' regex='' coverage=''
+  local a p layout='' owners='' text='' pcase='' regex='' coverage='' mcp=''
   for a in $HV_AGENTS; do
-    AGENT_LAYOUT='' AGENT_OWNED='' AGENT_PROTECTED='' AGENT_COVERAGE='|||'
+    AGENT_LAYOUT='' AGENT_OWNED='' AGENT_PROTECTED='' AGENT_COVERAGE='|||' AGENT_MCP=''
     # shellcheck disable=SC1090
     . "$HARNESS_ROOT/agents/$a/adapter.sh"
     layout="${layout:+$layout
 }- $AGENT_LAYOUT"
     coverage="${coverage:+$coverage
 }| $AGENT_TITLE | ${AGENT_COVERAGE//|/ | } |"
+    [ -z "$AGENT_MCP" ] || mcp="${mcp:+$mcp
+}- $AGENT_MCP"
     for p in $AGENT_OWNED; do
       owners="${owners:+$owners
 }$(printf '%-23s %s' "/$p" "${HV_CODEOWNERS:-}")"
@@ -78,9 +82,9 @@ agents_export_vars() {
     done
     set +f
   done
-  HV_AGENT_LAYOUT=$layout HV_AGENT_CODEOWNERS=$owners HV_AGENT_COVERAGE=$coverage
+  HV_AGENT_LAYOUT=$layout HV_AGENT_CODEOWNERS=$owners HV_AGENT_COVERAGE=$coverage HV_AGENT_MCP=$mcp
   HV_PROTECTED_TEXT=$text HV_PROTECTED_CASE=$pcase HV_PROTECTED_REGEX=$regex
-  export HV_AGENT_LAYOUT HV_AGENT_CODEOWNERS HV_AGENT_COVERAGE HV_PROTECTED_TEXT HV_PROTECTED_CASE HV_PROTECTED_REGEX
+  export HV_AGENT_LAYOUT HV_AGENT_CODEOWNERS HV_AGENT_COVERAGE HV_AGENT_MCP HV_PROTECTED_TEXT HV_PROTECTED_CASE HV_PROTECTED_REGEX
 }
 
 agents_validate() {

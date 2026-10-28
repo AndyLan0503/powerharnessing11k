@@ -153,7 +153,6 @@ The scripts move from `.github/scripts/` to a neutral `scripts/ci/` so both host
 | Required check | branch protection, required checks | "Pipelines must succeed" (Free) |
 | Fast tests on every change | `ci.yml` | `ci.yml` jobs |
 | Nightly full tests, weekly digest | `schedule:` in the workflow | jobs with `rules: $CI_PIPELINE_SOURCE == "schedule"`; the schedule itself is created in the UI or API |
-| PR title check | `pr-title.yml` | a job testing `$CI_MERGE_REQUEST_TITLE` |
 | PR and issue templates | `.github/` templates and issue forms | `.gitlab/merge_request_templates/Default.md`, `.gitlab/issue_templates/*.md` |
 | Code owners | `.github/CODEOWNERS` | `.gitlab/CODEOWNERS` with a section |
 | Code scanning | CodeQL | SAST template |

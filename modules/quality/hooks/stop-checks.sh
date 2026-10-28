@@ -17,17 +17,27 @@ for m in {{STACK_MANIFESTS}}; do [ ! -e "$m" ] || found=1; done
 
 out=$(mktemp)
 trap 'rm -f "$out"' EXIT
-failed=''
+# Every check runs, so one failure cannot hide another.
+report=''
+failed() { # CHECK: add its output to the report
+  hook_log check_failed "$1"
+  report="${report:+$report
+
+}$1 failed. Last lines:
+$(tail -n 40 "$out")"
+}
 {{#if LINT_CMD}}
-if ! { {{LINT_CMD}}; } >"$out" 2>&1; then failed=lint; fi
+if ! { {{LINT_CMD}}; } >"$out" 2>&1; then failed lint; fi
 {{/if}}
 {{#if TYPECHECK_CMD}}
-if [ -z "$failed" ] && ! { {{TYPECHECK_CMD}}; } >"$out" 2>&1; then failed=typecheck; fi
+if ! { {{TYPECHECK_CMD}}; } >"$out" 2>&1; then failed typecheck; fi
 {{/if}}
 
-if [ -n "$failed" ]; then
-  hook_log check_failed "$failed"
-  hook_send_back "stop-checks: $failed failed on your changes. Fix it before finishing. Last lines:
-$(tail -n 40 "$out")"
-fi
+# A hook cannot tell which failures this change caused: changing a function
+# breaks its callers, in files the change never touched. The agent can, so
+# it decides, within the scope of its task.
+[ -z "$report" ] || hook_send_back "stop-checks: fix what your change caused before finishing, including breakage in code that calls what you changed.
+If a failure was already there before your change, do not fix it as part of this task: say so in your reply, so it can be fixed separately.
+
+$report"
 exit 0

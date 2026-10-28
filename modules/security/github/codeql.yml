@@ -12,7 +12,36 @@ permissions:
   security-events: write
 
 jobs:
+  # Code scanning on a private repository needs GitHub Advanced Security. Without
+  # it this check would fail on every run, so private repositories skip it
+  # until a maintainer sets the repository variable ADVANCED_SECURITY to
+  # "true" (Settings, Secrets and variables, Actions, Variables). If the
+  # visibility cannot be read, it skips too. A skipped job still satisfies a
+  # required check.
+  enabled:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPT_IN: ${{ vars.ADVANCED_SECURITY }}
+        run: |
+          export GH_HOST=${GITHUB_SERVER_URL#*://}
+          private=$(gh api "repos/$GITHUB_REPOSITORY" --jq .private) || private=
+          if [ "$OPT_IN" = true ] || [ "$private" = false ]; then
+            echo run=true >>"$GITHUB_OUTPUT"
+          elif [ -z "$private" ]; then
+            echo "::notice::Skipped: could not read the repository's visibility"
+          else
+            echo "::notice::Skipped: private repository without ADVANCED_SECURITY=true"
+          fi
+
   analyze:
+    needs: enabled
+    if: needs.enabled.outputs.run == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

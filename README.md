@@ -285,7 +285,7 @@ Every PR gets one required check, **PR gate**:
 - **Gate:** blocking findings fail the check. A maintainer can add `gate-override` to accept the risk, and the override is recorded. A sticky **scorecard** shows every signal and a transparent score.
 - **Weekly digest:** PR volume, merge rate and reverts; gate scores, findings, and overrides; AI-review findings by pattern with 👎 dismissal counts, which show which criteria need sharpening.
 
-Plus a stack-aware `ci.yml` (fast tier on every PR), a nightly full-tier workflow, Conventional Commit PR titles, CodeQL, dependency review, Dependabot, `@claude` mentions, and an eval workflow for agentic repos. Make **CI** and **PR gate / gate** required in branch protection.
+Plus a stack-aware `ci.yml` (fast tier on every PR), a nightly full-tier workflow, Conventional Commit PR titles, CodeQL, dependency review (both skip private repositories unless you set the `ADVANCED_SECURITY` repository variable to `true`, since they need GitHub Advanced Security there), Dependabot, `@claude` mentions, and an eval workflow for agentic repos. Make **CI** and **PR gate / gate** required in branch protection.
 
 <details>
 <summary><b>How the gate is hardened against the PR it judges</b></summary>
@@ -305,7 +305,7 @@ Protect `.github/` with CODEOWNERS, and pin `CLAUDE_CODE_VERSION` in `pr-gate.ym
 
 | | relaxed | standard | strict |
 |---|:-:|:-:|:-:|
-| Block `rm -rf` of `/` or `~`; block pushes to the default branch (not in solo study repos) | ✅ | ✅ | ✅ |
+| Block `rm -rf` of `/` or `~`; block pushes to the default branch, named or implied by being on it (not in solo study repos) | ✅ | ✅ | ✅ |
 | Block edits to `.env*` and key files; deny reading secrets | ✅ | ✅ | ✅ |
 | Block force-push, `--no-verify`, `curl \| sh`, `chmod 777`, shell access to `.env` | | ✅ | ✅ |
 | Lint and typecheck must pass before the agent finishes (Stop hook) | | ✅ | ✅ |

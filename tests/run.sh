@@ -844,6 +844,29 @@ test_guard_hooks() {
   ok
 }
 
+# Every repo gets the onboard skill, and AGENTS.md asks agents to offer it for
+# as long as its Project context is unfilled.
+test_onboard_skill() {
+  local d a out f
+  for a in claude codex copilot; do
+    d=$(new_repo "onboard-$a" package.json)
+    out=$("$H" configure --yes -C "$d" --agents "$a" 2>&1)
+    f=$d/.agents/skills/onboard/SKILL.md
+    check "$a: onboard skill" grep -q '^name: onboard$' "$f"
+    check "$a: says when to use it" grep -q '^description: .*TODO(team)' "$f"
+    check "$a: AGENTS.md asks agents to offer it" grep -q 'offer to run the `onboard` skill' "$d/AGENTS.md"
+    check "$a: next steps mention it" grep -q 'run the onboard skill' <<<"$out"
+    check_not "$a: the skill itself is not a file to fill in" grep -q '^ *\.agents/skills/onboard/SKILL\.md$' <<<"$out"
+    check "$a: AGENTS.md still is" grep -q '^ *AGENTS\.md$' <<<"$out"
+  done
+  check "claude finds it through the skills link" test -f "$WORK/onboard-claude/.claude/skills/onboard/SKILL.md"
+  check "it never reads secrets" grep -q 'Never open `.env` files' "$f"
+  check "it leaves unknowns as questions" grep -q 'TODO(team): <a specific question>' "$f"
+  # The nudge lives in the comment the team deletes once the section is
+  # filled, so it goes away by itself.
+  check "the nudge is inside the TODO comment" awk '/<!-- TODO\(team\)/ { c = 1 } c && /onboard/ { found = 1 } /-->/ { c = 0 } END { exit !found }' "$WORK/onboard-codex/AGENTS.md"
+}
+
 # The stop check sends the agent back for failures in what it touched, not
 # for ones that were already in the repo.
 test_stop_checks_blame_changed_files() {

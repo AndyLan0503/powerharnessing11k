@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-MODULE_DESC="AGENTS.md (project context, working agreement), path-scoped rules, permissions, review + handoff skills, reviewer role, session-start hook"
+MODULE_DESC="AGENTS.md (project context, working agreement), path-scoped rules, permissions, review, handoff, and onboard skills, reviewer role, session-start hook"
 
 module_apply() {
   # AGENTS.md, the source of truth for every agent, is written by
@@ -11,6 +11,7 @@ module_apply() {
 
   # Shared skills and the shared reviewer role (not for solo study repos).
   emit_skill handoff skills/handoff.md
+  emit_skill onboard skills/onboard.md
   if [ -z "$HV_PROFILE_STUDY" ]; then
     emit_skill review skills/review.md
     emit_role reviewer agents/reviewer.md

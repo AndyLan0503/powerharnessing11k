@@ -4,13 +4,13 @@ Shared tool integrations for agents in {{PROJECT_NAME}}.
 
 ## Project scope (this repo, shared via git)
 
-`.mcp.json` lists the servers the whole team uses. It ships with the GitHub MCP server. Credentials never go in the file: they are expanded from your environment, so each engineer sets them locally, e.g. in a shell profile:
+Each coding agent's project config lists the servers the whole team uses. It ships with the GitHub MCP server. Credentials never go in the file: they are expanded from your environment, so each engineer sets them locally, e.g. in a shell profile:
 
 ```sh
 export GITHUB_PERSONAL_ACCESS_TOKEN=...   # fine-grained, least privilege for this repo
 ```
 
-Claude Code asks each person to approve project servers the first time. Run `/mcp` to check their status.
+{{AGENT_MCP}}
 
 Guidelines:
 - Prefer a maintained community or vendor server (GitHub, Jira, Sentry...) over building your own. Build custom servers only for team-specific workflows.
@@ -20,10 +20,4 @@ Guidelines:
 
 ## User scope (just you)
 
-Personal or experimental servers go in your user configuration, not this repo:
-
-```sh
-claude mcp add --scope user <name> ...
-```
-
-They are available alongside the project servers, and teammates are not affected.
+Personal or experimental servers go in your own agent's user configuration (see above), never in this repo. They are available alongside the project servers, and teammates are not affected.

@@ -1,6 +1,6 @@
 # Review checklist
 
-<!-- Humans and the Claude review workflow both use this file; adapt it to the repo. -->
+<!-- Humans and the AI review in the PR gate both use this file; adapt it to the repo. -->
 
 ## Always check
 

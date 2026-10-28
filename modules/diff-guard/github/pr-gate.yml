@@ -28,9 +28,11 @@ concurrency:
   group: pr-gate-${{ github.event.pull_request.number }}-${{ contains(fromJSON('["labeled","unlabeled","edited"]'), github.event.action) && 'meta' || 'code' }}
   cancel-in-progress: true
 
+{{#if MOD_REVIEW}}
 env:
   # Pin to a version you have tested, e.g. 2.1.0; "latest" tracks new releases.
   CLAUDE_CODE_VERSION: latest
+{{/if}}
 
 jobs:
 {{#if MOD_DIFF_GUARD}}

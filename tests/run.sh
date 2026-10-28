@@ -844,6 +844,31 @@ test_guard_hooks() {
   ok
 }
 
+# A team that does not use Claude Code gets nothing that names it, apart from
+# the hook engine (which reads every agent's payload format) and the opt-in AI
+# review, which runs Claude Code in CI.
+test_vendor_neutral_without_claude() {
+  local d t hits
+  for t in recommended strict; do
+    d=$(new_repo "neutral-$t" package.json)
+    "$H" configure --yes -C "$d" --agents codex,copilot --tier "$t" >/dev/null 2>&1 || fail "$t: configure failed"
+    hits=$(cd "$d" && grep -rliE 'claude|anthropic' . --exclude-dir=.git --exclude-dir=hooks |
+      grep -v -e '^\./scripts/ci/ai-review\.sh$' -e '^\./\.github/workflows/pr-gate\.yml$' -e '^\./docs/agents/HANDBOOK\.md$' -e '^\./scripts/ci/review/' -e '^\./docs/REVIEW\.md$')
+    # shellcheck disable=SC2086 # one line of file names
+    [ -z "$hits" ] || fail "$t: names Claude without it being selected: $(printf "%s " $hits)"
+    check_not "$t: no @claude workflow" test -e "$d/.github/workflows/claude.yml"
+  done
+  check "strict: MCP notes for Codex" contains "$d/docs/agents/MCP.md" '.codex/config.toml'
+  check "strict: MCP notes for Copilot" contains "$d/docs/agents/MCP.md" '.github/mcp.json'
+  check_not "strict: no Claude MCP notes" contains "$d/docs/agents/MCP.md" '.mcp.json'
+  check_not "recommended gate has no Claude pin" contains "$WORK/neutral-recommended/.github/workflows/pr-gate.yml" 'CLAUDE_CODE_VERSION'
+  # Mentions only for teams that use Claude Code.
+  d=$(new_repo neutral-claude package.json)
+  "$H" configure --yes -C "$d" --tier strict >/dev/null 2>&1
+  check "claude: @claude workflow" test -e "$d/.github/workflows/claude.yml"
+  check "claude: MCP notes" contains "$d/docs/agents/MCP.md" 'claude mcp add --scope user'
+}
+
 # The default tiers add no build tooling, paid-feature scans, or commit-style
 # rules; strict brings the Makefile and the security scans back.
 test_default_tiers_stay_light() {

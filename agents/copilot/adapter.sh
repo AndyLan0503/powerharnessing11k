@@ -26,6 +26,8 @@ AGENT_PROTECTED=".github/hooks/*"
 # shellcheck disable=SC2034
 AGENT_COVERAGE="loaded only for matching paths|a tool list per agent|none at repository level: the guard hooks do the blocking, and nothing is pre-approved|lint and typecheck must pass (CLI and cloud agent)"
 # shellcheck disable=SC2034
+AGENT_MCP='**GitHub Copilot** CLI reads `.github/mcp.json`; the cloud agent takes its servers from the repository settings instead. Personal servers: `/mcp add` in the CLI.'
+# shellcheck disable=SC2034
 AGENT_NEXT_STEP="GitHub Copilot: the CLI loads the hooks once you trust the folder; the cloud agent uses the hooks, agents, and instructions on the default branch, so they apply after this change is merged. Team MCP servers for the cloud agent are set in the repository's Copilot settings"
 
 agent_copilot_begin() {

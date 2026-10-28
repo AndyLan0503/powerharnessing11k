@@ -22,6 +22,8 @@ AGENT_PROTECTED=".codex/config.toml .codex/hooks.json .codex/rules/default.rules
 # shellcheck disable=SC2034
 AGENT_COVERAGE="always loaded (inside AGENTS.md)|a sandbox level per role|prompt and forbid rules; other commands run inside the sandbox; no per-file read rules|lint and typecheck must pass"
 # shellcheck disable=SC2034
+AGENT_MCP='**Codex CLI** reads the `[mcp_servers]` tables in `.codex/config.toml` once you trust the project. Personal servers go in `~/.codex/config.toml`.'
+# shellcheck disable=SC2034
 AGENT_NEXT_STEP="Codex CLI: open the repo with codex, trust the project, then run /hooks and approve the hooks (Codex skips project hooks until you do, and again whenever they change)"
 
 agent_codex_begin() { :; }

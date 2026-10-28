@@ -61,6 +61,10 @@ run_test() {
   "$1"
 }
 
+# The recommended software modules plus devtools (Makefile, test tiers, the
+# Python skeleton), which only the strict tier includes by default.
+WITH_DEVTOOLS=core,guardrails,devtools,quality,audit,skills,collab,ci,diff-guard
+
 hook_json() { # tool key value
   printf '{"session_id":"s1","hook_event_name":"PreToolUse","tool_name":"%s","tool_input":{"%s":"%s"}}' "$1" "$2" "$3"
 }
@@ -776,16 +780,16 @@ test_no_harness_footprint() {
 test_cmd_overrides() {
   local d
   d=$(new_repo cmds go.mod)
-  "$H" configure --yes -C "$d" --cmd 'test=go test -short ./...' --cmd 'full-test=go test ./...' --cmd 'lint=' >/dev/null 2>&1
+  "$H" configure --yes --modules "$WITH_DEVTOOLS" -C "$d" --cmd 'test=go test -short ./...' --cmd 'full-test=go test ./...' --cmd 'lint=' >/dev/null 2>&1
   check "test override used" contains "$d/Makefile" 'go test -short ./...'
   check "full-test override used" contains "$d/Makefile" 'go test ./...'
   check "full-test enables nightly tier" contains "$d/.github/workflows/tests-full.yml" 'make test-all'
   check_not "cleared lint has no CI step" contains "$d/.github/workflows/ci.yml" 'make lint'
   check_not "cleared lint is gone" contains "$d/Makefile" 'go vet'
   d=$(new_repo cmds-raw go.mod Makefile)
-  "$H" configure --yes -C "$d" --cmd 'test=go test -short ./...' >/dev/null 2>&1
+  "$H" configure --yes --modules "$WITH_DEVTOOLS" -C "$d" --cmd 'test=go test -short ./...' >/dev/null 2>&1
   check "without our Makefile, CI runs the override" contains "$d/.github/workflows/ci.yml" 'go test -short ./...'
-  check_not "bad --cmd rejected" "$H" configure --yes -C "$d" --cmd 'deploy=x'
+  check_not "bad --cmd rejected" "$H" configure --yes --modules "$WITH_DEVTOOLS" -C "$d" --cmd 'deploy=x'
 }
 
 _guard() { # dir hook tool key value -> exit code
@@ -838,6 +842,29 @@ test_guard_hooks() {
   [ "$(_guard "$d" guard-bash.sh Bash command 'git push --force origin feat')" = 0 ] || fail "relaxed: force-push to branch blocked"
   [ "$(_guard "$d" guard-bash.sh Bash command 'rm -rf ~/')" = 2 ] || fail "relaxed: rm -rf ~ allowed"
   ok
+}
+
+# The default tiers add no build tooling, paid-feature scans, or commit-style
+# rules; strict brings the Makefile and the security scans back.
+test_default_tiers_stay_light() {
+  local p d f
+  for p in software ml agentic research study; do
+    for d in "$WORK/light-$p-minimal" "$WORK/light-$p-recommended"; do
+      new_repo "${d##*/}" package.json >/dev/null
+      "$H" configure --yes -C "$d" --profile "$p" --tier "${d##*-}" >/dev/null 2>&1 || fail "$p: configure failed"
+      for f in Makefile docs/TESTING.md .github/dependabot.yml .github/workflows/codeql.yml \
+        .github/workflows/dependency-review.yml .github/workflows/pr-title.yml; do
+        check_not "${d##*/}: no $f" test -e "$d/$f"
+      done
+      check_not "${d##*/}: no commit-style rule" grep -rqi 'conventional commit' "$d" --exclude-dir=.git
+    done
+  done
+  d=$(new_repo light-strict package.json)
+  "$H" configure --yes -C "$d" --tier strict >/dev/null 2>&1
+  for f in Makefile docs/TESTING.md .github/dependabot.yml .github/workflows/codeql.yml; do
+    check "strict: $f" test -e "$d/$f"
+  done
+  check_not "strict: no PR title check" test -e "$d/.github/workflows/pr-title.yml"
 }
 
 # Code scanning on a private repo without GitHub Advanced Security would fail
@@ -1515,7 +1542,7 @@ test_role_tiers() {
 test_artifacts_module() {
   local d out
   d=$(new_repo art)
-  "$H" configure --yes -C "$d" --stack python --artifacts >/dev/null 2>&1
+  "$H" configure --yes --modules "$WITH_DEVTOOLS" -C "$d" --stack python --artifacts >/dev/null 2>&1
   check "script installed" test -x "$d/scripts/artifacts.sh"
   check "lock seeded" grep -q '^# artifacts.lock' "$d/artifacts.lock"
   check "artifacts rule" grep -qF 'paths: ["data/**", "models/**", "artifacts.lock"]' "$d/.claude/rules/artifacts.md"
@@ -1598,7 +1625,7 @@ test_diff_guard_flags_lock_changes() {
 test_devtools_python_scaffold() {
   local d t
   d=$(new_repo 9-Opt.Engine)
-  "$H" configure --yes -C "$d" --stack python >/dev/null 2>&1 || fail "configure failed"
+  "$H" configure --yes --modules "$WITH_DEVTOOLS" -C "$d" --stack python >/dev/null 2>&1 || fail "configure failed"
   check "pyproject" grep -q '^name = "9-opt-engine"$' "$d/pyproject.toml"
   check "package dir is importable" test -f "$d/src/pkg_9_opt_engine/__init__.py"
   check "typed" test -f "$d/src/pkg_9_opt_engine/py.typed"
@@ -1626,19 +1653,19 @@ test_devtools_python_scaffold() {
   # An existing Python project keeps its own pyproject and layout.
   d=$(new_repo py-existing pyproject.toml)
   echo '[project]' >"$d/pyproject.toml"
-  "$H" configure --yes -C "$d" >/dev/null 2>&1
+  "$H" configure --yes --modules "$WITH_DEVTOOLS" -C "$d" >/dev/null 2>&1
   check "existing pyproject untouched" test "$(cat "$d/pyproject.toml")" = '[project]'
   check_not "no src scaffold" test -d "$d/src"
   check "still gets a Makefile" test -f "$d/Makefile"
 
   # An existing Makefile is the team's: CI calls the raw commands instead.
   d=$(new_repo mk-existing go.mod Makefile)
-  "$H" configure --yes -C "$d" >/dev/null 2>&1
+  "$H" configure --yes --modules "$WITH_DEVTOOLS" -C "$d" >/dev/null 2>&1
   check "existing Makefile untouched" test ! -s "$d/Makefile"
   check_not "CI does not assume make targets" contains "$d/.github/workflows/ci.yml" 'make test'
   check "CI runs the raw command" contains "$d/.github/workflows/ci.yml" 'go test ./...'
   t=$(new_repo mk-node package.json)
-  "$H" configure --yes -C "$t" >/dev/null 2>&1
+  "$H" configure --yes --modules "$WITH_DEVTOOLS" -C "$t" >/dev/null 2>&1
   check "node gets make targets too" grep -q '^check:' "$t/Makefile"
 }
 
@@ -1649,12 +1676,12 @@ test_devtools_respects_existing_projects() {
   printf '[project]\nname = "r3"\n' >"$d/pyproject.toml"
   echo 'def real(): pass' >"$d/src/r3/__init__.py"
   echo '# real fixtures' >"$d/tests/conftest.py"
-  "$H" configure --yes -C "$d" >/dev/null 2>&1
+  "$H" configure --yes --modules "$WITH_DEVTOOLS" -C "$d" >/dev/null 2>&1
   check_not "no mypy without mypy config" contains "$d/Makefile" 'uv run mypy'
   check "typecheck skipped instead" contains "$d/Makefile" 'typecheck: not configured'
   check_not "no format check without ruff config" contains "$d/Makefile" 'ruff format --check'
   check_not "no nightly tier without slow markers" test -e "$d/.github/workflows/tests-full.yml"
-  "$H" configure --yes --force -C "$d" >/dev/null 2>&1
+  "$H" configure --yes --modules "$WITH_DEVTOOLS" --force -C "$d" >/dev/null 2>&1
   check "--force keeps pyproject" test "$(head -1 "$d/pyproject.toml")" = '[project]'
   check "--force keeps package code" contains "$d/src/r3/__init__.py" 'def real'
   check "--force keeps fixtures" contains "$d/tests/conftest.py" '# real fixtures'
@@ -1662,31 +1689,31 @@ test_devtools_respects_existing_projects() {
 
   d=$(new_repo uv-mypy pyproject.toml uv.lock)
   printf '[project]\nname = "x"\n\n[tool.mypy]\nstrict = true\n' >"$d/pyproject.toml"
-  "$H" configure --yes -C "$d" >/dev/null 2>&1
+  "$H" configure --yes --modules "$WITH_DEVTOOLS" -C "$d" >/dev/null 2>&1
   check "mypy when configured" contains "$d/Makefile" 'uv run mypy'
 
   d=$(new_repo py-nolock pyproject.toml)
-  "$H" configure --yes -C "$d" >/dev/null 2>&1
+  "$H" configure --yes --modules "$WITH_DEVTOOLS" -C "$d" >/dev/null 2>&1
   check "pyproject without a lock is not assumed uv" contains "$d/Makefile" 'pytest'
   check_not "...so no uv" contains "$d/Makefile" 'uv run'
 
   d=$(new_repo own-makefile go.mod makefile)
   echo 'test:; @echo theirs' >"$d/makefile"
-  "$H" configure --yes --force -C "$d" >/dev/null 2>&1
+  "$H" configure --yes --modules "$WITH_DEVTOOLS" --force -C "$d" >/dev/null 2>&1
   # Compare directory entries by exact name: on case-insensitive filesystems
   # (macOS) `test -e Makefile` is also true for `makefile`.
   check_not "lowercase makefile counts as existing" sh -c "ls '$d' | grep -qx Makefile"
   check "their makefile untouched" contains "$d/makefile" 'theirs'
   check "CI runs raw commands" contains "$d/.github/workflows/ci.yml" 'go test ./...'
   d=$(new_repo own-gnumakefile go.mod GNUmakefile)
-  "$H" configure --yes -C "$d" >/dev/null 2>&1
+  "$H" configure --yes --modules "$WITH_DEVTOOLS" -C "$d" >/dev/null 2>&1
   check_not "GNUmakefile counts as existing" test -e "$d/Makefile"
 
   # Commands are recipe lines: $ is escaped, and a command can't call our own make.
   d=$(new_repo mk-dollar go.mod)
-  "$H" configure --yes -C "$d" --cmd 'lint=echo $HOME' >/dev/null 2>&1
+  "$H" configure --yes --modules "$WITH_DEVTOOLS" -C "$d" --cmd 'lint=echo $HOME' >/dev/null 2>&1
   check "dollar escaped for make" sh -c "cd '$d' && make lint | grep -qx '$HOME'"
-  check_not "self-calling make rejected" "$H" configure --yes -C "$(new_repo mk-self go.mod)" --cmd 'test=make test'
+  check_not "self-calling make rejected" "$H" configure --yes --modules "$WITH_DEVTOOLS" -C "$(new_repo mk-self go.mod)" --cmd 'test=make test'
 }
 
 # The interactive wizard, end to end through a pseudo-terminal.
@@ -2013,7 +2040,7 @@ test_project_not_created_yet() {
 
   # The Python skeleton is the project, so nothing waits there.
   d=$(new_repo empty-python)
-  out=$("$H" configure --yes -C "$d" --stack python 2>&1)
+  out=$("$H" configure --yes --modules "$WITH_DEVTOOLS" -C "$d" --stack python 2>&1)
   check_not "python scaffold: no create step" grep -q 'Create the project itself' <<<"$out"
   check "python scaffold: CI condition matches its pyproject" grep -qF "hashFiles('pyproject.toml', 'requirements.txt', 'setup.py')" "$d/.github/workflows/ci.yml"
 

@@ -5,8 +5,8 @@ This repo is built by humans and coding agents together. The rules and the check
 ## Workflow
 
 1. **Open or pick an issue.** For agent work, use the *Agent task* issue template so the goal and acceptance criteria are explicit.
-2. **Branch** from `{{DEFAULT_BRANCH}}`: `<type>/<short-slug>`, e.g. `feat/export-csv`.
-3. **Commit** using [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`.
+2. **Branch** from `{{DEFAULT_BRANCH}}` with a short, descriptive name, e.g. `export-csv`.
+3. **Commit** small, focused changes, each with a message that says what changed and why.
 4. **Open a PR** using the template. Keep PRs small: under ~400 changed lines is a good target.
 5. **Review.** At least one human approval is required. The author (or the human who launched the agent) owns the change through merge.
 6. **Squash-merge** once CI is green.

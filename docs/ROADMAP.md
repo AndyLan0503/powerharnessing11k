@@ -41,7 +41,7 @@ powerharnessing11k turns the team's agentic-engineering practices into a one-sho
 - [x] Lighter defaults: minimal and recommended leave out the Makefile, test-tier guide, and Python skeleton (devtools) and the security scans; strict keeps them. No commit-message convention is enforced
 - [x] Vendor-neutral output: `docs/agents/MCP.md` covers only the selected agents (`AGENT_MCP` adapter declaration); `@claude` mentions only with Claude Code
 - [x] `onboard` skill: drafts the project context from the code (unknowns stay as questions), refreshes it later, and offers tests when there are none; `AGENTS.md` asks agents to offer it until the section is filled
-- [x] Stop check attributes failures: only failures in files the agent touched (or that name no file) send it back; others are logged and counted in `agent-report.sh`
+- [x] Stop check runs every check, so one failure no longer hides another, and asks the agent to fix what its change caused (callers included) while reporting failures that were already there instead of widening the task
 - [ ] Provider support, remaining steps: review backends, GitLab, then Cursor and Gemini. Choose the coding agents (Claude Code, Codex CLI, Cursor, Copilot, Gemini CLI), the git host (GitHub, GitLab, none), and the AI review backend. Design: `docs/design/providers.md`, ADR 0005
 
 - [ ] First real GitHub run of the PR gate; confirm `claude -p --json-schema` output shape and inline-comment posting on a live PR

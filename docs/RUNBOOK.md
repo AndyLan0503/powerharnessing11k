@@ -83,7 +83,7 @@ paths: ["src/solver/**"]
 | Before a file edit | `guard-paths.sh` | Blocks edits to secrets and protected paths |
 | After a file edit | `format-on-edit.sh` | Formats the file the agent just changed |
 | After any tool call | `audit-log.sh` | Appends one line to the audit log |
-| Agent tries to finish | `stop-checks.sh` | Runs lint and typecheck; a failure in what the agent touched sends it back to fix it |
+| Agent tries to finish | `stop-checks.sh` | Runs lint and typecheck; a failure sends the agent back to fix what its change caused |
 
 When a hook blocks something, the agent is told why and what to do instead. A block is the system working as designed.
 
@@ -247,7 +247,7 @@ A test for each line: would a capable engineer who is new to this repo make a mi
 
 **6d. Role stubs, `.claude/agents/<name>.md`.** Write what this specialist checks, what it should ignore, and the exact shape of its report. Leave the tool list read-only unless the role truly needs to change files. A reviewer that can edit is no longer independent.
 
-**6e. The remaining TODOs.** `docs/TESTING.md` (your domain's invariants, reference cases with known answers, runtime budgets), `data/README.md` and `models/README.md` (where the files come from), and the description in `pyproject.toml`.
+**6e. The remaining TODOs.** `data/README.md` and `models/README.md` (where the files come from), if you version data. With the strict tier, also `docs/TESTING.md` (your domain's invariants, reference cases with known answers, runtime budgets) and the description in `pyproject.toml`.
 
 ### Step 7: Record your data and models (if you enabled artifacts)
 
@@ -388,7 +388,7 @@ Agent context fills up. When a session has been running for a long time, run the
 | A harmless command is blocked because its text contains a dangerous one | The guard matches command text, including quoted strings | Rephrase the command or put the text in a file. Narrow the hook pattern if it recurs |
 | CI shows Install, Lint, and Test as skipped | The project does not exist yet (no `package.json`, `go.mod`, ...) | Expected in a new repo: create the project (for Node, your framework's generator); the steps run once its manifest is committed |
 | The agent cannot finish; lint or typecheck keeps failing | The stop hook is doing its job | Let the agent fix it, or run the lint command yourself to see the error |
-| The agent finished although lint fails | The failures are in files it never touched, so they were there before | `agent-report.sh` counts them. Fix them in a separate cleanup PR |
+| The agent reports lint or type errors it did not fix | They were there before its change, so it left them out of the task's scope | Fix them in a separate cleanup PR |
 | The agent keeps asking permission for the same command | The command is missing from the allow list | Add it to `permissions.allow` in `.claude/settings.json` |
 | Hooks do not run at all | Files lost their executable bit, or settings were not loaded | `chmod +x .agents/hooks/*.sh`, then restart your agent |
 | Hooks do not run in Copilot | The folder is not trusted (CLI), or the files are not on the default branch yet (cloud agent) | Trust the folder; merge the bootstrap PR |

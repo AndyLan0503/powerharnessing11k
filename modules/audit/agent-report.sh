@@ -46,13 +46,10 @@ awk -v since="$since" '
     if (kind == "tool" && tool != "") { if (!(tool in tools)) nt++; tools[tool]++ }
     if (kind == "blocked") blocked[++nb] = ts "  " field("detail")
     if (kind == "check_failed") failed++
-    if (kind == "check_failed_elsewhere") elsewhere++
   }
   END {
     ns = 0; for (s in sessions) ns++
-    printf "  Events: %d   Sessions: %d   Turns: %d   Blocked: %d   Failed checks: %d\n", total, ns, kinds["turn_end"], nb, failed
-    if (elsewhere > 0) printf "  Checks that failed only on files no agent touched: %d (pre-existing problems; worth a cleanup PR)\n", elsewhere
-    print ""
+    printf "  Events: %d   Sessions: %d   Turns: %d   Blocked: %d   Failed checks: %d\n\n", total, ns, kinds["turn_end"], nb, failed
     if (nt > 0) {
       print "  Tool calls"
       for (t in tools) printf "    %-14s %d\n", t, tools[t] | "sort -k2 -nr"

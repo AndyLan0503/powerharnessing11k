@@ -83,7 +83,7 @@ mkdir opt-engine && cd opt-engine
 ~/powerharnessing11k/setup.sh
 ```
 
-**3. Answer ten questions.** Then fill in the `TODO(team)` notes it lists (or ask your agent to run the `onboard` skill, which drafts them from your code), commit, and open a PR. Collaborators just pull.
+**3. Answer ten questions.** Then fill in the `TODO(team)` notes it lists (or ask your agent to run the `onboard` skill, which drafts the project context from your code), commit, and open a PR. Collaborators just pull.
 
 Prefer no questions? Everything has a flag. Run this from inside the project folder too:
 
@@ -134,7 +134,7 @@ When it's done you get a short summary and your next steps:
          AGENTS.md
          .agents/skills/run-solver/SKILL.md
          ...
-       Or ask your coding agent to run the onboard skill: it drafts them from your code for you to review.
+       Or ask your coding agent to run the onboard skill: it drafts the project context from your code and helps with the rest.
     2. Create the project itself: there is no pyproject.toml yet.
     3. Review, commit, and open a PR:  git add -A && git commit -m 'chore: bootstrap agent harness'
     4. Protect 'main': require PR review and the CI checks (Settings → Branches)
@@ -184,7 +184,7 @@ The root stays small on purpose. Only what tools require there is visible (`AGEN
 | **Skills** | `onboard` (draft or refresh the project context from the code), `review` (independent review), `handoff` (summary for a fresh session), `steward`, `task-intake` (engineering profiles) | see [Profiles](#-profiles) |
 | **Roles** (subagents, scoped tools) | `reviewer` (fresh-context, profile-aware; all but study), `test-writer` (engineering profiles) | none: only these two near-universal roles ship; add domain roles as stubs |
 | **Hooks** | guard-bash, guard-paths, format-on-edit, stop-checks, audit-log, session-start | `data/raw/` read-only (ml, research, artifacts); `exercises/` read-only (study) |
-| **Tools** | permissions (allow your lint/test commands; deny secrets); `.mcp.json` with the GitHub MCP server (strict tier) | WebSearch pre-approved (research); Learning output style (study) |
+| **Tools** | permissions (allow your lint/test commands; deny secrets); the GitHub MCP server in each selected agent's own config (strict tier) | WebSearch pre-approved (research); Learning output style (study) |
 
 ## 🤝 Coding agents
 
@@ -297,7 +297,7 @@ Plus a stack-aware `ci.yml` (fast tier on every PR), a nightly full-tier workflo
 - Secret-shaped strings are redacted before posting.
 - The PR author (or a bot) can't apply their own override.
 
-Protect `.github/` with CODEOWNERS, and pin `CLAUDE_CODE_VERSION` in `pr-gate.yml` to a version you have tested.
+Protect `.github/` with CODEOWNERS. With the AI review, pin `CLAUDE_CODE_VERSION` in `pr-gate.yml` to a version you have tested.
 
 </details>
 
@@ -308,7 +308,7 @@ Protect `.github/` with CODEOWNERS, and pin `CLAUDE_CODE_VERSION` in `pr-gate.ym
 | Block `rm -rf` of `/` or `~`; block pushes to the default branch, named or implied by being on it (not in solo study repos) | ✅ | ✅ | ✅ |
 | Block edits to `.env*` and key files; deny reading secrets | ✅ | ✅ | ✅ |
 | Block force-push, `--no-verify`, `curl \| sh`, `chmod 777`, shell access to `.env` | | ✅ | ✅ |
-| Lint and typecheck must pass before the agent finishes (Stop hook); failures only in files it never touched are logged instead | | ✅ | ✅ |
+| Lint and typecheck must pass before the agent finishes (Stop hook); it fixes what its change caused and reports failures that were already there | | ✅ | ✅ |
 | Block `--force-with-lease`, `reset --hard`, `git clean -f`, `gh pr merge` | | | ✅ |
 | CI workflows, CODEOWNERS, `.claude/settings.json`, and hooks are human-only | | | ✅ |
 | `git push` asks for confirmation; diff-guard findings fail the gate | | | ✅ |

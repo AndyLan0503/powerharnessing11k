@@ -15,38 +15,29 @@ for m in {{STACK_MANIFESTS}}; do [ ! -e "$m" ] || found=1; done
 [ -n "$found" ] || exit 0
 {{/if}}
 
-out=$(mktemp) changed=$(mktemp) others=$(mktemp)
-trap 'rm -f "$out" "$changed" "$others"' EXIT
-# Names of the files this work touched (changed, added, or new), and of every
-# other tracked file. Names, not paths: tools print paths relative to where
-# they run, which in a monorepo is not the repo root.
-git status --porcelain --untracked-files=all 2>/dev/null | cut -c4- |
-  sed 's/.* -> //; s/^"//; s/"$//; s|.*/||; /^$/d' | sort -u >"$changed"
-git ls-files 2>/dev/null | sed 's|.*/||; /^$/d' | sort -u | comm -23 - "$changed" >"$others"
-
-# blame CHECK: a failure goes back to the agent when its output names a file
-# the agent touched, or names no file at all (a config error, a crash). One
-# that names only other files was there before: the agent is not pulled into
-# fixing code it never touched, and the failure is logged for the team.
+out=$(mktemp)
+trap 'rm -f "$out"' EXIT
+# Every check runs, so one failure cannot hide another.
 report=''
-blame() {
-  if ! grep -qF -f "$changed" "$out" && grep -qF -f "$others" "$out"; then
-    hook_log check_failed_elsewhere "$1"
-    return
-  fi
+failed() { # CHECK: add its output to the report
   hook_log check_failed "$1"
   report="${report:+$report
 
-}$1 failed on your changes. Last lines:
+}$1 failed. Last lines:
 $(tail -n 40 "$out")"
 }
 {{#if LINT_CMD}}
-if ! { {{LINT_CMD}}; } >"$out" 2>&1; then blame lint; fi
+if ! { {{LINT_CMD}}; } >"$out" 2>&1; then failed lint; fi
 {{/if}}
 {{#if TYPECHECK_CMD}}
-if ! { {{TYPECHECK_CMD}}; } >"$out" 2>&1; then blame typecheck; fi
+if ! { {{TYPECHECK_CMD}}; } >"$out" 2>&1; then failed typecheck; fi
 {{/if}}
 
-[ -z "$report" ] || hook_send_back "stop-checks: fix these before finishing.
+# A hook cannot tell which failures this change caused: changing a function
+# breaks its callers, in files the change never touched. The agent can, so
+# it decides, within the scope of its task.
+[ -z "$report" ] || hook_send_back "stop-checks: fix what your change caused before finishing, including breakage in code that calls what you changed.
+If a failure was already there before your change, do not fix it as part of this task: say so in your reply, so it can be fixed separately.
+
 $report"
 exit 0

@@ -14,7 +14,7 @@
 **`p10k configure`, but for your repo's AI agents.**
 
 One wizard. Ten questions. A repository that's ready for humans and coding agents to work in together,<br>
-with guardrails, CI, an AI review gate, and monitoring. Then it gets out of your way, for good.
+with guardrails, CI, a PR gate, and monitoring. Then it gets out of your way, for good.
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![bash 3.2+](https://img.shields.io/badge/bash-3.2%2B-4EAA25?logo=gnubash&logoColor=white)
@@ -50,17 +50,20 @@ cd ~/work/my-project
 
 Nothing goes on your `PATH`, nothing is added to your project's dependencies, and nobody else on the team installs anything.
 
+**New to harness engineering?** Read the [runbook](docs/RUNBOOK.md) first: ten minutes on the ideas (what a harness is, and why guidance and enforcement are different things), then a step-by-step setup for your own project. To look before you commit to anything, add `--dry-run` (shows what would be written) or `--local-only` (writes it, but keeps it out of git on your machine).
+
 ## ✨ Why
 
-Working with coding agents in a shared repository goes well when a handful of things are true at once: the agent knows the project's context and rules, destructive actions are blocked rather than discouraged, every agent PR is checked by something other than the agent that wrote it, and someone can see what the agents actually did. Setting all of that up by hand takes days, and every repo ends up slightly different.
+Working with coding agents in a shared repository goes well when a handful of things are true at once: the agent knows the project's context and rules, destructive actions are blocked rather than discouraged, every PR is checked by something other than the agent that wrote it, and someone can see what the agents actually did. Setting all of that up by hand takes days, and every repo ends up slightly different.
 
-powerharnessing11k does it in about a minute, from the practices in Anthropic's Claude Certified Architect exam guides ([how they map](docs/CCAR-ALIGNMENT.md)), and then **leaves**. Everything it writes is plain files your team owns.
+powerharnessing11k does it in about a minute and then **leaves**. Everything it writes is plain files your team owns, and none of it is tied to one vendor: Claude Code, Codex CLI, and GitHub Copilot share one `AGENTS.md`, one set of skills, and one set of guard scripts. The [runbook](docs/RUNBOOK.md) explains the practices behind it; [CCAR-ALIGNMENT.md](docs/CCAR-ALIGNMENT.md) maps them to Anthropic's Claude Certified Architect exam guides, one of the sources they draw on.
 
 - 🧙 **A p10k-style wizard.** One question per screen: press a key to mark your answer, Enter to confirm it, `r` to restart, `q` to quit and change nothing.
 - 🎯 **Five profiles.** Software, data science & ML, agentic apps, self-paced study, and research, each in minimal / recommended / strict tiers.
 - 🛡️ **Guardrails that hold.** Hooks block force-pushes, `--no-verify`, `curl | sh`, secret access, and pushes to `main`. Every block is logged and explained to the agent.
-- 🔍 **An independent AI review gate.** A fresh Claude instance reviews every PR against your own criteria; a scorecard and weekly digest keep score.
-- 🧪 **A clean software path.** A Makefile as the one command surface, tiered tests (fast on every PR, full nightly), and a working Python/uv skeleton in empty repos.
+- 📝 **Context drafted from your code.** The `onboard` skill has your agent fill in the project context from the repository for you to review, and check it for staleness later.
+- 🔍 **One PR gate for every change.** A diff guard flags deleted tests, weakened assertions, protected-path edits, and oversized diffs, whoever wrote the change; a scorecard and weekly digest keep score. An independent AI review can join it (strict tier).
+- 🧪 **A software path when you want it.** In the strict tier: a Makefile as the one command surface, tiered tests (fast on every PR, full nightly), and a working Python/uv skeleton in empty repos.
 - 📦 **Data and model versioning, locally.** A committed `artifacts.lock` pins the exact data and models every commit used. No cloud required.
 - 🧩 **Your domain, your words.** Name your skills, subagents, and rules; you get blank, correctly placed files with `TODO(team)` notes instead of guesses.
 - 🚪 **One shot, no footprint.** No config file, no manifest, no `update` command, no links back to this repo. It runs once per repository and is never needed there again.
@@ -80,7 +83,7 @@ mkdir opt-engine && cd opt-engine
 ~/powerharnessing11k/setup.sh
 ```
 
-**3. Answer ten questions.** Then fill in the `TODO(team)` notes it lists, commit, and open a PR. Collaborators just pull.
+**3. Answer ten questions.** Then fill in the `TODO(team)` notes it lists (or ask your agent to run the `onboard` skill, which drafts them from your code), commit, and open a PR. Collaborators just pull.
 
 Prefer no questions? Everything has a flag. Run this from inside the project folder too:
 
@@ -114,15 +117,14 @@ Press a key to mark an answer, then Enter to confirm it; the marked option is hi
 When it's done you get a short summary and your next steps:
 
 ```
-  59 file(s) written
+  50 file(s) written
 
-  + ./             .gitignore, AGENTS.md, .editorconfig, Makefile, pyproject.toml, .python-version, ...
+  + ./             .gitignore, .editorconfig, artifacts.lock, CONTRIBUTING.md, AGENTS.md
   + .claude/       CLAUDE.md, skills, agents/ 3, rules/ 5, settings.json
-  + .agents/       hooks/ 7, skills/ 6, scripts/
-  + docs/          TESTING.md, ARTIFACTS.md, agents/
-  + src/           opt_engine/ 2
-  + tests/         conftest.py, unit/
-  + .github/       pull_request_template.md, ISSUE_TEMPLATE/ 3, workflows/ 7, dependabot.yml, scripts/ 2
+  + .agents/       hooks/ 7, skills/ 7, scripts/
+  + scripts/       artifacts.sh, ci/ 2
+  + docs/          ARTIFACTS.md, agents/
+  + .github/       SECURITY.md, pull_request_template.md, ISSUE_TEMPLATE/ 3, workflows/ 4
   ...
 
   ✔ Bootstrapped /home/you/work/opt-engine
@@ -132,7 +134,8 @@ When it's done you get a short summary and your next steps:
          AGENTS.md
          .agents/skills/run-solver/SKILL.md
          ...
-    2. make setup && make check     (installs dev tools with uv, then runs every fast check)
+       Or ask your coding agent to run the onboard skill: it drafts them from your code for you to review.
+    2. Create the project itself: there is no pyproject.toml yet.
     3. Review, commit, and open a PR:  git add -A && git commit -m 'chore: bootstrap agent harness'
     4. Protect 'main': require PR review and the CI checks (Settings → Branches)
 ```
@@ -146,11 +149,10 @@ A software-profile, Python, recommended-tier bootstrap with data versioning and 
 ```
 opt-engine/
 ├── AGENTS.md                  the source of truth: project context (TODO), commands, working agreement
-├── Makefile                   setup · lint · fmt · typecheck · test · test-all · check
-├── pyproject.toml             uv · ruff · mypy --strict · pytest markers · hypothesis · coverage
+├── CONTRIBUTING.md            how humans and agents work together here
 ├── artifacts.lock             sha256 of every data/model file, committed
 ├── .agents/                   shared by every coding agent
-│   ├── skills/                steward · task-intake · review · handoff · formulate (yours) · run-solver (yours)
+│   ├── skills/                onboard · steward · task-intake · review · handoff · formulate (yours) · run-solver (yours)
 │   ├── hooks/                 guard-bash · guard-paths · format-on-edit · stop-checks · audit-log
 │   └── scripts/               agent-report.sh
 ├── .claude/                   Claude Code's own files
@@ -160,18 +162,16 @@ opt-engine/
 │   ├── agents/                reviewer · test-writer · model-checker (yours)
 │   └── skills -> ../.agents/skills
 ├── .github/
-│   └── workflows/             ci · tests-full (nightly) · pr-gate · pr-digest · codeql · ...
+│   └── workflows/             ci · tests-full (nightly) · pr-gate · pr-digest
 ├── scripts/
 │   ├── ci/                    diff-guard.sh · pr-gate.sh (the PR gate's scripts)
 │   └── artifacts.sh           snapshot · verify · status · list · hash
-├── src/opt_engine/            package skeleton
-├── tests/                     conftest (real-data fixture) + unit smoke test
 ├── data/  models/             git-ignored, except their READMEs
-├── docs/                      TESTING.md · ARTIFACTS.md · agents/HANDBOOK.md
+├── docs/                      ARTIFACTS.md · agents/HANDBOOK.md
 └── infra/README.md            (yours)
 ```
 
-`make setup && make check` passes on it out of the box.
+The **strict** tier adds a `Makefile`, `docs/TESTING.md`, and in an empty Python repo a working uv project (`pyproject.toml`, `src/`, `tests/`, with `make setup && make check` passing out of the box), plus CodeQL, dependency review, Dependabot, the AI review, and MCP.
 
 The root stays small on purpose. Only what tools require there is visible (`AGENTS.md`, `CONTRIBUTING.md`, the build files, `artifacts.lock`); everything else lives in the hidden folder of the tool that reads it, or in `docs/` and `scripts/`.
 
@@ -181,7 +181,7 @@ The root stays small on purpose. Only what tools require there is visible (`AGEN
 |---|---|---|
 | **Context** | `AGENTS.md` (project context, commands, working agreement, "how we work with coding agents"), read by every agent; `.claude/CLAUDE.md` imports it | the profile's always-on rules, inside `AGENTS.md` |
 | **Path rules** | `testing.md` (test files anywhere), `github-actions.md` (`.github/**`) | `data.md`, `notebooks.md`, `prompts.md`, `evals.md`, `exercises.md`, `literature.md`, loaded only when the agent touches matching files |
-| **Skills** | `review` (independent review), `handoff` (summary for a fresh session), `steward`, `task-intake` (engineering profiles) | see [Profiles](#-profiles) |
+| **Skills** | `onboard` (draft or refresh the project context from the code), `review` (independent review), `handoff` (summary for a fresh session), `steward`, `task-intake` (engineering profiles) | see [Profiles](#-profiles) |
 | **Roles** (subagents, scoped tools) | `reviewer` (fresh-context, profile-aware; all but study), `test-writer` (engineering profiles) | none: only these two near-universal roles ship; add domain roles as stubs |
 | **Hooks** | guard-bash, guard-paths, format-on-edit, stop-checks, audit-log, session-start | `data/raw/` read-only (ml, research, artifacts); `exercises/` read-only (study) |
 | **Tools** | permissions (allow your lint/test commands; deny secrets); `.mcp.json` with the GitHub MCP server (strict tier) | WebSearch pre-approved (research); Learning output style (study) |
@@ -222,13 +222,13 @@ The generated `docs/agents/HANDBOOK.md` carries the same table for the agents yo
 
 | Profile | Rules focus | Skills | Seeded files |
 |---|---|---|---|
-| 🛠️ **software** | PR workflow, tests are the contract, scope, dependencies | `steward`, `task-intake` | Makefile, `docs/TESTING.md`, Python skeleton |
+| 🛠️ **software** | PR workflow, tests are the contract, scope, dependencies | `steward`, `task-intake` | none by default; strict adds a Makefile, `docs/TESTING.md`, and a Python skeleton |
 | 📊 **ml** | Immutable raw data, no data/models in git, seeds + configs, no leakage, baselines, segment-level metrics, calibration | + `experiment`, `data-audit` (forked, read-only) | `docs/EXPERIMENTS.md`, `docs/DATA.md`, `artifacts.lock` |
 | 🤖 **agentic** | `stop_reason` loops, explicit subagent context, tool descriptions, structured tool errors, least privilege, schema output, evals gate changes, injection, caching | + `prompt-change`, `agent-tool` | `prompts/`, `evals/` (example cases incl. prompt injection) |
 | 📚 **study** | Tutor, not ghostwriter: diagnose, hints before answers, check understanding, keep the progress log | `tutor`, `quiz` (spaced repetition), `study-plan` | `LEARNING_PLAN.md`, `PROGRESS.md`, `notes/`, `exercises/` |
 | 🔬 **research** | Never fabricate; claim→source provenance with dates; conflicts annotated; lab notebook; reproducible analyses | `lab-notebook`, `lit-review`, `claim-check` (forked, read-only) | `docs/RESEARCH_LOG.md`, `literature/` (with `references.bib`) |
 
-Each profile comes in three tiers: **minimal** (core, guardrails, profile module; relaxed guard), **recommended** (the profile's defaults), and **strict** (adds AI review, MCP, and a stricter guard). `setup.sh list` prints the exact modules.
+Each profile comes in three tiers: **minimal** (core, guardrails, profile module; relaxed guard), **recommended** (the profile's defaults: quality checks, audit log, skills, collaboration files, CI, and the PR gate), and **strict** (adds the Makefile and test tiers, security scanning, AI review, MCP, and a stricter guard). `setup.sh list` prints the exact modules.
 
 ### 🧩 Project-specific stubs
 
@@ -246,7 +246,7 @@ Every `AGENTS.md` also gets a **Project context** section to fill in: domain ter
 
 ### 🧪 The software path
 
-The `devtools` module (software, ml, agentic; research from recommended) gives everyone, human or agent, the same verbs:
+The `devtools` module (the strict tier of every profile but study, or pick it with "pick modules" in the wizard) gives everyone, human or agent, the same verbs:
 
 | Target | Runs |
 |---|---|
@@ -269,7 +269,7 @@ The `artifacts` module (ml; research from recommended; anywhere with `--artifact
 
 - keeps `data/` and `models/` out of git (their READMEs stay in);
 - records the sha256 of every file in a committed **`artifacts.lock`**, so a commit pins the exact data and models it was built and tested with;
-- ships `scripts/artifacts.sh snapshot | verify | status | list | hash` and `make artifacts-verify`; tests that need the real files skip cleanly when they don't match (in CI, for example);
+- ships `scripts/artifacts.sh snapshot | verify | status | list | hash` (and `make artifacts-verify` when the Makefile is there); tests that need the real files skip cleanly when they don't match (in CI, for example);
 - lets agents verify but not re-pin on their own, and flags PRs that change the lock;
 - documents the move to DVC or object storage (and the IaC behind it) in `docs/ARTIFACTS.md`: when remote storage arrives, the lock is the upload list.
 
@@ -278,14 +278,14 @@ The `artifacts` module (ml; research from recommended; anywhere with `--artifact
 Every PR gets one required check, **PR gate**:
 
 - **Diff guard** checks every PR the same way, whoever or whatever wrote it. Nobody has to declare or sign agent work. It flags deleted or skipped tests, removed assertions, protected-path edits, oversized diffs, new dependencies, large files, re-pinned artifacts, notebooks with outputs, and prompt changes without eval changes.
-- **AI review** (strict tier, or add the `review` module; needs `ANTHROPIC_API_KEY`): a fresh Claude Code instance (`claude -p`, read-only tools) reviews each changed file, then does one cross-file pass.
+- **AI review** (strict tier, or add the `review` module; needs `ANTHROPIC_API_KEY`): a fresh Claude Code instance (`claude -p`, read-only tools) reviews each changed file, then does one cross-file pass. It runs in CI whichever coding agents your team uses; other review backends are on the [roadmap](docs/ROADMAP.md).
   - Findings follow a JSON schema and your team's `scripts/ci/review/criteria.md`: categories to report or skip, severity definitions, and examples.
   - Findings are posted inline; low-confidence ones go to "needs a human look".
   - Every finding is fingerprinted, so later runs report only what's new.
 - **Gate:** blocking findings fail the check. A maintainer can add `gate-override` to accept the risk, and the override is recorded. A sticky **scorecard** shows every signal and a transparent score.
 - **Weekly digest:** PR volume, merge rate and reverts; gate scores, findings, and overrides; AI-review findings by pattern with 👎 dismissal counts, which show which criteria need sharpening.
 
-Plus a stack-aware `ci.yml` (fast tier on every PR), a nightly full-tier workflow, Conventional Commit PR titles, CodeQL, dependency review (both skip private repositories unless you set the `ADVANCED_SECURITY` repository variable to `true`, since they need GitHub Advanced Security there), Dependabot, `@claude` mentions, and an eval workflow for agentic repos. Make **CI** and **PR gate / gate** required in branch protection.
+Plus a stack-aware `ci.yml` (fast tier on every PR), a nightly full-tier workflow, and an eval workflow for agentic repos. The strict tier adds CodeQL and dependency review (both skip private repositories unless you set the `ADVANCED_SECURITY` repository variable to `true`, since they need GitHub Advanced Security there), Dependabot, and `@claude` mentions (when Claude Code is selected). Make **CI** and **PR gate / gate** required in branch protection.
 
 <details>
 <summary><b>How the gate is hardened against the PR it judges</b></summary>
@@ -308,7 +308,7 @@ Protect `.github/` with CODEOWNERS, and pin `CLAUDE_CODE_VERSION` in `pr-gate.ym
 | Block `rm -rf` of `/` or `~`; block pushes to the default branch, named or implied by being on it (not in solo study repos) | ✅ | ✅ | ✅ |
 | Block edits to `.env*` and key files; deny reading secrets | ✅ | ✅ | ✅ |
 | Block force-push, `--no-verify`, `curl \| sh`, `chmod 777`, shell access to `.env` | | ✅ | ✅ |
-| Lint and typecheck must pass before the agent finishes (Stop hook) | | ✅ | ✅ |
+| Lint and typecheck must pass before the agent finishes (Stop hook); failures only in files it never touched are logged instead | | ✅ | ✅ |
 | Block `--force-with-lease`, `reset --hard`, `git clean -f`, `gh pr merge` | | | ✅ |
 | CI workflows, CODEOWNERS, `.claude/settings.json`, and hooks are human-only | | | ✅ |
 | `git push` asks for confirmation; diff-guard findings fail the gate | | | ✅ |
@@ -442,8 +442,6 @@ make test   # tests/run.sh: every profile × tier, the wizard (via a pseudo-term
 ```
 
 `HARNESS_TEST_UV=1 make test` also runs `make setup && make check` inside a generated Python project (needs uv and network access).
-
-New to agent harnesses? Read [docs/RUNBOOK.md](docs/RUNBOOK.md): the ideas, then a step-by-step setup for your own project.
 
 Start with [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) to add a module or profile. [docs/CCAR-ALIGNMENT.md](docs/CCAR-ALIGNMENT.md) explains the practices behind it, [docs/adr/](docs/adr/) the key decisions, and [docs/ROADMAP.md](docs/ROADMAP.md) what's next. This repo uses a harness itself, bootstrapped once and maintained by hand.
 

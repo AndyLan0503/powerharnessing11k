@@ -38,6 +38,10 @@ powerharnessing11k turns the team's agentic-engineering practices into a one-sho
 - [x] README demo: a VHS recording of the wizard (`docs/demo/wizard.tape`, `make demo`), checked by replaying its keystrokes against the wizard before each re-recording (`make demo-check`)
 - [x] Guard hardening: a push that names no branch (`git push`, `git push origin HEAD`, `--all`) is checked against the current branch, so it cannot reach the default branch unnoticed; naming `.env.example` no longer exempts a real `.env` in the same command
 - [x] CodeQL and dependency review skip private repositories unless the `ADVANCED_SECURITY` repository variable opts in (both need GitHub Advanced Security there)
+- [x] Lighter defaults: minimal and recommended leave out the Makefile, test-tier guide, and Python skeleton (devtools) and the security scans; strict keeps them. No commit-message convention is enforced
+- [x] Vendor-neutral output: `docs/agents/MCP.md` covers only the selected agents (`AGENT_MCP` adapter declaration); `@claude` mentions only with Claude Code
+- [x] `onboard` skill: drafts the project context from the code (unknowns stay as questions), refreshes it later, and offers tests when there are none; `AGENTS.md` asks agents to offer it until the section is filled
+- [x] Stop check attributes failures: only failures in files the agent touched (or that name no file) send it back; others are logged and counted in `agent-report.sh`
 - [ ] Provider support, remaining steps: review backends, GitLab, then Cursor and Gemini. Choose the coding agents (Claude Code, Codex CLI, Cursor, Copilot, Gemini CLI), the git host (GitHub, GitLab, none), and the AI review backend. Design: `docs/design/providers.md`, ADR 0005
 
 - [ ] First real GitHub run of the PR gate; confirm `claude -p --json-schema` output shape and inline-comment posting on a live PR

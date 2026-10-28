@@ -844,6 +844,44 @@ test_guard_hooks() {
   ok
 }
 
+# The stop check sends the agent back for failures in what it touched, not
+# for ones that were already in the repo.
+test_stop_checks_blame_changed_files() {
+  local d
+  d=$(new_repo stop-blame package.json)
+  mkdir -p "$d/src" "$d/packages/app/src"
+  # Each check prints what is in its .out file, and fails when that is not empty.
+  printf '#!/bin/sh\n[ ! -s lint.out ] || { cat lint.out; exit 1; }\n' >"$d/lint.sh"
+  printf '#!/bin/sh\n[ ! -s tc.out ] || { cat tc.out; exit 1; }\n' >"$d/tc.sh"
+  chmod +x "$d/lint.sh" "$d/tc.sh"
+  echo old >"$d/src/old.js"
+  echo app >"$d/packages/app/src/app.js"
+  "$H" configure --yes -C "$d" --cmd 'lint=./lint.sh' --cmd 'typecheck=./tc.sh' >/dev/null 2>&1
+  printf 'lint.out\ntc.out\n' >>"$d/.gitignore"
+  git -C "$d" add -A && git -C "$d" commit -qm base
+  _stop() { echo '{"session_id":"s","stop_hook_active":false,"hook_event_name":"Stop"}' |
+    (cd "$d" && .agents/hooks/stop-checks.sh claude >/dev/null 2>"$WORK/stop.err"); echo $?; }
+
+  echo new >"$d/src/new.js"
+  printf 'src/old.js:1:1 error no-var\n' >"$d/lint.out"
+  check "an old failure elsewhere lets the agent finish" test "$(_stop)" = 0
+  check "and is logged for the team" grep -q '"kind":"check_failed_elsewhere"' "$d/.agents/logs/events.jsonl"
+  check "the report counts it" sh -c "'$d/.agents/scripts/agent-report.sh' | grep -q 'failed only on files no agent touched: 1'"
+  printf 'src/new.js(3,1): error TS2322\n' >"$d/tc.out"
+  check "the next check still runs, and a failure in a new file sends it back" test "$(_stop)" = 2
+  check "naming the check that failed" grep -q 'typecheck failed on your changes' "$WORK/stop.err"
+  check_not "but not the old lint failure" grep -q 'lint failed' "$WORK/stop.err"
+  : >"$d/tc.out"
+  echo edit >>"$d/src/old.js"
+  check "a failure in an edited file sends it back" test "$(_stop)" = 2
+  git -C "$d" checkout -q -- src/old.js
+  echo edit >>"$d/packages/app/src/app.js"
+  printf 'src/app.js\n  2:1  error  no-undef\n' >"$d/lint.out"
+  check "paths printed relative to a package still count" test "$(_stop)" = 2
+  printf 'Error: cannot find config\n' >"$d/lint.out"
+  check "a failure that names no file sends it back" test "$(_stop)" = 2
+}
+
 # A team that does not use Claude Code gets nothing that names it, apart from
 # the hook engine (which reads every agent's payload format) and the opt-in AI
 # review, which runs Claude Code in CI.

@@ -39,6 +39,41 @@ check_not() {
 }
 contains() { grep -qF -- "$2" "$1"; }
 
+# _bare_path DIR TOOL...: sets BARE_PATH to a PATH with TOOL... but no jq or
+# python3, for testing the hooks' sed fallback. Elsewhere the tools are linked
+# into DIR. On Windows a linked program cannot find its runtime, so it is the
+# current PATH minus the directories that hold jq or python3.
+_bare_path() {
+  local dir=$1 t p
+  shift
+  BARE_PATH=''
+  case $(uname -s) in
+    MINGW* | MSYS* | CYGWIN*)
+      local IFS=:
+      for p in $PATH; do
+        [ -e "$p/jq" ] || [ -e "$p/jq.exe" ] || [ -e "$p/python3" ] || [ -e "$p/python3.exe" ] ||
+          BARE_PATH=${BARE_PATH:+$BARE_PATH:}$p
+      done
+      ;;
+    *)
+      mkdir -p "$dir"
+      for t in "$@"; do
+        [ -e "$dir/$t" ] || ln -s "$(command -v "$t")" "$dir/$t" 2>/dev/null || true
+      done
+      BARE_PATH=$dir
+      ;;
+  esac
+  check_not "jq is hidden" env PATH="$BARE_PATH" sh -c 'command -v jq'
+  check_not "python3 is hidden" env PATH="$BARE_PATH" sh -c 'command -v python3'
+}
+
+# The wizard tests drive a pseudo-terminal, which Python has only on Unix.
+_have_pty() {
+  python3 -c 'import pty, termios' >/dev/null 2>&1 && return 0
+  printf '  - skipped: needs python3 with a pseudo-terminal\n'
+  return 1
+}
+
 new_repo() { # name [stack-file...]
   local d=$WORK/$1
   rm -rf "$d"
@@ -266,7 +301,7 @@ test_single_source_of_truth() {
   mkdir -p "$d/.claude" "$d/elsewhere"
   ln -s ../elsewhere "$d/.claude/skills"
   f=$("$H" configure --yes -C "$d" 2>&1)
-  check "wrong link kept without --force" test "$(readlink "$d/.claude/skills")" = ../elsewhere
+  check "wrong link kept without --force" sh -c 'r=$(readlink "$1"); echo "readlink: $r"; [ "$r" = ../elsewhere ]' _ "$d/.claude/skills"
   check "and the user is told" grep -q 'will not see the skills' <<<"$f"
   "$H" configure --yes --force -C "$d" >/dev/null 2>&1
   check "--force repoints the link" test "$(readlink "$d/.claude/skills")" = ../.agents/skills
@@ -413,10 +448,8 @@ assert d["developer_instructions"] == "Match digits with \\d+ and paths like C:\
 
   # The same guard without jq or python3.
   local bin=$WORK/minbin-codex t
-  mkdir -p "$bin"
-  for t in bash sh cat grep sed tr head tail dirname date mkdir git printf cut awk env; do
-    [ -e "$bin/$t" ] || ln -s "$(command -v "$t")" "$bin/$t" 2>/dev/null || true
-  done
+  _bare_path "$bin" bash sh cat grep sed tr head tail dirname date mkdir git printf cut awk env
+  bin=$BARE_PATH
   f=$(jq -cn --arg cwd "$d" --arg cmd "$(_patch src/app.py "$secret")" '{cwd: $cwd, tool_name: "apply_patch", tool_input: {command: $cmd}}')
   t=0
   printf '%s' "$f" | PATH=$bin "$d/.agents/hooks/guard-paths.sh" codex >/dev/null 2>&1 || t=$?
@@ -587,10 +620,8 @@ test_copilot_adapter() {
 
   # Without jq or python3, arguments sent as a JSON string are still read.
   local bin=$WORK/minbin-copilot t
-  mkdir -p "$bin"
-  for t in bash sh cat grep sed tr head tail dirname date mkdir git printf cut awk env; do
-    [ -e "$bin/$t" ] || ln -s "$(command -v "$t")" "$bin/$t" 2>/dev/null || true
-  done
+  _bare_path "$bin" bash sh cat grep sed tr head tail dirname date mkdir git printf cut awk env
+  bin=$BARE_PATH
   f=$(jq -cn --arg cwd "$d" --arg c "$push" '{sessionId: "s", cwd: $cwd, toolName: "bash", toolArgs: ({command: $c} | tojson)}')
   t=0
   printf '%s' "$f" | PATH=$bin "$d/.agents/hooks/guard-bash.sh" copilot >"$WORK/copilot.out" 2>/dev/null || t=$?
@@ -698,7 +729,7 @@ test_two_agents_share_one_source() {
 
 # The checklist widget used to pick coding agents.
 test_ui_checklist() {
-  command -v python3 >/dev/null 2>&1 || { ok; return; }
+  _have_pty || { ok; return; }
   local out=$WORK/checklist.out script=$WORK/checklist.sh
   cat >"$script" <<EOF
 #!/usr/bin/env bash
@@ -723,7 +754,7 @@ EOF
 
 # A number key only marks an answer; Enter confirms it.
 test_ui_choose() {
-  command -v python3 >/dev/null 2>&1 || { ok; return; }
+  _have_pty || { ok; return; }
   local out=$WORK/choose.out script=$WORK/choose.sh
   cat >"$script" <<EOF
 #!/usr/bin/env bash
@@ -831,10 +862,8 @@ test_guard_hooks() {
 
   # Same suite with neither jq nor python3 on PATH (sed fallback).
   bin=$WORK/minbin
-  mkdir -p "$bin"
-  for t in bash sh cat grep sed tr head tail dirname date mkdir git printf cut awk env; do
-    [ -e "$bin/$t" ] || ln -s "$(command -v "$t")" "$bin/$t" 2>/dev/null || true
-  done
+  _bare_path "$bin" bash sh cat grep sed tr head tail dirname date mkdir git printf cut awk env
+  bin=$BARE_PATH
   PATH=$bin _guard_suite "$d" "no-jq"
 
   # Strict mode.
@@ -1517,14 +1546,12 @@ test_collaborator_needs_nothing() {
 
   # A machine with no harness, no jq, no python3.
   bin=$WORK/collabbin
-  mkdir -p "$bin"
-  for t in bash sh cat grep sed tr head tail dirname date mkdir git printf cut awk sort env pwd; do
-    [ -e "$bin/$t" ] || ln -s "$(command -v "$t")" "$bin/$t" 2>/dev/null || true
-  done
+  _bare_path "$bin" bash sh cat grep sed tr head tail dirname date mkdir git printf cut awk sort env pwd
+  bin=$BARE_PATH
   [ "$(hook_json Bash command 'git push --force origin x' |
-    env -i PATH="$bin" "$clone/.agents/hooks/guard-bash.sh" claude >/dev/null 2>&1
+    env -i PATH="$bin" ${SYSTEMROOT:+SYSTEMROOT="$SYSTEMROOT"} "$clone/.agents/hooks/guard-bash.sh" claude >/dev/null 2>&1
   echo $?)" = 2 ] || fail "guard hook does not work on a bare collaborator machine"
-  out=$(env -i PATH="$bin" "$clone/.agents/scripts/agent-report.sh" 2>&1) || fail "agent-report.sh failed: $out"
+  out=$(env -i PATH="$bin" ${SYSTEMROOT:+SYSTEMROOT="$SYSTEMROOT"} "$clone/.agents/scripts/agent-report.sh" 2>&1) || fail "agent-report.sh failed: $out"
   check "agent-report.sh standalone" grep -q 'Blocked: 1' <<<"$out"
   ok
 }
@@ -1807,7 +1834,7 @@ test_devtools_respects_existing_projects() {
 
 # The interactive wizard, end to end through a pseudo-terminal.
 test_wizard_flow() {
-  command -v python3 >/dev/null 2>&1 || { ok; return; }
+  _have_pty || { ok; return; }
   local d=$WORK/wiz/opt-engine out=$WORK/wiz.out
   rm -rf "$WORK/wiz"
   mkdir -p "$d"
@@ -1911,7 +1938,7 @@ demo_test_tape_inputs() {
 # Opt-in (DEMO_TESTS=1): `make demo` runs it before re-recording, so a tape
 # that no longer drives the wizard fails before anything is recorded.
 demo_test_tape() {
-  command -v python3 >/dev/null 2>&1 || { ok; return; }
+  _have_pty || { ok; return; }
   local tape=$ROOT/docs/demo/wizard.tape d=$WORK/demo/opt-engine out=$WORK/demo.out inputs
   inputs=$(_tape_inputs "$tape") || { fail "the demo tape uses keystrokes the replay does not support"; return; }
   check "the demo starts by running setup.sh" test "$(head -n 1 <<<"$inputs")" = 'line:~/powerharnessing11k/setup.sh'
@@ -2013,8 +2040,9 @@ test_windows_checkouts() {
   c=$WORK/win-crlf
   rm -rf "$c"
   git -c core.autocrlf=true clone -q "$d" "$c"
-  check "a CRLF checkout still has LF hooks" sh -c "! grep -q \"\$(printf '\r')\" '$c/.agents/hooks/guard-bash.sh'"
-  check "the CRLF checkout really converts other files" grep -q "$(printf '\r')" "$c/AGENTS.md"
+  # Counted with tr: grep on Windows hides carriage returns.
+  check "a CRLF checkout still has LF hooks" test "$(tr -dc '\r' <"$c/.agents/hooks/guard-bash.sh" | wc -c)" -eq 0
+  check "the CRLF checkout really converts other files" test "$(tr -dc '\r' <"$c/AGENTS.md" | wc -c)" -gt 0
   [ "$(_guard "$c" guard-bash.sh Bash command 'git push --for''ce origin x')" = 2 ] || fail "CRLF checkout: guard does not block"
   ok
 
@@ -2179,7 +2207,7 @@ test_project_not_created_yet() {
   echo change >"$d/notes.txt"
   _stop() { echo '{"session_id":"s","stop_hook_active":false,"hook_event_name":"Stop"}' | "$d/.agents/hooks/stop-checks.sh" claude >/dev/null 2>&1; echo $?; }
   check "stop check waits while there is no package.json" test "$(_stop)" = 0
-  echo '{"name":"web","private":true,"scripts":{"lint":"echo lint-broke >&2; exit 1"}}' >"$d/package.json"
+  echo '{"name":"web","private":true,"scripts":{"lint":"node -e \"process.exit(1)\""}}' >"$d/package.json"
   check "and runs once there is one" test "$(_stop)" = 2
   f=$d/.github/workflows/ci.yml
   check "CI steps wait for the project" test "$(grep -c "if: \${{ hashFiles('package.json') != '' }}" "$f")" -ge 3

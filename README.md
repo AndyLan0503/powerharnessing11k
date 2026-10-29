@@ -504,6 +504,8 @@ make test   # tests/run.sh: every profile × tier, the wizard (via a pseudo-term
             # stubs, artifacts, devtools, hooks, review + gate (with a stubbed claude)
 ```
 
+`tests/run.sh "guard local_only"` runs only the tests whose names contain one of the given words. CI runs the suite on Linux and on macOS with bash 3.2. Windows (Git Bash) runs a smoke set on PRs, since starting processes is slow there, and the full suite on `main`, nightly, and on demand.
+
 `HARNESS_TEST_UV=1 make test` also runs `make setup && make check` inside a generated Python project (needs uv and network access).
 
 Start with [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) to add a module or profile. [docs/CCAR-ALIGNMENT.md](docs/CCAR-ALIGNMENT.md) explains the practices behind it, [docs/adr/](docs/adr/) the key decisions, and [docs/ROADMAP.md](docs/ROADMAP.md) what's next. This repo uses a harness itself, bootstrapped once and maintained by hand.

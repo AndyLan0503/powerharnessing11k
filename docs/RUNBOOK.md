@@ -87,7 +87,7 @@ paths: ["src/solver/**"]
 
 When a hook blocks something, the agent is told why and what to do instead. A block is the system working as designed.
 
-**The PR gate: `.github/workflows/pr-gate.yml`.** Local hooks protect one developer's machine. The gate protects the shared branch. Every pull request gets a single required check made of:
+**The PR gate: `.github/workflows/pr-gate.yml`** (with GitHub Actions on). Local hooks protect one developer's machine. The gate protects the shared branch. Every pull request gets a single required check made of:
 - *Diff guard:* inspects every PR the same way, whoever or whatever wrote it, and flags risky patterns such as deleted tests, removed assertions, edits to CI files, very large diffs, and new dependencies.
 - *AI review* (strict tier): a fresh model instance reviews the diff against criteria your team owns in `scripts/ci/review/criteria.md`.
 - *Scorecard:* a comment on the PR listing every signal and a score, so a human reviewer sees the picture at a glance.
@@ -123,7 +123,8 @@ The wizard is quick. The decisions behind the answers deserve a few minutes of t
 | Decision | How to think about it |
 |---|---|
 | **Profile** | What is the repo for? `software` for apps, services, and libraries. `ml` when notebooks, datasets, and experiments are central. `agentic` when the product itself is an LLM app. `study` and `research` for solo learning and research work. A numerical or optimisation codebase is `software` plus data versioning. |
-| **Tier** | Start with `recommended`. `strict` adds AI review on every PR (needs an API key and has a running cost), tighter guardrails, a Makefile with test tiers, and security scanning (CodeQL, dependency review, Dependabot). Move to strict once the team is comfortable. |
+| **Tier** | Start with `recommended`. `strict` adds tighter guardrails and a Makefile with test tiers. Move to strict once the team is comfortable. |
+| **GitHub Actions** | Off by default. Turn them on when the repo is on GitHub and you want checks that hold for every PR, whatever runs on each person's machine: CI and the PR gate, plus (strict) security scanning and AI review on every PR (needs an API key and has a running cost). |
 | **Data and models** | Does the project depend on data or model files that should not be in git yet must be reproducible? If yes, turn on artifact versioning. |
 | **Your domain** | List two or three procedures you expect to explain repeatedly (skills), any specialist reviewer you want (role), and the areas of code with their own conventions (rules). Names only. You fill them in later. |
 | **Who approves** | Which GitHub users or teams must review changes? They go in CODEOWNERS. |
@@ -143,7 +144,7 @@ cd ~/work/my-project        # an empty folder is fine; it offers to run git init
 ~/powerharnessing11k/setup.sh
 ```
 
-Ten screens. Press a key to mark your answer (it is highlighted and echoed after the prompt), then Enter to confirm it; pressing another key first changes the answer. `r` restarts, `q` quits without writing anything.
+Eleven screens. Press a key to mark your answer (it is highlighted and echoed after the prompt), then Enter to confirm it; pressing another key first changes the answer. `r` restarts, `q` quits without writing anything.
 
 | # | Screen | Tip |
 |:-:|---|---|
@@ -152,11 +153,12 @@ Ten screens. Press a key to mark your answer (it is highlighted and echoed after
 | 3 | Commands | Check these carefully. Hooks, CI, and the agent's instructions all use them. Choose "Edit them" if any are wrong |
 | 4 | Which coding agents | A checklist. Tick every agent your team uses (Claude Code, Codex CLI, GitHub Copilot); number keys toggle, Enter continues |
 | 5 | How much harness | `Recommended` to start |
-| 6 | Version data or model files? | Your decision from Step 1 |
-| 7 | Project-specific stubs | Type the names from Step 1 |
-| 8 | Who must review changes | CODEOWNERS entries, for example `@acme/platform` |
-| 9 | Telemetry | "No" unless you already run an OpenTelemetry collector. Asked only when Claude Code is selected |
-| 10 | Ready to apply | Read the summary, including what each agent does and does not get, then `y` and Enter |
+| 6 | Add GitHub Actions workflows? | Your decision from Step 1 |
+| 7 | Version data or model files? | Your decision from Step 1 |
+| 8 | Project-specific stubs | Type the names from Step 1 |
+| 9 | Who must review changes | CODEOWNERS entries, for example `@acme/platform` |
+| 10 | Telemetry | "No" unless you already run an OpenTelemetry collector. Asked only when Claude Code is selected |
+| 11 | Ready to apply | Read the summary, including what each agent does and does not get, then `y` and Enter |
 
 If you pick GitHub Copilot: the CLI uses the hooks once you trust the folder, and the cloud agent reads the hooks, agents, and instructions from the default branch, so they apply after your bootstrap PR is merged.
 
@@ -182,7 +184,7 @@ Spend five minutes here before changing anything. Open these in order:
 2. `.claude/CLAUDE.md` - one import line. Then `.claude/settings.json` - the `allow` and `deny` lists, and which hook runs at which moment.
 3. `.agents/hooks/guard-bash.sh` - plain bash. Read the list of blocked patterns so you know what your agent cannot do.
 4. The **Commands** section of `AGENTS.md` - the lint and test commands that hooks, CI, and agents all use. (Strict tier: the `Makefile` wraps them; run `make help`.)
-5. `.github/workflows/ci.yml` and `pr-gate.yml` - what happens to every PR.
+5. `.github/workflows/ci.yml` and `pr-gate.yml` (with GitHub Actions on) - what happens to every PR.
 6. `docs/agents/HANDBOOK.md` - the team policy in plain language.
 7. `docs/TESTING.md` (strict tier) - the test tiers and rules.
 
@@ -278,11 +280,11 @@ Open a pull request and have a teammate review it. This PR is the moment the tea
 | Setting | Where | Value |
 |---|---|---|
 | Branch protection on `main` | Settings - Branches | Require a pull request, at least one approval, and passing status checks |
-| Required checks | Same screen | `CI` and `PR gate / gate` |
+| Required checks (with GitHub Actions on) | Same screen | `CI` and `PR gate / gate` |
 | Code owner review | Same screen | Enable "Require review from Code Owners" |
-| API key (strict tier only) | Settings - Secrets and variables - Actions | `ANTHROPIC_API_KEY` |
+| API key (strict tier with GitHub Actions only) | Settings - Secrets and variables - Actions | `ANTHROPIC_API_KEY` |
 
-Without branch protection the gate only advises. With it, nothing reaches `main` unchecked.
+Without branch protection the gate only advises. With it, nothing reaches `main` unchecked. Without GitHub Actions, require a pull request and an approval; the local hooks are then your only automatic checks.
 
 ### Step 10: Run your first agent task
 

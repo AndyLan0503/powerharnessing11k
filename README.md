@@ -13,8 +13,8 @@
 
 **`p10k configure`, but for your repo's AI agents.**
 
-One wizard. Ten questions. A repository that's ready for humans and coding agents to work in together,<br>
-with guardrails, CI, a PR gate, and monitoring. Then it gets out of your way, for good.
+One wizard, a few questions. A repository that's ready for humans and coding agents to work in together,<br>
+with guardrails, skills, and monitoring, plus CI and a PR gate if you want them. Then it gets out of your way, for good.
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![bash 3.2+](https://img.shields.io/badge/bash-3.2%2B-4EAA25?logo=gnubash&logoColor=white)
@@ -62,7 +62,7 @@ powerharnessing11k does it in about a minute and then **leaves**. Everything it 
 - 🎯 **Five profiles.** Software, data science & ML, agentic apps, self-paced study, and research, each in minimal / recommended / strict tiers.
 - 🛡️ **Guardrails that hold.** Hooks block force-pushes, `--no-verify`, `curl | sh`, secret access, and pushes to `main`. Every block is logged and explained to the agent.
 - 📝 **Context drafted from your code.** The `onboard` skill has your agent fill in the project context from the repository for you to review, and check it for staleness later.
-- 🔍 **One PR gate for every change.** A diff guard flags deleted tests, weakened assertions, protected-path edits, and oversized diffs, whoever wrote the change; a scorecard and weekly digest keep score. An independent AI review can join it (strict tier).
+- 🔍 **One PR gate for every change.** A diff guard flags deleted tests, weakened assertions, protected-path edits, and oversized diffs, whoever wrote the change; a scorecard and weekly digest keep score. An independent AI review can join it (strict tier). Opt-in, like every GitHub Actions workflow here.
 - 🧪 **A software path when you want it.** In the strict tier: a Makefile as the one command surface, tiered tests (fast on every PR, full nightly), and a working Python/uv skeleton in empty repos.
 - 📦 **Data and model versioning, locally.** A committed `artifacts.lock` pins the exact data and models every commit used. No cloud required.
 - 🧩 **Your domain, your words.** Name your skills, subagents, and rules; you get blank, correctly placed files with `TODO(team)` notes instead of guesses.
@@ -83,12 +83,12 @@ mkdir opt-engine && cd opt-engine
 ~/powerharnessing11k/setup.sh
 ```
 
-**3. Answer ten questions.** Then fill in the `TODO(team)` notes it lists (or ask your agent to run the `onboard` skill, which drafts the project context from your code), commit, and open a PR. Collaborators just pull.
+**3. Answer a few questions.** Then fill in the `TODO(team)` notes it lists (or ask your agent to run the `onboard` skill, which drafts the project context from your code), commit, and open a PR. Collaborators just pull.
 
 Prefer no questions? Everything has a flag. Run this from inside the project folder too:
 
 ```sh
-~/powerharnessing11k/setup.sh --yes --stack python --artifacts \
+~/powerharnessing11k/setup.sh --yes --stack python --artifacts --actions \
   --skills formulate,run-solver --roles model-checker \
   --rules "solver=src/*/solver/**" --dirs infra
 ```
@@ -96,7 +96,7 @@ Prefer no questions? Everything has a flag. Run this from inside the project fol
 ## 🧙 The wizard
 
 <p align="center">
-  <img src="docs/demo/wizard.gif" alt="The powerharnessing11k wizard setting up an empty folder: ten questions, each answer marked and then confirmed with Enter, then a summary of the files written and the next steps" width="900">
+  <img src="docs/demo/wizard.gif" alt="The powerharnessing11k wizard setting up an empty folder: eleven questions, each answer marked and then confirmed with Enter, then a summary of the files written and the next steps" width="900">
 </p>
 
 Press a key to mark an answer, then Enter to confirm it; the marked option is highlighted, so you can change your mind first. `r` restarts and `q` quits without writing anything, on every screen.
@@ -108,11 +108,12 @@ Press a key to mark an answer, then Enter to confirm it; the marked option is hi
 | 3 | These commands OK? | Install, lint, typecheck, fast tests, full tests, format (and eval for ml/agentic) |
 | 4 | Which coding agents? | A checklist: Claude Code, Codex CLI, GitHub Copilot. Pick every one your team uses |
 | 5 | How much harness? | Minimal, recommended, strict, or pick modules one by one |
-| 6 | Version data or model files? | Local `data/` + `models/` pinned by hash in `artifacts.lock` |
-| 7 | Project-specific stubs? | Skills, subagents, path-scoped rules, folders: blank files with `TODO(team)` notes |
-| 8 | Who reviews changes? | CODEOWNERS entries |
-| 9 | Export telemetry? | Claude Code OpenTelemetry to your collector (asked only when Claude Code is selected) |
-| 10 | Ready to apply | Every answer and module, and what each selected agent does and doesn't get |
+| 6 | Add GitHub Actions workflows? | No by default. Yes adds the tier's CI and [PR gate](#-the-pr-gate) (strict: also security scans and AI review). Not asked after Custom |
+| 7 | Version data or model files? | Local `data/` + `models/` pinned by hash in `artifacts.lock` |
+| 8 | Project-specific stubs? | Skills, subagents, path-scoped rules, folders: blank files with `TODO(team)` notes |
+| 9 | Who reviews changes? | CODEOWNERS entries |
+| 10 | Export telemetry? | Claude Code OpenTelemetry to your collector (asked only when Claude Code is selected) |
+| 11 | Ready to apply | Every answer and module, and what each selected agent does and doesn't get |
 
 When it's done you get a short summary and your next steps:
 
@@ -228,7 +229,9 @@ The generated `docs/agents/HANDBOOK.md` carries the same table for the agents yo
 | 📚 **study** | Tutor, not ghostwriter: diagnose, hints before answers, check understanding, keep the progress log | `tutor`, `quiz` (spaced repetition), `study-plan` | `LEARNING_PLAN.md`, `PROGRESS.md`, `notes/`, `exercises/` |
 | 🔬 **research** | Never fabricate; claim→source provenance with dates; conflicts annotated; lab notebook; reproducible analyses | `lab-notebook`, `lit-review`, `claim-check` (forked, read-only) | `docs/RESEARCH_LOG.md`, `literature/` (with `references.bib`) |
 
-Each profile comes in three tiers: **minimal** (core, guardrails, profile module; relaxed guard), **recommended** (the profile's defaults: quality checks, audit log, skills, collaboration files, CI, and the PR gate), and **strict** (adds the Makefile and test tiers, security scanning, AI review, MCP, and a stricter guard). `setup.sh list` prints the exact modules.
+Each profile comes in three tiers: **minimal** (core, guardrails, profile module; relaxed guard), **recommended** (the profile's defaults: quality checks, audit log, skills, and collaboration files), and **strict** (adds the Makefile and test tiers, MCP, and a stricter guard). `setup.sh list` prints the exact modules.
+
+GitHub Actions workflows are opt-in at every tier (`--actions`, or "Yes" in the wizard). With them, minimal gets CI; recommended gets CI and the [PR gate](#-the-pr-gate); strict also gets security scanning and AI review. Without them, nothing runs on GitHub: the harness lives in the repo and its agents.
 
 ### 🧩 Project-specific stubs
 
@@ -275,7 +278,7 @@ The `artifacts` module (ml; research from recommended; anywhere with `--artifact
 
 ## 🔍 The PR gate
 
-Every PR gets one required check, **PR gate**:
+Opt-in: add `--actions` (or answer "Yes" in the wizard) at the recommended or strict tier. Then every PR gets one required check, **PR gate**:
 
 - **Diff guard** checks every PR the same way, whoever or whatever wrote it. Nobody has to declare or sign agent work. It flags deleted or skipped tests, removed assertions, protected-path edits, oversized diffs, new dependencies, large files, re-pinned artifacts, notebooks with outputs, and prompt changes without eval changes.
 - **AI review** (strict tier, or add the `review` module; needs `ANTHROPIC_API_KEY`): a fresh Claude Code instance (`claude -p`, read-only tools) reviews each changed file, then does one cross-file pass. It runs in CI whichever coding agents your team uses; other review backends are on the [roadmap](docs/ROADMAP.md).
@@ -347,6 +350,7 @@ setup.sh version | help
 | `--agents LIST` | coding agents to set up, comma-separated: `claude`, `codex`, `copilot` (default: `claude`) |
 | `--owners LIST` | CODEOWNERS entries, e.g. `"@acme/platform"` |
 | `--otel URL` | OTLP endpoint; enables telemetry |
+| `--actions` / `--no-actions` | the tier's GitHub Actions workflows on or off (default: off) |
 | `--artifacts` / `--no-artifacts` | local data/model versioning on or off |
 | `--cmd KEY=CMD` | override a command: `install` `lint` `typecheck` `test` `full-test` `format` `eval` |
 | `--skills` `--roles` `--rules` `--dirs` | [project-specific stubs](#-project-specific-stubs) |

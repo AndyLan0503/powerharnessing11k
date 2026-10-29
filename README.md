@@ -108,7 +108,7 @@ Press a key to mark an answer, then Enter to confirm it; the marked option is hi
 | 3 | These commands OK? | Install, lint, typecheck, fast tests, full tests, format (and eval for ml/agentic) |
 | 4 | Which coding agents? | A checklist: Claude Code, Codex CLI, GitHub Copilot. Pick every one your team uses |
 | 5 | How much harness? | Minimal, recommended, strict, or pick modules one by one |
-| 6 | Add GitHub Actions workflows? | No by default. Yes adds the tier's CI and [PR gate](#-the-pr-gate) (strict: also security scans and AI review). Not asked after Custom |
+| 6 | Add GitHub Actions workflows? | No by default. Yes adds the tier's workflows, such as CI and the [PR gate](#-the-pr-gate). Not asked after Custom |
 | 7 | Version data or model files? | Local `data/` + `models/` pinned by hash in `artifacts.lock` |
 | 8 | Project-specific stubs? | Skills, subagents, path-scoped rules, folders: blank files with `TODO(team)` notes |
 | 9 | Who reviews changes? | CODEOWNERS entries |
@@ -231,7 +231,7 @@ The generated `docs/agents/HANDBOOK.md` carries the same table for the agents yo
 
 Each profile comes in three tiers: **minimal** (core, guardrails, profile module; relaxed guard), **recommended** (the profile's defaults: quality checks, audit log, skills, and collaboration files), and **strict** (adds the Makefile and test tiers, MCP, and a stricter guard). `setup.sh list` prints the exact modules.
 
-GitHub Actions workflows are opt-in at every tier (`--actions`, or "Yes" in the wizard). With them, minimal gets CI; recommended gets CI and the [PR gate](#-the-pr-gate); strict also gets security scanning and AI review. Without them, nothing runs on GitHub: the harness lives in the repo and its agents.
+GitHub Actions workflows are opt-in at every tier (`--actions`, or "Yes" in the wizard). With them, each tier adds its workflows; for software, ml, and agentic repos, minimal gets CI, recommended gets CI and the [PR gate](#-the-pr-gate), and strict also gets security scanning and AI review (with its checklist, `docs/REVIEW.md`). `setup.sh list` shows what `--actions` adds for every profile. Without them, nothing runs on GitHub: the harness lives in the repo and its agents.
 
 ### 🧩 Project-specific stubs
 
@@ -278,7 +278,7 @@ The `artifacts` module (ml; research from recommended; anywhere with `--artifact
 
 ## 🔍 The PR gate
 
-Opt-in: add `--actions` (or answer "Yes" in the wizard) at the recommended or strict tier. Then every PR gets one required check, **PR gate**:
+Opt-in: add `--actions` (or answer "Yes" in the wizard) at a tier that includes it (`setup.sh list` shows which). Then every PR gets one required check, **PR gate**:
 
 - **Diff guard** checks every PR the same way, whoever or whatever wrote it. Nobody has to declare or sign agent work. It flags deleted or skipped tests, removed assertions, protected-path edits, oversized diffs, new dependencies, large files, re-pinned artifacts, notebooks with outputs, and prompt changes without eval changes.
 - **AI review** (strict tier, or add the `review` module; needs `ANTHROPIC_API_KEY`): a fresh Claude Code instance (`claude -p`, read-only tools) reviews each changed file, then does one cross-file pass. It runs in CI whichever coding agents your team uses; other review backends are on the [roadmap](docs/ROADMAP.md).

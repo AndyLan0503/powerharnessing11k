@@ -5,7 +5,7 @@ Evaluation cases that gate changes to prompts, tools, models, and agent logic.
 - `cases/*.jsonl`: one case per line. Start from `cases/example.jsonl`.
 - `results/`: local run outputs (git-ignored).
 {{#if EVAL_CMD}}
-- Run: `{{EVAL_CMD}}`. CI runs it on PRs that touch prompts, evals, or agent code (`.github/workflows/evals.yml`).
+- Run: `{{EVAL_CMD}}`.{{#if MOD_CI}} CI runs it on PRs that touch prompts, evals, or agent code (`.github/workflows/evals.yml`).{{/if}}{{#unless MOD_CI}} Run it before merging any change to prompts, evals, or agent code, and attach the results to the PR.{{/if}}
 {{/if}}
 {{#unless EVAL_CMD}}
 - TODO(team): no eval command configured yet. Add one here and a CI workflow that runs it on PRs touching prompts, evals, or agent code.

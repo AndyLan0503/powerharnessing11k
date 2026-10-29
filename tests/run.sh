@@ -959,7 +959,7 @@ test_default_tiers_stay_light() {
     check "strict --actions: $f" test -e "$d/$f"
   done
   check_not "strict: no PR title check" test -e "$d/.github/workflows/pr-title.yml"
-  d=$(new_repo actions-study)
+  d=$(new_repo actions-study-ci)
   "$H" configure --yes --actions -C "$d" --profile study >/dev/null 2>&1
   check "a tier without workflows gets plain CI" test "$(cd "$d/.github/workflows" && echo *)" = ci.yml
 
@@ -972,6 +972,35 @@ test_default_tiers_stay_light() {
   d=$(new_repo actions-modules package.json)
   "$H" configure --yes -C "$d" --modules core,guardrails,ci >/dev/null 2>&1
   check "--modules can name ci" test -e "$d/.github/workflows/ci.yml"
+  out=$("$H" configure --yes --actions -C "$d" --modules core,guardrails 2>&1)
+  check "--actions with --modules says it does nothing" grep -q -- '--actions has no effect with --modules' <<<"$out"
+
+  # setup.sh list shows what --actions adds.
+  out=$("$H" list 2>&1)
+  check "list: a tier without its workflows, then what --actions adds" \
+    grep -qE '^  software +recommended +core guardrails quality audit skills collab  \+ with --actions: ci diff-guard$' <<<"$out"
+
+  # Agentic evals: the workflow only with CI; otherwise the README says to run them.
+  d=$(new_repo actions-evals)
+  "$H" configure --yes -C "$d" --profile agentic --cmd 'eval=make evals' >/dev/null 2>&1
+  check_not "agentic: no eval workflow without --actions" test -e "$d/.github/workflows/evals.yml"
+  check "agentic: run the evals before merging" grep -q 'Run it before merging' "$d/evals/README.md"
+  check_not "no workflow-editing rule without workflows" test -e "$d/.claude/rules/github-actions.md"
+  "$H" configure --yes --actions --force -C "$d" --profile agentic --cmd 'eval=make evals' >/dev/null 2>&1
+  check "agentic --actions: the eval workflow" test -e "$d/.github/workflows/evals.yml"
+  check "and the workflow-editing rule" test -e "$d/.claude/rules/github-actions.md"
+
+  # Without Actions the team docs claim no CI or PR gate.
+  d=$(new_repo actions-docs)
+  "$H" configure --yes -C "$d" --profile research >/dev/null 2>&1
+  for f in docs/agents/HANDBOOK.md CONTRIBUTING.md; do
+    check_not "no CI claims in $f" grep -qE 'required CI checks|CI is green|PR gate|diff-guard|against CI|same gate' "$d/$f"
+  done
+  out=$("$H" configure --yes -C "$d" --profile research 2>&1)
+  check "research: protect main with PR review" grep -q "require PR review (Settings" <<<"$out"
+  d=$(new_repo actions-study)
+  out=$("$H" configure --yes --actions -C "$d" --profile study 2>&1)
+  check_not "study pushes to main: no protection step" grep -q "Protect 'main'" <<<"$out"
 }
 
 # Code scanning on a private repo without GitHub Advanced Security would fail
@@ -1179,11 +1208,14 @@ test_setup_from_clone() {
 }
 
 test_every_profile_and_tier() {
-  local p t d f
+  local p t d f a
   for p in software ml agentic study research; do
     for t in minimal recommended strict; do
       d=$(new_repo "prof-$p-$t" pyproject.toml uv.lock)
-      "$H" configure --yes -C "$d" --profile "$p" --tier "$t" --owners @acme/x >/dev/null 2>&1 ||
+      # Strict with every workflow, so the checks below see all of them.
+      a=''
+      [ "$t" != strict ] || a=--actions
+      "$H" configure --yes -C "$d" --profile "$p" --tier "$t" --owners @acme/x ${a:+"$a"} >/dev/null 2>&1 ||
         fail "$p/$t: configure failed"
       check "$p/$t: settings.json valid" jq empty "$d/.claude/settings.json"
       check_not "$p/$t: unrendered placeholders" grep -rEn '\{\{[#/>]?[A-Z]' "$d" --exclude-dir=.git
@@ -1246,7 +1278,7 @@ test_profile_specifics() {
   d=$WORK/prof-agentic-recommended
   check "agentic: rules" contains "$d/AGENTS.md" 'Prompts are code'
   check_not "agentic: no evals.yml without EVAL_CMD" test -e "$d/.github/workflows/evals.yml"
-  "$H" configure --yes -C "$d" --profile agentic --force --cmd 'eval=uv run python -m evals' >/dev/null 2>&1
+  "$H" configure --yes --actions -C "$d" --profile agentic --force --cmd 'eval=uv run python -m evals' >/dev/null 2>&1
   check "agentic: evals.yml generated" contains "$d/.github/workflows/evals.yml" 'uv run python -m evals'
   check "agentic: eval command in AGENTS.md" contains "$d/AGENTS.md" 'Evals: `uv run python -m evals`'
   ok
@@ -1257,7 +1289,7 @@ test_profile_claude_code_config() {
   local d f
   d=$WORK/prof-software-recommended
   check "software: testing rule is path-scoped" grep -q '^paths: \[' "$d/.claude/rules/testing.md"
-  check "software: CI rule is path-scoped" grep -q '^paths: \[".github/\*\*"\]' "$d/.claude/rules/github-actions.md"
+  check "software: CI rule is path-scoped" grep -q '^paths: \[".github/\*\*"\]' "$WORK/prof-software-strict/.claude/rules/github-actions.md"
   check "software: review skill" grep -q '^name: review$' "$d/.agents/skills/review/SKILL.md"
   check "software: handoff skill" grep -q '^name: handoff$' "$d/.agents/skills/handoff/SKILL.md"
   check "software: reviewer role" grep -q '^tools: Read, Grep, Glob, Bash$' "$d/.claude/agents/reviewer.md"
@@ -1879,6 +1911,27 @@ test_wizard_flow() {
   check_not "codex only: no telemetry question" grep -q 'Export Claude Code telemetry' "$out"
   check "codex only: applied" test -f "$d/.codex/config.toml"
   check_not "codex only: no Claude Code files" test -e "$d/.claude"
+
+  # Custom: the modules and guard level picked by hand are applied as they
+  # are, and the Actions question is not asked (Custom chose ci itself).
+  # Modules in order: guardrails quality audit devtools skills mcp collab ci
+  # security diff-guard review.
+  d=$(new_repo wiz-custom)
+  printf '%s\n' line:1 line:2 line:1 line: line:4 \
+    line:y line:n line:n line:n line:n line:n line:n line:y line:n line:n line:n \
+    line:1 line:2 line:1 line:1 line:y |
+    HARNESS_NO_CLEAR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$H" configure -C "$d"
+  check_not "custom: no Actions question" grep -q 'Add GitHub Actions workflows' "$out"
+  check "custom: one step fewer, counted from the start" sh -c "grep -q '\[5/10\]  Custom modules' '$out' && grep -q '\[10/10\]  Ready to apply' '$out'"
+  check "custom: the picked workflow is written" test -f "$d/.github/workflows/ci.yml"
+  check_not "custom: nothing else from the tier" test -e "$d/.github/workflows/pr-gate.yml" -o -e "$d/CONTRIBUTING.md"
+  check "custom: the picked guard level is kept" grep -q '^## Guardrails (level: relaxed)' "$d/AGENTS.md"
+
+  # --actions on the command line is the wizard's starting answer.
+  d=$(new_repo wiz-actions)
+  printf '%s\n' line:1 line:2 line:1 line: line:2 key:q |
+    HARNESS_NO_CLEAR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$H" configure --actions -C "$d"
+  check "--actions marks Yes" grep -q 'run on every push and PR  ← from --actions' "$out"
 
   # An existing project: its stack is marked as detected.
   d=$(new_repo wiz-go go.mod)

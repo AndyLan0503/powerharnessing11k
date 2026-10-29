@@ -10,5 +10,6 @@ module_apply() {
   emit seed prompts-readme.md prompts/README.md
   emit seed evals-readme.md evals/README.md
   emit seed example.jsonl evals/cases/example.jsonl
-  if [ -n "$HV_EVAL_CMD" ]; then emit file evals.yml .github/workflows/evals.yml; fi
+  # The eval workflow is a GitHub Actions workflow: only with CI.
+  if [ -n "$HV_EVAL_CMD" ] && [ -n "$HV_MOD_CI" ]; then emit file evals.yml .github/workflows/evals.yml; fi
 }

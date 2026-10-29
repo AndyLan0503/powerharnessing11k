@@ -6,5 +6,5 @@ paths: ["**/*.ipynb"]
 
 - Notebooks are for exploration and presentation. Move reusable logic into importable modules with tests.
 - Keep them runnable top to bottom: no hidden state, and seeds set in the first cell.
-- Clear outputs before committing (CI flags notebooks committed with outputs).
+- Clear outputs before committing{{#if MOD_DIFF_GUARD}} (the PR gate flags notebooks committed with outputs){{/if}}.
 - Don't paste large outputs into the conversation; summarise them.

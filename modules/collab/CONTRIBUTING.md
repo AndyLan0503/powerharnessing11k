@@ -9,7 +9,7 @@ This repo is built by humans and coding agents together. The rules and the check
 3. **Commit** small, focused changes, each with a message that says what changed and why.
 4. **Open a PR** using the template. Keep PRs small: under ~400 changed lines is a good target.
 5. **Review.** At least one human approval is required. The author (or the human who launched the agent) owns the change through merge.
-6. **Squash-merge** once CI is green.
+6. **Squash-merge** once the PR is approved{{#if MOD_CI}} and CI is green{{/if}}.
 
 ## Local checks
 

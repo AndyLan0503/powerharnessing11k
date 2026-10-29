@@ -180,7 +180,11 @@ apply_flag_overrides() {
   if [ -n "$OPT_PROFILE$OPT_TIER$OPT_ACTIONS" ]; then
     profile_load "${OPT_PROFILE:-$HV_PROFILE}" "${OPT_TIER:-$HV_TIER}"
   fi
-  if [ -n "$OPT_MODULES" ]; then HV_MODULES=${OPT_MODULES//,/ }; fi
+  if [ -n "$OPT_MODULES" ]; then
+    HV_MODULES=${OPT_MODULES//,/ }
+    [ "$OPT_ACTIONS" != yes ] ||
+      ui_warn "--actions has no effect with --modules: name the workflow modules ($ACTIONS_MODULES) in --modules instead."
+  fi
   [ -z "$OPT_GUARD" ] || HV_GUARD_LEVEL=$OPT_GUARD
   [ -z "$OPT_AGENTS" ] || HV_AGENTS=${OPT_AGENTS//,/ }
   [ -z "$OPT_OWNERS_SET" ] || HV_CODEOWNERS=$OPT_OWNERS
@@ -271,7 +275,7 @@ EOF
     local hint=''
     [ -z "$HV_STACK_NODE" ] || hint=" For a Node site or app, use your framework's generator (for example: npm create vite@latest .)."
     ui_info "  $n. Create the project itself: there is no ${HV_STACK_MANIFESTS%% *} yet.$hint"
-    ui_info "       ${C_DIM}Lint, typecheck, and tests start running, in the agent's checks and in CI, once it exists.${C_RESET}"
+    ui_info "       ${C_DIM}Lint, typecheck, and tests start running, in the agent's checks$(list_has "$HV_MODULES" ci && printf ' and in CI'), once it exists.${C_RESET}"
     n=$((n + 1))
   fi
   if [ -n "$HV_SCAFFOLD_PYTHON" ]; then
@@ -280,19 +284,22 @@ EOF
   fi
   if [ -n "$LOCAL_ONLY" ]; then
     ui_info "  $n. Nothing to commit: this setup stays on this machine. Your agents use it as usual."
-    ui_info "       ${C_DIM}CI workflows and anything read from the default branch (such as Copilot's cloud agent) only work once committed.${C_RESET}"
+    ui_info "       ${C_DIM}Anything read from the default branch ($(list_has "$HV_MODULES" ci && printf 'CI workflows, ')such as Copilot's cloud agent) only works once committed.${C_RESET}"
     ui_info "       ${C_DIM}To share it later, delete the marked block in ${LOCAL_EXCLUDE_FILE#"$TARGET"/}, then commit.${C_RESET}"
     n=$((n + 1))
   else
     ui_info "  $n. Review, commit, and open a PR:  git add -A && git commit -m 'chore: bootstrap agent harness'"
     n=$((n + 1))
   fi
-  if [ -z "$LOCAL_ONLY" ] && list_has "$HV_MODULES" ci; then
-    ui_info "  $n. Protect '$HV_DEFAULT_BRANCH': require PR review and the CI checks (Settings → Branches)"
-    n=$((n + 1))
-  elif [ -z "$LOCAL_ONLY" ] && [ -n "$HV_PROFILE_ENGINEERING" ]; then
-    ui_info "  $n. Protect '$HV_DEFAULT_BRANCH': require PR review (Settings → Branches)"
-    n=$((n + 1))
+  # Solo repos push straight to the default branch; team repos review first.
+  if [ -z "$LOCAL_ONLY" ] && [ -z "$HV_PROFILE_SOLO" ]; then
+    if list_has "$HV_MODULES" ci; then
+      ui_info "  $n. Protect '$HV_DEFAULT_BRANCH': require PR review and the CI checks (Settings → Branches)"
+      n=$((n + 1))
+    elif list_has "$HV_MODULES" collab; then
+      ui_info "  $n. Protect '$HV_DEFAULT_BRANCH': require PR review (Settings → Branches)"
+      n=$((n + 1))
+    fi
   fi
   if [ -z "$LOCAL_ONLY" ] && list_has "$HV_MODULES" review; then
     ui_info "  $n. Add the ANTHROPIC_API_KEY repository secret for the Claude workflows"

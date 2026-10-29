@@ -4,7 +4,7 @@
 
 # Steps are numbered as they run; the agents step is skipped while only one
 # coding agent is available.
-WIZ_TOTAL=9
+WIZ_TOTAL=10
 WIZ_STEP=0
 
 wizard_run() {
@@ -14,9 +14,10 @@ wizard_run() {
   WIZ_PREV_STACK=$HV_STACK WIZ_PREV_PM=$HV_PKG_MANAGER WIZ_PREV_INSTALL=$HV_INSTALL_CMD
   WIZ_PREV_LINT=$HV_LINT_CMD WIZ_PREV_TYPECHECK=$HV_TYPECHECK_CMD WIZ_PREV_TEST=$HV_TEST_CMD
   WIZ_PREV_FULL_TEST=$HV_FULL_TEST_CMD WIZ_PREV_FORMAT=$HV_FORMAT_CMD
-  WIZ_PREV_PROFILE=${HV_PROFILE:-software}
+  WIZ_PREV_PROFILE=${HV_PROFILE:-software} WIZ_PREV_ACTIONS=${HV_ACTIONS:-}
   while :; do
     rc=0
+    HV_ACTIONS=$WIZ_PREV_ACTIONS
     _wizard_steps || rc=$?
     [ $rc -eq 10 ] || return $rc
   done
@@ -93,7 +94,7 @@ _wizard_steps() {
   cmds="install     ${HV_INSTALL_CMD:-—}${nl}lint        ${HV_LINT_CMD:-—}${nl}typecheck   ${HV_TYPECHECK_CMD:-—}"
   cmds="$cmds${nl}test        ${HV_TEST_CMD:-—}${nl}full tests  ${HV_FULL_TEST_CMD:-—}${nl}format      ${HV_FORMAT_CMD:-—}"
   [ -z "$evals" ] || cmds="$cmds${nl}eval        ${HV_EVAL_CMD:-—}"
-  ui_choose "These commands will be used by hooks, CI, and agent docs. OK?" "$WIZ_STEP" "$WIZ_TOTAL" \
+  ui_choose "These commands will be used by hooks, agent docs, and CI if you add it. OK?" "$WIZ_STEP" "$WIZ_TOTAL" \
     "Use them|$cmds" \
     "Edit them|Type each command; Enter keeps the default, '-' clears it" || return
   if [ "$UI_CHOICE" = 2 ]; then
@@ -141,17 +142,18 @@ _wizard_steps() {
     "Recommended|$(tier_modules "$HV_PROFILE" RECOMMENDED)  (guard: $(profile_field "$HV_PROFILE" GUARD_LEVEL))" \
     "Strict|$(tier_modules "$HV_PROFILE" STRICT)  (guard: $(profile_field "$HV_PROFILE" STRICT_GUARD))" \
     "Custom|Pick modules and guard level one by one" || return
-  case $UI_CHOICE in
+  local tier_choice=$UI_CHOICE
+  # Custom picks the workflow modules itself: no Actions question.
+  [ "$tier_choice" != 4 ] || WIZ_TOTAL=$((WIZ_TOTAL - 1))
+  case $tier_choice in
     1) profile_load "$HV_PROFILE" minimal ;;
     2) profile_load "$HV_PROFILE" recommended ;;
     3) profile_load "$HV_PROFILE" strict ;;
     4) _wizard_custom || return ;;
   esac
 
-  # GitHub Actions (opt-in; Custom already chose its modules) ---------------
-  if [ "$UI_CHOICE" = 4 ]; then
-    WIZ_TOTAL=$((WIZ_TOTAL - 1))
-  else
+  # GitHub Actions (opt-in) ----------------------------------------------------
+  if [ "$tier_choice" != 4 ]; then
     WIZ_STEP=$((WIZ_STEP + 1))
     local act_yes="Yes|$HV_TIER_ACTIONS: workflow files in .github/workflows/ that run on every push and PR"
     local act_no="No|The harness stays in the repo and its agents; nothing runs on GitHub"

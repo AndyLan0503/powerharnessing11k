@@ -20,7 +20,8 @@ module_apply() {
   # Path-scoped rules: loaded only when the agent works on matching files.
   if [ -n "$HV_PROFILE_ENGINEERING" ]; then
     emit_rule testing rules/testing.md
-    emit_rule github-actions rules/github-actions.md
+    # For editing workflows: only when this setup writes some.
+    [ -z "$HV_MOD_CI$HV_MOD_DIFF_GUARD$HV_MOD_SECURITY$HV_MOD_REVIEW" ] || emit_rule github-actions rules/github-actions.md
   fi
   if [ -n "$HV_PROTECT_RAW_DATA" ]; then emit_rule data rules/data.md; fi
   if [ -n "$HV_NOTEBOOK_CHECK" ]; then emit_rule notebooks rules/notebooks.md; fi

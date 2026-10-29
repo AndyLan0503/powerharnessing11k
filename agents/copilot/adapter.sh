@@ -80,7 +80,7 @@ agent_copilot_finish() {
 # through its own setup-steps workflow.
 _copilot_hook_rows() {
   local event script timeout
-  while IFS="$(printf '\t')" read -r event script timeout; do
+  while IFS=$'\t' read -r event script timeout; do
     case $event in
       pre-shell) printf 'preToolUse\tbash|powershell\t%s\t%s\n' "$script" "$timeout" ;;
       pre-edit) printf 'preToolUse\tcreate|edit|str_replace_editor|apply_patch\t%s\t%s\n' "$script" "$timeout" ;;
@@ -102,7 +102,7 @@ _copilot_hooks() { # -> stdout
     ev_first=0
     printf '\n    "%s": [' "$event"
     h_first=1
-    while IFS="$(printf '\t')" read -r matcher script timeout; do
+    while IFS=$'\t' read -r matcher script timeout; do
       [ $h_first -eq 1 ] || printf ','
       h_first=0
       printf '\n      {\n'
@@ -124,7 +124,7 @@ _copilot_hooks() { # -> stdout
 _copilot_mcp() { # -> stdout
   local name url token first=1
   printf '{\n  "mcpServers": {'
-  while IFS="$(printf '\t')" read -r name url token; do
+  while IFS=$'\t' read -r name url token; do
     [ $first -eq 1 ] || printf ','
     first=0
     printf '\n    "%s": {\n      "type": "http",\n      "url": "%s",\n      "headers": {\n        "Authorization": "Bearer ${%s}"\n      },\n      "tools": ["*"]\n    }' \

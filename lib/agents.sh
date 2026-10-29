@@ -205,5 +205,5 @@ emit_role() {
 
 # emit_hook SRC: a hook script under .agents/hooks/, shared by all agents.
 emit_hook() {
-  emit exec "$1" "$HOOKS_DIR/$(basename "$1")"
+  emit exec "$1" "$HOOKS_DIR/${1##*/}"
 }

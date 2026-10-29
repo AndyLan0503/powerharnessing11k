@@ -49,8 +49,13 @@ trim() {
 harness_tmpdir() {
   if [ -z "${HARNESS_TMP:-}" ]; then
     HARNESS_TMP=$(mktemp -d 2>/dev/null || mktemp -d -t harness)
-    # shellcheck disable=SC2064
-    trap "rm -rf '$HARNESS_TMP'" EXIT
+    # On any exit, also remove a file that was being written (see emit), so an
+    # interrupted run never leaves a truncated file that later runs would keep.
+    # Signals exit through the EXIT trap.
+    trap 'rm -rf "$HARNESS_TMP"; [ -z "${HARNESS_WRITING:-}" ] || rm -f "$HARNESS_WRITING"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    trap 'exit 129' HUP
   fi
   printf '%s' "$HARNESS_TMP"
 }

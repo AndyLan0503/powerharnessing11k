@@ -16,6 +16,8 @@ export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
 # commit can race with the local clones some tests make.
 export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=gc.auto GIT_CONFIG_VALUE_0=0
 export GIT_CONFIG_KEY_1=maintenance.auto GIT_CONFIG_VALUE_1=false
+# On Windows (Git Bash), ln -s copies unless asked for a real link.
+export MSYS=winsymlinks:nativestrict CYGWIN=winsymlinks:nativestrict
 
 fail() {
   FAIL=$((FAIL + 1))
@@ -151,6 +153,11 @@ test_create_only_and_force() {
   cp "$d/.gitignore" "$WORK/gi.before"
   "$H" configure --yes -C "$d" >/dev/null 2>&1
   check ".gitignore append is idempotent" cmp -s "$WORK/gi.before" "$d/.gitignore"
+  local e
+  e=$(new_repo edits-empty)
+  : >"$e/.gitignore"
+  "$H" configure --yes -C "$e" >/dev/null 2>&1
+  check "an empty .gitignore gains the lines too" grep -q '^\.agents/logs/$' "$e/.gitignore"
 
   echo '# my tweak' >>"$d/.github/workflows/ci.yml"
   printf '\nOur domain notes.\n' >>"$d/AGENTS.md"
@@ -1993,6 +2000,68 @@ test_tidy_root() {
   check "study: visible root" test "$(_visible_root "$d")" = "AGENTS.md LEARNING_PLAN.md PROGRESS.md exercises/ notes/ "
 }
 
+# Windows: git there checks files out with CRLF by default, and the ln of Git
+# Bash copies instead of linking. Both would quietly break the hooks and skills.
+test_windows_checkouts() {
+  local d c out stub
+  d=$(new_repo win)
+  "$H" configure --yes -C "$d" >/dev/null 2>&1
+  check "the hook scripts are pinned to LF" grep -qx '\.agents/\*\*/\*\.sh text eol=lf' "$d/.gitattributes"
+  check "the CI scripts are pinned to LF" grep -qx 'scripts/ci/\*\.sh text eol=lf' "$d/.gitattributes"
+  check_not "the team's own scripts are left alone" grep -qx '\*\.sh text eol=lf' "$d/.gitattributes"
+  git -C "$d" add -A && git -C "$d" commit -qm init
+  c=$WORK/win-crlf
+  rm -rf "$c"
+  git -c core.autocrlf=true clone -q "$d" "$c"
+  check "a CRLF checkout still has LF hooks" sh -c "! grep -q \"\$(printf '\r')\" '$c/.agents/hooks/guard-bash.sh'"
+  check "the CRLF checkout really converts other files" grep -q "$(printf '\r')" "$c/AGENTS.md"
+  [ "$(_guard "$c" guard-bash.sh Bash command 'git push --for''ce origin x')" = 2 ] || fail "CRLF checkout: guard does not block"
+  ok
+
+  # An existing .gitattributes keeps its lines and gains the rules once.
+  d=$(new_repo win-attrs)
+  printf '*.png binary\n' >"$d/.gitattributes"
+  "$H" configure --yes -C "$d" >/dev/null 2>&1
+  "$H" configure --yes -C "$d" >/dev/null 2>&1
+  check "the user's attributes are kept" grep -qx '\*\.png binary' "$d/.gitattributes"
+  check "the rules are added once" test "$(grep -c 'text eol=lf$' "$d/.gitattributes")" -eq 3
+
+  # A checkout made without symlink support has its links as plain files.
+  # Switching core.symlinks on must turn them back into links, or the next
+  # commit would replace them with plain files for everyone.
+  d=$(new_repo win-links-src)
+  echo x >"$d/target.txt"
+  ln -s target.txt "$d/lnk"
+  git -C "$d" add -A && git -C "$d" commit -qm init
+  c=$WORK/win-links
+  rm -rf "$c"
+  git clone -q -c core.symlinks=false "$d" "$c"
+  [ ! -L "$c/lnk" ] || fail "setup: the clone should have the link as a plain file"
+  "$H" configure --yes -C "$c" >/dev/null 2>&1
+  check "core.symlinks is switched on" test "$(git -C "$c" config --bool core.symlinks)" = true
+  check ".claude/skills is a link" test -L "$c/.claude/skills"
+  check "the existing link is a link again" test -L "$c/lnk"
+  check_not "git sees no type change" sh -c "git -C '$c' status --porcelain | grep -q '^ T'"
+
+  # Without Developer Mode, Windows refuses links. This ln acts like Git
+  # Bash's: it copies unless asked for a real link, and fails when asked.
+  stub=$WORK/win-stub
+  mkdir -p "$stub"
+  cat >"$stub/ln" <<'EOF'
+#!/bin/sh
+case ${MSYS:-} in *nativestrict*) echo 'ln: Operation not permitted' >&2; exit 1 ;; esac
+[ "$1" = -s ] && shift
+cp -R "$(dirname "$2")/$1" "$2"
+EOF
+  chmod +x "$stub/ln"
+  d=$(new_repo win-nolink)
+  out=$(env -u MSYS -u CYGWIN PATH="$stub:$PATH" "$H" configure --yes -C "$d" 2>&1) && fail "the run should stop"
+  check "it says to turn on Developer Mode" grep -q 'Developer Mode' <<<"$out"
+  check_not "no copy is left in place of the link" test -e "$d/.claude/skills"
+  check_not "nothing was written" test -e "$d/AGENTS.md"
+  ok
+}
+
 # --local-only: everything the bootstrap writes stays out of git on this
 # machine, through .git/info/exclude; nothing in the repository changes.
 test_local_only() {
@@ -2011,6 +2080,7 @@ test_local_only() {
     cd '$d' && for f in AGENTS.md .claude/settings.json .claude/skills .codex/config.toml .github/hooks/guardrails.json \
       .github/workflows/ci.yml .agents/skills/formulate/SKILL.md Makefile pyproject.toml; do git check-ignore -q \"\$f\" || exit 1; done"
   check "the patterns the .gitignore would have had apply too" git -C "$d" check-ignore -q .agents/logs/events.jsonl
+  check "the attributes go to .git/info/attributes" grep -qx '\.agents/\*\*/\*\.sh text eol=lf' "$d/.git/info/attributes"
   check "existing user files are not ignored" sh -c "! git -C '$d' check-ignore -q README.md"
   f=$d/.git/info/exclude
   check "one marked block" test "$(grep -c '^# >>> agent setup files' "$f")" -eq 1 -a "$(grep -c '^# <<< agent setup files' "$f")" -eq 1

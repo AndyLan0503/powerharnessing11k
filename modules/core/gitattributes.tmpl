@@ -1,0 +1,5 @@
+# The agent hook and CI scripts keep LF line endings on every checkout: with
+# CRLF, which git on Windows uses by default, bash cannot run them.
+.agents/**/*.sh text eol=lf
+scripts/ci/*.sh text eol=lf
+scripts/artifacts.sh text eol=lf

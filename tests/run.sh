@@ -299,7 +299,9 @@ test_single_source_of_truth() {
   # A link that points somewhere else: reported, kept, and repointed by --force.
   d=$(new_repo ssot-wronglink package.json)
   mkdir -p "$d/.claude" "$d/elsewhere"
-  ln -s ../elsewhere "$d/.claude/skills"
+  # Through the repository's real path, as the setup does: on Windows a link
+  # made through Git Bash's /tmp mount is stored relative to the path behind it.
+  ln -s ../elsewhere "$(git -C "$d" rev-parse --show-toplevel)/.claude/skills"
   f=$("$H" configure --yes -C "$d" 2>&1)
   check "wrong link kept without --force" sh -c 'r=$(readlink "$1"); echo "readlink: $r"; [ "$r" = ../elsewhere ]' _ "$d/.claude/skills"
   check "and the user is told" grep -q 'will not see the skills' <<<"$f"

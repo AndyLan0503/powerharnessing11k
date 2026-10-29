@@ -25,8 +25,8 @@ wizard_run() {
 _wizard_steps() {
   local current detected stacks s i opts p
   WIZ_STEP=0
-  WIZ_TOTAL=9
-  case $ALL_AGENTS in *' '*) WIZ_TOTAL=10 ;; esac
+  WIZ_TOTAL=10
+  case $ALL_AGENTS in *' '*) WIZ_TOTAL=11 ;; esac
   current=$WIZ_PREV_STACK
   detected=$(detect_stack "$TARGET")
 
@@ -137,9 +137,9 @@ _wizard_steps() {
   local title
   title=$(profile_field "$HV_PROFILE" TITLE)
   ui_choose "How much harness for this $title repo?" "$WIZ_STEP" "$WIZ_TOTAL" \
-    "Minimal|$(profile_field "$HV_PROFILE" MINIMAL)  (guard: relaxed)" \
-    "Recommended|$(profile_field "$HV_PROFILE" RECOMMENDED)  (guard: $(profile_field "$HV_PROFILE" GUARD_LEVEL))" \
-    "Strict|$(profile_field "$HV_PROFILE" STRICT)  (guard: $(profile_field "$HV_PROFILE" STRICT_GUARD))" \
+    "Minimal|$(tier_modules "$HV_PROFILE" MINIMAL)  (guard: relaxed)" \
+    "Recommended|$(tier_modules "$HV_PROFILE" RECOMMENDED)  (guard: $(profile_field "$HV_PROFILE" GUARD_LEVEL))" \
+    "Strict|$(tier_modules "$HV_PROFILE" STRICT)  (guard: $(profile_field "$HV_PROFILE" STRICT_GUARD))" \
     "Custom|Pick modules and guard level one by one" || return
   case $UI_CHOICE in
     1) profile_load "$HV_PROFILE" minimal ;;
@@ -147,6 +147,25 @@ _wizard_steps() {
     3) profile_load "$HV_PROFILE" strict ;;
     4) _wizard_custom || return ;;
   esac
+
+  # GitHub Actions (opt-in; Custom already chose its modules) ---------------
+  if [ "$UI_CHOICE" = 4 ]; then
+    WIZ_TOTAL=$((WIZ_TOTAL - 1))
+  else
+    WIZ_STEP=$((WIZ_STEP + 1))
+    local act_yes="Yes|$HV_TIER_ACTIONS: workflow files in .github/workflows/ that run on every push and PR"
+    local act_no="No|The harness stays in the repo and its agents; nothing runs on GitHub"
+    if [ -n "${HV_ACTIONS:-}" ]; then
+      act_yes="$act_yes  ← from --actions"
+    else
+      act_no="$act_no  ← default"
+    fi
+    ui_choose "Add GitHub Actions workflows?" "$WIZ_STEP" "$WIZ_TOTAL" "$act_yes" "$act_no" || return
+    HV_ACTIONS=''
+    [ "$UI_CHOICE" != 1 ] || HV_ACTIONS=1
+    export HV_ACTIONS
+    profile_load "$HV_PROFILE" "$HV_TIER"
+  fi
 
   # Artifacts -------------------------------------------------------------
   WIZ_STEP=$((WIZ_STEP + 1))
@@ -196,8 +215,10 @@ _wizard_steps() {
     export HV_OTEL_ENDPOINT
   else
     WIZ_STEP=$((WIZ_STEP + 1))
+    local still='You still get the local audit log'
+    ! list_has "$HV_MODULES" diff-guard || still="$still, PR scorecards, and the weekly digest"
     ui_choose "Export Claude Code telemetry (cost, tokens, sessions) via OpenTelemetry?" "$WIZ_STEP" "$WIZ_TOTAL" \
-      "No|You still get the local audit log, PR scorecards, and the weekly digest" \
+      "No|$still" \
       "Yes|Send metrics to an OTLP collector (Grafana, Datadog, Honeycomb, ...)" || return
     if [ "$UI_CHOICE" = 2 ]; then
       ui_header "$WIZ_STEP" "$WIZ_TOTAL" "OTLP collector endpoint"

@@ -40,37 +40,42 @@ Enter
 Sleep 2s
 
 # Each answer: a key marks it on screen, Enter confirms.
-# [1/10] What is this repository for?  Software engineering
+# [1/11] What is this repository for?  Software engineering
 Sleep 1s
 Type "1"
 Sleep 1s
 Enter
-# [2/10] Language or toolchain?  Python
+# [2/11] Language or toolchain?  Python
 Sleep 1.5s
 Type "2"
 Sleep 1s
 Enter
-# [3/10] The detected commands are fine.
+# [3/11] The detected commands are fine.
 Sleep 2s
 Type "1"
 Sleep 800ms
 Enter
-# [4/10] Coding agents: add Codex CLI next to Claude Code.
+# [4/11] Coding agents: add Codex CLI next to Claude Code.
 Sleep 1.2s
 Type "2"
 Sleep 1s
 Enter
-# [5/10] How much harness?  Recommended
+# [5/11] How much harness?  Recommended
 Sleep 1.5s
 Type "2"
 Sleep 1s
 Enter
-# [6/10] Version data and model files.
+# [6/11] GitHub Actions: yes, CI and the PR gate.
+Sleep 1.2s
+Type "1"
+Sleep 1s
+Enter
+# [7/11] Version data and model files.
 Sleep 1.2s
 Type "1"
 Sleep 800ms
 Enter
-# [7/10] Name a few project-specific stubs.
+# [8/11] Name a few project-specific stubs.
 Sleep 1.2s
 Type "2"
 Sleep 800ms
@@ -85,16 +90,16 @@ Enter
 Sleep 400ms
 Enter
 Sleep 1.2s
-# [8/10] Code owners
+# [9/11] Code owners
 Type "@acme/opt"
 Sleep 400ms
 Enter
-# [9/10] No telemetry export.
+# [10/11] No telemetry export.
 Sleep 1.2s
 Type "1"
 Sleep 800ms
 Enter
-# [10/10] Review every answer, then apply.
+# [11/11] Review every answer, then apply.
 Sleep 3.5s
 Type "y"
 Sleep 1.2s

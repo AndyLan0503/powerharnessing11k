@@ -6,6 +6,10 @@
 ALL_MODULES="core guardrails quality audit devtools skills ml agentic study research artifacts mcp collab ci security diff-guard review telemetry"
 ALL_PROFILES="software ml agentic study research"
 ALL_TIERS="minimal recommended strict"
+# Modules that write GitHub Actions workflows. Opt-in (HV_ACTIONS, --actions):
+# a tier's list names what it gets with Actions, and profile_load leaves these
+# out unless they were asked for.
+ACTIONS_MODULES="ci security diff-guard review"
 
 module_desc() {
   (
@@ -58,25 +62,38 @@ tier_normalize() { # accepts the old preset name "standard" as "recommended"
   esac
 }
 
-profile_load() { # profile tier -> sets HV_PROFILE HV_MODULES HV_GUARD_LEVEL
-  local tier
+# tier_modules PROFILE FIELD [actions]: a tier's modules (FIELD is MINIMAL,
+# RECOMMENDED, or STRICT) without its GitHub Actions ones; with "actions",
+# only those.
+tier_modules() {
+  local m out=''
+  for m in $(profile_field "$1" "$2"); do
+    if list_has "$ACTIONS_MODULES" "$m"; then
+      [ -n "${3:-}" ] || continue
+    else
+      [ -z "${3:-}" ] || continue
+    fi
+    out="${out:+$out }$m"
+  done
+  printf '%s' "$out"
+}
+
+profile_load() { # profile tier -> sets HV_PROFILE HV_TIER HV_MODULES HV_GUARD_LEVEL HV_TIER_ACTIONS
+  local tier field
   tier=$(tier_normalize "$2")
-  HV_PROFILE=$1
+  HV_PROFILE=$1 HV_TIER=$tier
   case $tier in
-    minimal)
-      HV_MODULES=$(profile_field "$1" MINIMAL)
-      HV_GUARD_LEVEL=relaxed
-      ;;
-    recommended)
-      HV_MODULES=$(profile_field "$1" RECOMMENDED)
-      HV_GUARD_LEVEL=$(profile_field "$1" GUARD_LEVEL)
-      ;;
-    strict)
-      HV_MODULES=$(profile_field "$1" STRICT)
-      HV_GUARD_LEVEL=$(profile_field "$1" STRICT_GUARD)
-      ;;
+    minimal) field=MINIMAL HV_GUARD_LEVEL=relaxed ;;
+    recommended) field=RECOMMENDED HV_GUARD_LEVEL=$(profile_field "$1" GUARD_LEVEL) ;;
+    strict) field=STRICT HV_GUARD_LEVEL=$(profile_field "$1" STRICT_GUARD) ;;
   esac
-  export HV_PROFILE HV_MODULES HV_GUARD_LEVEL
+  HV_MODULES=$(tier_modules "$1" "$field")
+  # The tier's workflows, added only when asked for; a tier that names none
+  # gets plain CI.
+  HV_TIER_ACTIONS=$(tier_modules "$1" "$field" actions)
+  [ -n "$HV_TIER_ACTIONS" ] || HV_TIER_ACTIONS=ci
+  [ -z "${HV_ACTIONS:-}" ] || HV_MODULES=$(modules_normalize "$HV_MODULES $HV_TIER_ACTIONS")
+  export HV_PROFILE HV_TIER HV_MODULES HV_GUARD_LEVEL HV_TIER_ACTIONS
 }
 
 # Flags derived from answers, used by templates ({{#if MOD_CI}} etc.).

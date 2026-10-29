@@ -52,6 +52,9 @@ Options:
                         AGENTS.md is always written and is the source of truth
       --owners LIST     CODEOWNERS entries, e.g. "@acme/platform"
       --otel URL        OTLP endpoint; enables the telemetry module
+      --actions         Add the tier's GitHub Actions workflows (CI, PR gate;
+                        strict also security scans and AI review). Off by default
+      --no-actions      Don't (the default)
       --artifacts       Version local data/model artifacts (artifacts.lock)
       --no-artifacts    Don't, even if the profile would
       --cmd KEY=CMD     Override a detected command (repeatable). KEY is one of
@@ -78,7 +81,7 @@ case ${1:-} in
   *) harness_die "unknown command: $1 (see: setup.sh help)" ;;
 esac
 TARGET=. YES='' DRY_RUN='' FORCE='' VERBOSE='' LOCAL_ONLY='' OPT_PROFILE='' OPT_TIER='' OPT_STACK='' OPT_MODULES=''
-OPT_GUARD='' OPT_AGENTS='' OPT_OWNERS='' OPT_OWNERS_SET='' OPT_OTEL='' OPT_ARTIFACTS=''
+OPT_GUARD='' OPT_AGENTS='' OPT_OWNERS='' OPT_OWNERS_SET='' OPT_OTEL='' OPT_ARTIFACTS='' OPT_ACTIONS=''
 OPT_SKILLS='' OPT_ROLES='' OPT_RULES='' OPT_DIRS='' OPT_CUSTOM_SET='' OPT_CMDS=''
 while [ $# -gt 0 ]; do
   case $1 in
@@ -96,6 +99,8 @@ while [ $# -gt 0 ]; do
     --agents) OPT_AGENTS=${2:?}; shift ;;
     --owners) OPT_OWNERS=${2-}; OPT_OWNERS_SET=1; shift ;;
     --otel) OPT_OTEL=${2:?}; shift ;;
+    --actions) OPT_ACTIONS=yes ;;
+    --no-actions) OPT_ACTIONS=no ;;
     --artifacts) OPT_ARTIFACTS=yes ;;
     --no-artifacts) OPT_ARTIFACTS=no ;;
     --skills) OPT_SKILLS=${2-}; OPT_CUSTOM_SET=1; shift ;;
@@ -167,8 +172,13 @@ apply_flag_overrides() {
     export HV_STACK HV_PKG_MANAGER
     stack_defaults
   fi
-  if [ -n "$OPT_PROFILE$OPT_TIER" ]; then
-    profile_load "${OPT_PROFILE:-$HV_PROFILE}" "${OPT_TIER:-recommended}"
+  case $OPT_ACTIONS in
+    yes) HV_ACTIONS=1 ;;
+    no) HV_ACTIONS='' ;;
+  esac
+  export HV_ACTIONS
+  if [ -n "$OPT_PROFILE$OPT_TIER$OPT_ACTIONS" ]; then
+    profile_load "${OPT_PROFILE:-$HV_PROFILE}" "${OPT_TIER:-$HV_TIER}"
   fi
   if [ -n "$OPT_MODULES" ]; then HV_MODULES=${OPT_MODULES//,/ }; fi
   [ -z "$OPT_GUARD" ] || HV_GUARD_LEVEL=$OPT_GUARD
@@ -280,6 +290,9 @@ EOF
   if [ -z "$LOCAL_ONLY" ] && list_has "$HV_MODULES" ci; then
     ui_info "  $n. Protect '$HV_DEFAULT_BRANCH': require PR review and the CI checks (Settings → Branches)"
     n=$((n + 1))
+  elif [ -z "$LOCAL_ONLY" ] && [ -n "$HV_PROFILE_ENGINEERING" ]; then
+    ui_info "  $n. Protect '$HV_DEFAULT_BRANCH': require PR review (Settings → Branches)"
+    n=$((n + 1))
   fi
   if [ -z "$LOCAL_ONLY" ] && list_has "$HV_MODULES" review; then
     ui_info "  $n. Add the ANTHROPIC_API_KEY repository secret for the Claude workflows"
@@ -303,9 +316,9 @@ cmd_configure() {
   HV_STACK=$(detect_stack "$TARGET")
   HV_PKG_MANAGER=$(detect_pkg_manager "$TARGET" "$HV_STACK")
   HV_AGENTS=claude HV_CODEOWNERS='' HV_OTEL_ENDPOINT='' HV_DIFF_BUDGET=800 HV_EVAL_CMD=''
-  HV_SKILLS='' HV_ROLES='' HV_RULES='' HV_DIRS=''
+  HV_SKILLS='' HV_ROLES='' HV_RULES='' HV_DIRS='' HV_ACTIONS=''
   export HV_PROJECT_NAME HV_DEFAULT_BRANCH HV_STACK HV_PKG_MANAGER HV_AGENTS \
-    HV_CODEOWNERS HV_OTEL_ENDPOINT HV_DIFF_BUDGET HV_EVAL_CMD HV_SKILLS HV_ROLES HV_RULES HV_DIRS
+    HV_CODEOWNERS HV_OTEL_ENDPOINT HV_DIFF_BUDGET HV_EVAL_CMD HV_SKILLS HV_ROLES HV_RULES HV_DIRS HV_ACTIONS
   stack_defaults
   profile_load software recommended
   apply_flag_overrides
@@ -337,7 +350,8 @@ cmd_list() {
   ui_info "${C_BOLD}Tiers${C_RESET}  (--tier): modules per profile"
   for p in $ALL_PROFILES; do
     for t in MINIMAL RECOMMENDED STRICT; do
-      printf '  %-10s %-12s %s\n' "$p" "$(printf '%s' "$t" | tr 'A-Z' 'a-z')" "$(profile_field "$p" "$t")"
+      printf '  %-10s %-12s %s%s\n' "$p" "$(printf '%s' "$t" | tr 'A-Z' 'a-z')" "$(tier_modules "$p" "$t")" \
+        "$(a=$(tier_modules "$p" "$t" actions) && printf '  + with --actions: %s' "${a:-ci}")"
     done
   done
   printf '\n'

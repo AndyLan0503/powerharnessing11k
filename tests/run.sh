@@ -177,7 +177,7 @@ test_every_stack() {
     files=${spec#*:}
     # shellcheck disable=SC2086
     d=$(new_repo "stack-$name" ${files//,/ })
-    "$H" configure --yes -C "$d" --preset strict --owners @acme/team --otel http://otel:4317 >/dev/null 2>&1 ||
+    "$H" configure --yes --actions -C "$d" --preset strict --owners @acme/team --otel http://otel:4317 >/dev/null 2>&1 ||
       fail "$name: configure failed"
     check "$name: settings.json valid" jq empty "$d/.claude/settings.json"
     check_not "$name: no .harness directory" test -e "$d/.harness"
@@ -217,12 +217,12 @@ test_create_only_and_force() {
   local d
   d=$(new_repo edits go.mod)
   printf 'node_modules/\n.env\n' >"$d/.gitignore"
-  "$H" configure --yes -C "$d" >/dev/null 2>&1
+  "$H" configure --yes --actions -C "$d" >/dev/null 2>&1
   check ".gitignore keeps user lines" grep -q '^node_modules/$' "$d/.gitignore"
   check ".gitignore gains missing lines" grep -q '^\.claude/settings\.local\.json$' "$d/.gitignore"
   check ".gitignore: existing line not duplicated" test "$(grep -c '^\.env$' "$d/.gitignore")" -eq 1
   cp "$d/.gitignore" "$WORK/gi.before"
-  "$H" configure --yes -C "$d" >/dev/null 2>&1
+  "$H" configure --yes --actions -C "$d" >/dev/null 2>&1
   check ".gitignore append is idempotent" cmp -s "$WORK/gi.before" "$d/.gitignore"
   local e
   e=$(new_repo edits-empty)
@@ -232,13 +232,13 @@ test_create_only_and_force() {
 
   echo '# my tweak' >>"$d/.github/workflows/ci.yml"
   printf '\nOur domain notes.\n' >>"$d/AGENTS.md"
-  "$H" configure --yes -C "$d" --guard strict >/dev/null 2>&1
+  "$H" configure --yes --actions -C "$d" --guard strict >/dev/null 2>&1
   check "edited ci.yml kept" contains "$d/.github/workflows/ci.yml" '# my tweak'
   check "AGENTS.md kept" contains "$d/AGENTS.md" 'Our domain notes.'
   check_not "hooks not regenerated without --force" contains "$d/.agents/hooks/guard-bash.sh" "LEVEL='strict'"
   check_not "no proposal files" sh -c "find '$d' -name '*.harness-new' | grep -q ."
 
-  "$H" configure --yes -C "$d" --guard strict --force >/dev/null 2>&1
+  "$H" configure --yes --actions -C "$d" --guard strict --force >/dev/null 2>&1
   check_not "--force overwrites" contains "$d/.github/workflows/ci.yml" '# my tweak'
   check "--force regenerates hooks" contains "$d/.agents/hooks/guard-bash.sh" "LEVEL='strict'"
   check "--force keeps user .gitignore lines" grep -q '^node_modules/$' "$d/.gitignore"
@@ -577,7 +577,7 @@ _copilot_denied() {
 test_copilot_adapter() {
   local d f secret=.e'nv' push='git push --for''ce origin feat'
   d=$(new_repo copilot-only)
-  f=$("$H" configure --yes -C "$d" --agents copilot --stack python --tier strict --owners @acme/x --roles model-checker \
+  f=$("$H" configure --yes --actions -C "$d" --agents copilot --stack python --tier strict --owners @acme/x --roles model-checker \
     --rules 'solver=src/solver/**,tests/solver/**' 2>&1) || fail "configure failed: $f"
 
   # Only Copilot's files, plus what every agent shares.
@@ -689,7 +689,7 @@ test_copilot_adapter() {
   # not valid UTF-8; the decision must still be valid JSON.
   printf '#!/bin/sh\nprintf '"'"'bad style: "x" C:\\\\tmp\\t\\351nd\\n'"'"'\nexit 1\n' >"$d/lint.sh"
   chmod +x "$d/lint.sh"
-  "$H" configure --yes -C "$d" --agents copilot --cmd 'lint=./lint.sh' --cmd 'test=sh -c "exit 0"' >/dev/null 2>&1
+  "$H" configure --yes --actions -C "$d" --agents copilot --cmd 'lint=./lint.sh' --cmd 'test=sh -c "exit 0"' >/dev/null 2>&1
   echo change >"$d/file.txt"
   f=$(jq -cn --arg cwd "$d" '{sessionId: "s", timestamp: 1, cwd: $cwd, stopReason: "end_turn", stop_hook_active: false}')
   t=0
@@ -738,7 +738,7 @@ test_three_agents_together() {
 test_two_agents_share_one_source() {
   local d
   d=$(new_repo both)
-  "$H" configure --yes -C "$d" --agents claude,codex --tier strict --owners @acme/x >/dev/null 2>&1 || fail "configure failed"
+  "$H" configure --yes --actions -C "$d" --agents claude,codex --tier strict --owners @acme/x >/dev/null 2>&1 || fail "configure failed"
   check "both agents configured" test -f "$d/.claude/settings.json" -a -f "$d/.codex/hooks.json"
   check "one AGENTS.md, imported by Claude Code" grep -q '^@\.\./AGENTS\.md$' "$d/.claude/CLAUDE.md"
   check "AGENTS.md describes both layouts" sh -c "grep -q '^- Claude Code:' '$d/AGENTS.md' && grep -q '^- Codex CLI:' '$d/AGENTS.md'"
@@ -760,7 +760,7 @@ test_two_agents_share_one_source() {
 
   # Claude Code alone: rules stay out of AGENTS.md (they load by path instead).
   d=$(new_repo claude-alone package.json)
-  "$H" configure --yes -C "$d" >/dev/null 2>&1
+  "$H" configure --yes --actions -C "$d" >/dev/null 2>&1
   check_not "claude only: no rules section in AGENTS.md" contains "$d/AGENTS.md" 'Rules for specific paths'
   check_not "claude only: no Codex files" test -e "$d/.codex"
 }
@@ -982,7 +982,7 @@ test_vendor_neutral_without_claude() {
   local d t hits
   for t in recommended strict; do
     d=$(new_repo "neutral-$t" package.json)
-    "$H" configure --yes -C "$d" --agents codex,copilot --tier "$t" >/dev/null 2>&1 || fail "$t: configure failed"
+    "$H" configure --yes --actions -C "$d" --agents codex,copilot --tier "$t" >/dev/null 2>&1 || fail "$t: configure failed"
     hits=$(cd "$d" && grep -rliE 'claude|anthropic' . --exclude-dir=.git --exclude-dir=hooks |
       grep -v -e '^\./scripts/ci/ai-review\.sh$' -e '^\./\.github/workflows/pr-gate\.yml$' -e '^\./docs/agents/HANDBOOK\.md$' -e '^\./scripts/ci/review/' -e '^\./docs/REVIEW\.md$')
     # shellcheck disable=SC2086 # one line of file names
@@ -995,32 +995,86 @@ test_vendor_neutral_without_claude() {
   check_not "recommended gate has no Claude pin" contains "$WORK/neutral-recommended/.github/workflows/pr-gate.yml" 'CLAUDE_CODE_VERSION'
   # Mentions only for teams that use Claude Code.
   d=$(new_repo neutral-claude package.json)
-  "$H" configure --yes -C "$d" --tier strict >/dev/null 2>&1
+  "$H" configure --yes --actions -C "$d" --tier strict >/dev/null 2>&1
   check "claude: @claude workflow" test -e "$d/.github/workflows/claude.yml"
   check "claude: MCP notes" contains "$d/docs/agents/MCP.md" 'claude mcp add --scope user'
 }
 
 # The default tiers add no build tooling, paid-feature scans, or commit-style
-# rules; strict brings the Makefile and the security scans back.
+# rules; strict brings the Makefile and the security scans back. GitHub
+# Actions are opt-in at every tier.
 test_default_tiers_stay_light() {
-  local p d f
+  local p d f out
   for p in software ml agentic research study; do
-    for d in "$WORK/light-$p-minimal" "$WORK/light-$p-recommended"; do
+    for d in "$WORK/light-$p-minimal" "$WORK/light-$p-recommended" "$WORK/light-$p-strict"; do
       new_repo "${d##*/}" package.json >/dev/null
       "$H" configure --yes -C "$d" --profile "$p" --tier "${d##*-}" >/dev/null 2>&1 || fail "$p: configure failed"
-      for f in Makefile docs/TESTING.md .github/dependabot.yml .github/workflows/codeql.yml \
-        .github/workflows/dependency-review.yml .github/workflows/pr-title.yml; do
-        check_not "${d##*/}: no $f" test -e "$d/$f"
-      done
+      check_not "${d##*/}: no workflows without --actions" test -e "$d/.github/workflows"
+      check_not "${d##*/}: no gate scripts without --actions" test -e "$d/scripts/ci"
+      check_not "${d##*/}: no Dependabot" test -e "$d/.github/dependabot.yml"
       check_not "${d##*/}: no commit-style rule" grep -rqi 'conventional commit' "$d" --exclude-dir=.git
     done
+    check_not "$p minimal: no Makefile" test -e "$WORK/light-$p-minimal/Makefile"
+    check_not "$p recommended: no Makefile" test -e "$WORK/light-$p-recommended/Makefile"
   done
-  d=$(new_repo light-strict package.json)
-  "$H" configure --yes -C "$d" --tier strict >/dev/null 2>&1
-  for f in Makefile docs/TESTING.md .github/dependabot.yml .github/workflows/codeql.yml; do
-    check "strict: $f" test -e "$d/$f"
+  check "strict: Makefile" test -e "$WORK/light-software-strict/Makefile"
+  check "strict: test-tier guide" test -e "$WORK/light-software-strict/docs/TESTING.md"
+
+  # With --actions, each tier gets its own workflows.
+  d=$(new_repo actions-min package.json)
+  "$H" configure --yes --actions -C "$d" --tier minimal >/dev/null 2>&1
+  check "minimal --actions: only CI" test "$(cd "$d/.github/workflows" && echo *)" = ci.yml
+  d=$(new_repo actions-rec package.json)
+  "$H" configure --yes --actions -C "$d" >/dev/null 2>&1
+  check "recommended --actions: CI and the PR gate" test "$(cd "$d/.github/workflows" && echo *)" = 'ci.yml pr-digest.yml pr-gate.yml'
+  d=$(new_repo actions-strict package.json)
+  "$H" configure --yes --actions -C "$d" --tier strict >/dev/null 2>&1
+  for f in .github/dependabot.yml .github/workflows/codeql.yml .github/workflows/dependency-review.yml .github/workflows/claude.yml; do
+    check "strict --actions: $f" test -e "$d/$f"
   done
   check_not "strict: no PR title check" test -e "$d/.github/workflows/pr-title.yml"
+  d=$(new_repo actions-study-ci)
+  "$H" configure --yes --actions -C "$d" --profile study >/dev/null 2>&1
+  check "a tier without workflows gets plain CI" test "$(cd "$d/.github/workflows" && echo *)" = ci.yml
+
+  # --no-actions wins over nothing, and --modules still picks freely.
+  d=$(new_repo actions-off package.json)
+  out=$("$H" configure --yes --actions --no-actions -C "$d" 2>&1)
+  check_not "the last flag wins" test -e "$d/.github/workflows"
+  check "without CI, protecting main means PR review" grep -q "Protect 'main': require PR review (Settings" <<<"$out"
+  check_not "and no CI checks to require" grep -q 'the CI checks' <<<"$out"
+  d=$(new_repo actions-modules package.json)
+  "$H" configure --yes -C "$d" --modules core,guardrails,ci >/dev/null 2>&1
+  check "--modules can name ci" test -e "$d/.github/workflows/ci.yml"
+  out=$("$H" configure --yes --actions -C "$d" --modules core,guardrails 2>&1)
+  check "--actions with --modules says it does nothing" grep -q -- '--actions has no effect with --modules' <<<"$out"
+
+  # setup.sh list shows what --actions adds.
+  out=$("$H" list 2>&1)
+  check "list: a tier without its workflows, then what --actions adds" \
+    grep -qE '^  software +recommended +core guardrails quality audit skills collab  \+ with --actions: ci diff-guard$' <<<"$out"
+
+  # Agentic evals: the workflow only with CI; otherwise the README says to run them.
+  d=$(new_repo actions-evals)
+  "$H" configure --yes -C "$d" --profile agentic --cmd 'eval=make evals' >/dev/null 2>&1
+  check_not "agentic: no eval workflow without --actions" test -e "$d/.github/workflows/evals.yml"
+  check "agentic: run the evals before merging" grep -q 'Run it before merging' "$d/evals/README.md"
+  check_not "no workflow-editing rule without workflows" test -e "$d/.claude/rules/github-actions.md"
+  "$H" configure --yes --actions --force -C "$d" --profile agentic --cmd 'eval=make evals' >/dev/null 2>&1
+  check "agentic --actions: the eval workflow" test -e "$d/.github/workflows/evals.yml"
+  check "and the workflow-editing rule" test -e "$d/.claude/rules/github-actions.md"
+
+  # Without Actions the team docs claim no CI or PR gate.
+  d=$(new_repo actions-docs)
+  "$H" configure --yes -C "$d" --profile research >/dev/null 2>&1
+  for f in docs/agents/HANDBOOK.md CONTRIBUTING.md; do
+    check_not "no CI claims in $f" grep -qE 'required CI checks|CI is green|PR gate|diff-guard|against CI|same gate' "$d/$f"
+  done
+  out=$("$H" configure --yes -C "$d" --profile research 2>&1)
+  check "research: protect main with PR review" grep -q "require PR review (Settings" <<<"$out"
+  d=$(new_repo actions-study)
+  out=$("$H" configure --yes --actions -C "$d" --profile study 2>&1)
+  check_not "study pushes to main: no protection step" grep -q "Protect 'main'" <<<"$out"
 }
 
 # Code scanning on a private repo without GitHub Advanced Security would fail
@@ -1115,7 +1169,7 @@ test_guard_implicit_push() {
 test_diff_guard_script() {
   local d out
   d=$(new_repo ag package.json)
-  "$H" configure --yes -C "$d" >/dev/null 2>&1
+  "$H" configure --yes --actions -C "$d" >/dev/null 2>&1
   mkdir -p "$d/src" "$d/tests"
   printf 'test("a", () => { expect(1).toBe(1); expect(2).toBe(2) })\n' >"$d/tests/a.test.js"
   printf 'test("b", () => {})\n' >"$d/tests/b.test.js"
@@ -1228,11 +1282,14 @@ test_setup_from_clone() {
 }
 
 test_every_profile_and_tier() {
-  local p t d f sum seen=' ' scripts=() workflows=()
+  local p t d f a sum seen=' ' scripts=() workflows=()
   for p in software ml agentic study research; do
     for t in minimal recommended strict; do
       d=$(new_repo "prof-$p-$t" pyproject.toml uv.lock)
-      "$H" configure --yes -C "$d" --profile "$p" --tier "$t" --owners @acme/x >/dev/null 2>&1 ||
+      # Strict with every workflow, so the checks below see all of them.
+      a=''
+      [ "$t" != strict ] || a=--actions
+      "$H" configure --yes -C "$d" --profile "$p" --tier "$t" --owners @acme/x ${a:+"$a"} >/dev/null 2>&1 ||
         fail "$p/$t: configure failed"
       check "$p/$t: settings.json valid" jq empty "$d/.claude/settings.json"
       check_not "$p/$t: unrendered placeholders" grep -rEn '\{\{[#/>]?[A-Z]' "$d" --exclude-dir=.git
@@ -1313,7 +1370,7 @@ test_profile_specifics() {
   d=$WORK/prof-agentic-recommended
   check "agentic: rules" contains "$d/AGENTS.md" 'Prompts are code'
   check_not "agentic: no evals.yml without EVAL_CMD" test -e "$d/.github/workflows/evals.yml"
-  "$H" configure --yes -C "$d" --profile agentic --force --cmd 'eval=uv run python -m evals' >/dev/null 2>&1
+  "$H" configure --yes --actions -C "$d" --profile agentic --force --cmd 'eval=uv run python -m evals' >/dev/null 2>&1
   check "agentic: evals.yml generated" contains "$d/.github/workflows/evals.yml" 'uv run python -m evals'
   check "agentic: eval command in AGENTS.md" contains "$d/AGENTS.md" 'Evals: `uv run python -m evals`'
   ok
@@ -1324,7 +1381,7 @@ test_profile_claude_code_config() {
   local d f
   d=$WORK/prof-software-recommended
   check "software: testing rule is path-scoped" grep -q '^paths: \[' "$d/.claude/rules/testing.md"
-  check "software: CI rule is path-scoped" grep -q '^paths: \[".github/\*\*"\]' "$d/.claude/rules/github-actions.md"
+  check "software: CI rule is path-scoped" grep -q '^paths: \[".github/\*\*"\]' "$WORK/prof-software-strict/.claude/rules/github-actions.md"
   check "software: review skill" grep -q '^name: review$' "$d/.agents/skills/review/SKILL.md"
   check "software: handoff skill" grep -q '^name: handoff$' "$d/.agents/skills/handoff/SKILL.md"
   check "software: reviewer role" grep -q '^tools: Read, Grep, Glob, Bash$' "$d/.claude/agents/reviewer.md"
@@ -1434,7 +1491,7 @@ test_review_and_gate_scripts() {
   local d base head stub
   stub=$(_make_claude_stub)
   d=$(new_repo rv pyproject.toml)
-  "$H" configure --yes -C "$d" --tier strict >/dev/null 2>&1
+  "$H" configure --yes --actions -C "$d" --tier strict >/dev/null 2>&1
   check "strict: pr-gate workflow" test -f "$d/.github/workflows/pr-gate.yml"
   check "strict: gate waits for guard and review" grep -q 'needs: \[guard, review\]' "$d/.github/workflows/pr-gate.yml"
   check "workflow runs base-branch scripts" grep -q 'git show "$BASE_SHA:scripts/ci/pr-gate.sh"' "$d/.github/workflows/pr-gate.yml"
@@ -1562,7 +1619,7 @@ test_mcp_module() {
 test_diff_guard_profile_checks() {
   local d base out
   d=$(new_repo agp pyproject.toml)
-  "$H" configure --yes -C "$d" --profile agentic >/dev/null 2>&1
+  "$H" configure --yes --actions -C "$d" --profile agentic >/dev/null 2>&1
   mkdir -p "$d/prompts"
   git -C "$d" add -A && git -C "$d" commit -qm base
   base=$(git -C "$d" rev-parse HEAD)
@@ -1575,7 +1632,7 @@ test_diff_guard_profile_checks() {
   check "large file flagged" contains "$WORK/agp.md" 'Large files'
 
   d=$(new_repo mlg pyproject.toml)
-  "$H" configure --yes -C "$d" --profile ml >/dev/null 2>&1
+  "$H" configure --yes --actions -C "$d" --profile ml >/dev/null 2>&1
   git -C "$d" add -A && git -C "$d" commit -qm base
   base=$(git -C "$d" rev-parse HEAD)
   printf '{"cells":[{"cell_type":"code","execution_count":3,"outputs":[{"output_type":"stream","text":"hi"}],"source":"print(1)"}]}\n' >"$d/eda.ipynb"
@@ -1788,7 +1845,7 @@ _diff_guard_lock() { # dir -> summary file
 test_diff_guard_flags_lock_changes() {
   local d
   d=$(new_repo agl pyproject.toml)
-  "$H" configure --yes -C "$d" --profile ml --tier strict >/dev/null 2>&1
+  "$H" configure --yes --actions -C "$d" --profile ml --tier strict >/dev/null 2>&1
   _diff_guard_lock "$d"
   check "lock change flagged" contains "$WORK/agl.md" 'Pinned artifacts changed'
 }
@@ -1896,13 +1953,16 @@ test_wizard_flow() {
   mkdir -p "$d"
   git -C "$d" init -q -b main
   # profile, stack, commands, agents (add Codex CLI to the preselected Claude
-  # Code), tier, artifacts, stubs (one invalid dir first), owners, telemetry, apply
-  printf '%s\n' line:1 line:2 line:1 key:2 line: line:2 line:1 line:2 \
+  # Code), tier, GitHub Actions, artifacts, stubs (one invalid dir first),
+  # owners, telemetry, apply
+  printf '%s\n' line:1 line:2 line:1 key:2 line: line:2 line:1 line:1 line:2 \
     line:formulate line:- line:- 'line:../evil' key:x \
     line:formulate line:- line:- line:infra line: line:1 line:y |
     HARNESS_NO_CLEAR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$H" configure -C "$d"
   check "banner names the tool" grep -q 'powerharnessing11k' "$out"
-  check "ten steps" grep -q '\[10/10\]' "$out"
+  check "eleven steps" grep -q '\[11/11\]' "$out"
+  check "Actions are off unless chosen" grep -q 'nothing runs on GitHub  ← default' "$out"
+  check "choosing them adds the workflows" test -f "$d/.github/workflows/ci.yml" -a -f "$d/.github/workflows/pr-gate.yml"
   check "agents checklist preselects Claude Code" grep -q '\[x\] Claude Code' "$out"
   check "both agents set up" test -f "$d/.claude/settings.json" -a -f "$d/.codex/hooks.json"
   check "the summary states each agent's limits" grep -q 'Codex CLI: rules always loaded' "$out"
@@ -1923,7 +1983,7 @@ test_wizard_flow() {
   # The confirm screen can switch on local-only mode. Enter without a mark
   # does nothing there, and l keeps the mark on Apply.
   d=$(new_repo wiz-local)
-  printf '%s\n' line:1 line:2 line:1 line: line:2 line:2 line:1 line: line:1 line: key:y key:l line: |
+  printf '%s\n' line:1 line:2 line:1 line: line:2 line:2 line:2 line:1 line: line:1 line: key:y key:l line: |
     HARNESS_NO_CLEAR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$H" configure -C "$d"
   check "confirm screen offers local only" grep -q '(l)  Local only: off' "$out"
   check "pressing l turns it on" grep -q '(l)  Local only: on' "$out"
@@ -1934,12 +1994,34 @@ test_wizard_flow() {
 
   # Codex CLI alone: no Claude Code telemetry question, so one step fewer.
   d=$(new_repo wiz-codex)
-  printf '%s\n' line:1 line:2 line:1 key:1 key:2 line: line:2 line:2 line:1 line: line:y |
+  printf '%s\n' line:1 line:2 line:1 key:1 key:2 line: line:2 line:2 line:2 line:1 line: line:y |
     HARNESS_NO_CLEAR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$H" configure -C "$d"
-  check "codex only: nine steps" grep -q '\[9/9\]  Ready to apply' "$out"
+  check "codex only: ten steps" grep -q '\[10/10\]  Ready to apply' "$out"
+  check_not "codex only: no workflows when declined" test -e "$d/.github/workflows"
   check_not "codex only: no telemetry question" grep -q 'Export Claude Code telemetry' "$out"
   check "codex only: applied" test -f "$d/.codex/config.toml"
   check_not "codex only: no Claude Code files" test -e "$d/.claude"
+
+  # Custom: the modules and guard level picked by hand are applied as they
+  # are, and the Actions question is not asked (Custom chose ci itself).
+  # Modules in order: guardrails quality audit devtools skills mcp collab ci
+  # security diff-guard review.
+  d=$(new_repo wiz-custom)
+  printf '%s\n' line:1 line:2 line:1 line: line:4 \
+    line:y line:n line:n line:n line:n line:n line:n line:y line:n line:n line:n \
+    line:1 line:2 line:1 line:1 line:y |
+    HARNESS_NO_CLEAR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$H" configure -C "$d"
+  check_not "custom: no Actions question" grep -q 'Add GitHub Actions workflows' "$out"
+  check "custom: one step fewer, counted from the start" sh -c "grep -q '\[5/10\]  Custom modules' '$out' && grep -q '\[10/10\]  Ready to apply' '$out'"
+  check "custom: the picked workflow is written" test -f "$d/.github/workflows/ci.yml"
+  check_not "custom: nothing else from the tier" test -e "$d/.github/workflows/pr-gate.yml" -o -e "$d/CONTRIBUTING.md"
+  check "custom: the picked guard level is kept" grep -q '^## Guardrails (level: relaxed)' "$d/AGENTS.md"
+
+  # --actions on the command line is the wizard's starting answer.
+  d=$(new_repo wiz-actions)
+  printf '%s\n' line:1 line:2 line:1 line: line:2 key:q |
+    HARNESS_NO_CLEAR=1 python3 "$ROOT/tests/drive-tty.py" "$out" "$H" configure --actions -C "$d"
+  check "--actions marks Yes" grep -q 'run on every push and PR  ← from --actions' "$out"
 
   # An existing project: its stack is marked as detected.
   d=$(new_repo wiz-go go.mod)
@@ -2004,7 +2086,8 @@ demo_test_tape() {
   # itself, so run the same entry point.
   tail -n +2 <<<"$inputs" | (cd "$d" && python3 "$ROOT/tests/drive-tty.py" "$out" "$ROOT/setup.sh")
   check "the demo offers git init" grep -q 'is not a git repository. Initialize one here?' "$out"
-  check "the demo walks all ten steps" grep -q '\[10/10\]  Ready to apply' "$out"
+  check "the demo walks all eleven steps" grep -q '\[11/11\]  Ready to apply' "$out"
+  check "the demo adds the workflows" test -f "$d/.github/workflows/pr-gate.yml"
   check "the demo finishes" grep -q 'Bootstrapped ' "$out"
   check_not "the demo never re-asks" grep -q 'invalid\|timed out' "$out"
   check "the demo sets up both agents" test -f "$d/.claude/settings.json" -a -f "$d/.codex/config.toml"
@@ -2066,7 +2149,7 @@ _visible_root() {
 test_tidy_root() {
   local d visible
   d=$(new_repo tidy)
-  "$H" configure --yes -C "$d" --stack python --artifacts --tier strict --owners @acme/x >/dev/null 2>&1 || fail "configure failed"
+  "$H" configure --yes --actions -C "$d" --stack python --artifacts --tier strict --owners @acme/x >/dev/null 2>&1 || fail "configure failed"
   visible=$(_visible_root "$d")
   check "visible root entries (strict Python + artifacts)" test "$visible" = \
     "AGENTS.md CONTRIBUTING.md Makefile artifacts.lock data/ docs/ models/ pyproject.toml scripts/ src/ tests/ "
@@ -2075,14 +2158,14 @@ test_tidy_root() {
   check "reviewer is pointed at it" contains "$d/.claude/agents/reviewer.md" 'docs/REVIEW.md'
 
   d=$(new_repo tidy-ml pyproject.toml)
-  "$H" configure --yes -C "$d" --profile ml >/dev/null 2>&1
+  "$H" configure --yes --actions -C "$d" --profile ml >/dev/null 2>&1
   check "ml: experiment log in docs/" test -f "$d/docs/EXPERIMENTS.md"
   check "ml: skill points at it" contains "$d/.agents/skills/experiment/SKILL.md" 'docs/EXPERIMENTS.md'
   check_not "ml: nothing left at the root" sh -c "ls '$d' | grep -q 'EXPERIMENTS'"
 
   # The learner's own working files stay where they are easy to reach.
   d=$(new_repo tidy-study)
-  "$H" configure --yes -C "$d" --profile study >/dev/null 2>&1
+  "$H" configure --yes --actions -C "$d" --profile study >/dev/null 2>&1
   check "study: plan and progress stay at the root" test -f "$d/LEARNING_PLAN.md" -a -f "$d/PROGRESS.md"
   check "study: visible root" test "$(_visible_root "$d")" = "AGENTS.md LEARNING_PLAN.md PROGRESS.md exercises/ notes/ "
 }
@@ -2158,7 +2241,7 @@ test_local_only() {
   printf 'node_modules/\n' >"$d/.gitignore"
   echo hello >"$d/README.md"
   git -C "$d" add -A && git -C "$d" commit -qm init
-  out=$("$H" configure --yes -C "$d" --agents claude,codex,copilot --stack python --tier strict --owners @acme/x \
+  out=$("$H" configure --yes --actions -C "$d" --agents claude,codex,copilot --stack python --tier strict --owners @acme/x \
     --skills formulate --local-only 2>&1) || fail "configure failed: $out"
 
   check "git sees no change at all" test -z "$(git -C "$d" status --porcelain --untracked-files=all)"
@@ -2261,7 +2344,7 @@ EOF"
 test_project_not_created_yet() {
   local d out
   d=$(new_repo empty-node)
-  out=$("$H" configure --yes -C "$d" --stack node 2>&1)
+  out=$("$H" configure --yes --actions -C "$d" --stack node 2>&1)
   check "next steps say to create the project" grep -q 'Create the project itself: there is no package.json yet' <<<"$out"
   check "with a hint for Node" grep -q "your framework's generator" <<<"$out"
   echo change >"$d/notes.txt"
@@ -2275,21 +2358,21 @@ test_project_not_created_yet() {
   check "no unrendered names in workflows" sh -c "! grep -n '{{[A-Z]' '$d'/.github/workflows/*.yml"
 
   d=$(new_repo existing-node package.json)
-  out=$("$H" configure --yes -C "$d" 2>&1)
+  out=$("$H" configure --yes --actions -C "$d" 2>&1)
   check_not "an existing project gets no such step" grep -q 'Create the project itself' <<<"$out"
 
   # The Python skeleton is the project, so nothing waits there.
   d=$(new_repo empty-python)
-  out=$("$H" configure --yes --modules "$WITH_DEVTOOLS" -C "$d" --stack python 2>&1)
+  out=$("$H" configure --yes --actions --modules "$WITH_DEVTOOLS" -C "$d" --stack python 2>&1)
   check_not "python scaffold: no create step" grep -q 'Create the project itself' <<<"$out"
   check "python scaffold: CI condition matches its pyproject" grep -qF "hashFiles('pyproject.toml', 'requirements.txt', 'setup.py')" "$d/.github/workflows/ci.yml"
 
   d=$(new_repo empty-go)
-  "$H" configure --yes -C "$d" --stack go >/dev/null 2>&1
+  "$H" configure --yes --actions -C "$d" --stack go >/dev/null 2>&1
   check "go: toolchain setup waits for go.mod" sh -c "grep -A1 'actions/setup-go' '$d/.github/workflows/ci.yml' | grep -qF \"if: \\\${{ hashFiles('go.mod') != '' }}\""
 
   d=$(new_repo empty-generic)
-  "$H" configure --yes -C "$d" >/dev/null 2>&1
+  "$H" configure --yes --actions -C "$d" >/dev/null 2>&1
   check_not "generic stack: nothing to wait for" grep -q 'hashFiles' "$d/.github/workflows/ci.yml"
 }
 

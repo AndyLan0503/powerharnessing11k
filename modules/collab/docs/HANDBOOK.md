@@ -4,10 +4,10 @@ This handbook is the team's policy for agentic work. It belongs to the team: cha
 
 ## Principles
 
-1. **Agents are teammates with limits.** Agent changes follow the same PR, review, and CI path as human changes, plus extra checks and an audit trail.
+1. **Agents are teammates with limits.** Agent changes follow the same PR and review path{{#if MOD_CI}}, and the same CI,{{/if}} as human changes, plus extra checks and an audit trail.
 2. **A human owns every agent change.** Whoever launches an agent owns its output: reviewing it, merging it, and answering for it.
 3. **Context lives in the repo.** `AGENTS.md`, skills, and this handbook are versioned and reviewed like code. If an agent keeps making the same mistake, fix the context, not just the PR.
-4. **Guardrails are mechanical.** Hooks, permissions, and required CI checks enforce the rules; this document explains them.
+4. **Guardrails are mechanical.** Hooks and permissions{{#if MOD_CI}}, plus required CI checks,{{/if}} enforce the rules; this document explains them.
 
 ## When to use an agent
 
@@ -25,12 +25,12 @@ Poor fits: ambiguous product decisions, security-sensitive code without an exper
 
 ## Reviewing PRs
 
-Every PR passes the same gate and gets the same review, whoever or whatever wrote it. Nobody is asked to declare how a change was produced. Look closely at:
+Every PR gets the same {{#if MOD_DIFF_GUARD}}gate and the same {{/if}}review, whoever or whatever wrote it. Nobody is asked to declare how a change was produced. Look closely at:
 
-- **Tests:** were any deleted, skipped, or weakened? The diff-guard check flags this.
+- **Tests:** were any deleted, skipped, or weakened?{{#if MOD_DIFF_GUARD}} The diff-guard check flags this.{{/if}}
 - **Scope:** does the diff stay within the task?
 - **Dependencies:** any new packages? Are they justified and maintained?
-- **Confident-sounding claims:** verify "I ran the tests" against CI.
+- **Confident-sounding claims:** verify "I ran the tests" against {{#if MOD_CI}}CI{{/if}}{{#unless MOD_CI}}a run of your own{{/if}}.
 
 ## What each coding agent gets
 
@@ -40,7 +40,13 @@ Project context (`AGENTS.md`), skills (`.agents/skills/`), and the guard hooks (
 |---|---|---|---|---|
 {{AGENT_COVERAGE}}
 
-Other agents that read `AGENTS.md` still get the project context and working agreement, without the hooks. CI and the PR gate apply to every change whichever tool wrote it.
+Other agents that read `AGENTS.md` still get the project context and working agreement, without the hooks.
+{{#if MOD_CI}}
+CI applies to every change, whichever tool wrote it.
+{{/if}}
+{{#if MOD_DIFF_GUARD}}
+So does the PR gate.
+{{/if}}
 
 ## Guardrails at a glance (level: {{GUARD_LEVEL}})
 

@@ -42,6 +42,7 @@ powerharnessing11k turns the team's agentic-engineering practices into a one-sho
 - [x] Vendor-neutral output: `docs/agents/MCP.md` covers only the selected agents (`AGENT_MCP` adapter declaration); `@claude` mentions only with Claude Code
 - [x] `onboard` skill: drafts the project context from the code (unknowns stay as questions), refreshes it later, and offers tests when there are none; `AGENTS.md` asks agents to offer it until the section is filled
 - [x] Stop check runs every check, so one failure no longer hides another, and asks the agent to fix what its change caused (callers included) while reporting failures that were already there instead of widening the task
+- [x] Windows in Git Bash: per-platform install steps; `.claude/skills` is a real link (the run stops with instructions if Windows refuses one) and `core.symlinks` is switched on; a `.gitattributes` rule keeps `*.sh` on LF for CRLF checkouts; CI runs the suite on Windows
 - [ ] Provider support, remaining steps: review backends, GitLab, then Cursor and Gemini. Choose the coding agents (Claude Code, Codex CLI, Cursor, Copilot, Gemini CLI), the git host (GitHub, GitLab, none), and the AI review backend. Design: `docs/design/providers.md`, ADR 0005
 
 - [ ] First real GitHub run of the PR gate; confirm `claude -p --json-schema` output shape and inline-comment posting on a live PR

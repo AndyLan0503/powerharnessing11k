@@ -7,6 +7,7 @@ module_apply() {
   emit_hook hooks/lib.sh
   emit_hook hooks/session-start.sh
   emit append gitignore.tmpl .gitignore
+  emit append gitattributes.tmpl .gitattributes
   emit file editorconfig.tmpl .editorconfig
 
   # Shared skills and the shared reviewer role (not for solo study repos).

@@ -21,14 +21,16 @@ AGENT_COVERAGE="loaded only for matching paths|a tool list per role|allow, ask, 
 AGENT_MCP='**Claude Code** reads `.mcp.json` and asks each person to approve its servers the first time; `/mcp` shows their status. Personal servers: `claude mcp add --scope user <name> ...`.'
 
 agent_claude_begin() {
+  check_links
   emit file CLAUDE.md.tmpl .claude/CLAUDE.md
-  emit_symlink "../$SKILLS_DIR" .claude/skills
   emit append gitignore.tmpl .gitignore
 }
 
 # Claude Code reads skills only from .claude/skills. Normally that is one link
-# to the shared folder. A repo that already has a real .claude/skills folder
-# keeps it, and each shared skill is linked into it instead.
+# to the shared folder, made in agent_claude_finish once the folder exists
+# (Windows needs the target to exist to make a folder link). A repo that
+# already has a real .claude/skills folder keeps it, and each shared skill is
+# linked into it instead.
 agent_claude_skill() { # name
   if [ -d "$TARGET/.claude/skills" ] && [ ! -L "$TARGET/.claude/skills" ]; then
     emit_symlink "../../$SKILLS_DIR/$1" ".claude/skills/$1"
@@ -73,6 +75,7 @@ agent_claude_finish() {
     _claude_mcp >"$HARNESS_TMP/claude.mcp.json"
     apply_rendered file "$HARNESS_TMP/claude.mcp.json" .mcp.json
   fi
+  emit_symlink "../$SKILLS_DIR" .claude/skills
   if [ -L "$link" ] && [ "$(readlink "$link")" != "../$SKILLS_DIR" ]; then
     ui_warn ".claude/skills links to $(readlink "$link"), so Claude Code will not see the skills in $SKILLS_DIR. Re-run with --force to repoint it."
   fi

@@ -21,6 +21,10 @@ on:
       - 'Makefile'
       - '.github/workflows/compat.yml'
       - '.gitattributes'
+  # The full Windows suite, which PRs only sample (see the windows job).
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
@@ -40,6 +44,7 @@ permissions:
 
 jobs:
   bash32:
+    if: github.event_name != 'schedule'
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
@@ -66,4 +71,16 @@ jobs:
       - run: git config --global core.autocrlf true
       - uses: actions/checkout@v7
       - run: bash --version | head -1 && git --version
-      - run: tests/run.sh
+      # Every process start is slow in Git Bash, so a PR runs the tests that
+      # exercise Windows-specific behaviour (links, line endings, the hooks
+      # with and without jq, each agent's adapter); main, the nightly run,
+      # and a manual run get the whole suite.
+      - name: Tests
+        env:
+          EVENT: ${{ github.event_name }}
+          SMOKE: >-
+            test_windows_checkouts test_render_engine test_guard_hooks
+            test_collaborator_needs_nothing test_codex_adapter
+            test_copilot_adapter test_single_source_of_truth test_stop_checks
+        run: |
+          if [ "$EVENT" = pull_request ]; then tests/run.sh "$SMOKE"; else tests/run.sh; fi

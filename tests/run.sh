@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Test suite for harness. Plain bash, no framework: `tests/run.sh [filter]`.
+# Test suite for harness. Plain bash, no framework: `tests/run.sh ["name ..."]`
+# runs the tests whose names contain any of the given parts (all without).
 set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -91,9 +92,19 @@ new_repo() { # name [stack-file...]
   printf '%s' "$d"
 }
 
+# FILTER: space-separated parts of test names; a test runs when its name
+# contains any of them (all tests when empty). MATCHED collects the parts
+# that selected a test, so a part that matches nothing fails the run.
+MATCHED=' '
 run_test() {
+  local f hit=''
   CURRENT=$1
-  [ -z "$FILTER" ] || case $1 in *"$FILTER"*) ;; *) return 0 ;; esac
+  if [ -n "$FILTER" ]; then
+    for f in $FILTER; do
+      case $1 in *"$f"*) hit=1 MATCHED="$MATCHED$f " ;; esac
+    done
+    [ -n "$hit" ] || return 0
+  fi
   printf '• %s\n' "$1"
   "$1"
 }
@@ -132,6 +143,31 @@ EOF
   local expected
   expected=$(printf '%s\n' 'a a&b\1 {{UNKNOWN}} ${{ github.ref }}' yes-block unless-block 'x-inline-un' 'partial a&b\1' "cache: \${{ hashFiles('a&b\\1') != '' && 'x' || '' }}")
   if [ "$(cat "$t/out")" = "$expected" ]; then ok; else fail "render output: $(cat "$t/out")"; fi
+
+  # A missing partial or an unclosed block fails the render; an empty
+  # partial is fine.
+  printf 'a\n{{> nope.md}}\n' >"$t/bad1"
+  printf '{{#if YES}}\nopen\n' >"$t/bad2"
+  for f in bad1 bad2; do
+    check_not "render fails: $f" env HARNESS_ROOT="$ROOT" MODULE_DIR="$t" HV_YES=1 \
+      bash -c ". '$ROOT/lib/render.sh'; render_template '$t/$f' '$t/$f.out'"
+  done
+  : >"$t/empty.md"
+  printf 'a\n{{> empty.md}}\nb\n' >"$t/ok"
+  check "an empty partial renders as nothing" env HARNESS_ROOT="$ROOT" MODULE_DIR="$t" \
+    bash -c ". '$ROOT/lib/render.sh'; render_template '$t/ok' '$t/ok.out' && [ \"\$(cat '$t/ok.out')\" = \"\$(printf 'a\\nb')\" ]"
+
+  # In a real run, a template that fails to render stops the setup and leaves
+  # no half-written file behind (new files are rendered straight into place).
+  local tool=$WORK/broken-tool d out
+  rm -rf "$tool"
+  mkdir -p "$tool"
+  cp -R "$ROOT/bin" "$ROOT/lib" "$ROOT/modules" "$ROOT/agents" "$ROOT/profiles" "$ROOT/setup.sh" "$ROOT/VERSION" "$tool/"
+  printf '{{> missing-part.md}}\n' >>"$tool/modules/core/editorconfig.tmpl"
+  d=$(new_repo render-broken)
+  out=$("$tool/setup.sh" --yes -C "$d" 2>&1) && fail "setup should fail on a broken template"
+  check "the failing template is named" grep -q 'failed to render editorconfig.tmpl' <<<"$out"
+  check_not "no half-written file" test -e "$d/.editorconfig"
 }
 
 test_every_stack() {
@@ -1246,7 +1282,7 @@ test_setup_from_clone() {
 }
 
 test_every_profile_and_tier() {
-  local p t d f a
+  local p t d f a sum seen=' ' scripts=() workflows=()
   for p in software ml agentic study research; do
     for t in minimal recommended strict; do
       d=$(new_repo "prof-$p-$t" pyproject.toml uv.lock)
@@ -1257,21 +1293,39 @@ test_every_profile_and_tier() {
         fail "$p/$t: configure failed"
       check "$p/$t: settings.json valid" jq empty "$d/.claude/settings.json"
       check_not "$p/$t: unrendered placeholders" grep -rEn '\{\{[#/>]?[A-Z]' "$d" --exclude-dir=.git
-      for f in "$d"/.agents/hooks/*.sh "$d"/.agents/scripts/*.sh "$d"/scripts/*.sh "$d"/scripts/ci/*.sh; do
+      # Most scripts and workflows are the same in every repo: collect each
+      # distinct one once, and check them all together below.
+      for f in "$d"/.agents/hooks/*.sh "$d"/.agents/scripts/*.sh "$d"/scripts/*.sh "$d"/scripts/ci/*.sh \
+        "$d"/.github/workflows/*.yml; do
         [ -e "$f" ] || continue
-        check "$p/$t: bash syntax $(basename "$f")" bash -n "$f"
-        if command -v shellcheck >/dev/null 2>&1; then
-          check "$p/$t: shellcheck $(basename "$f")" shellcheck -S warning -e SC1091 "$f"
-        fi
+        sum=$(cksum <"$f")
+        sum=${sum%% *}
+        case $seen in *" $sum "*) continue ;; esac
+        seen="$seen$sum "
+        case $f in
+          *.sh)
+            check "$p/$t: bash syntax ${f##*/}" bash -n "$f"
+            scripts+=("$f")
+            ;;
+          *) workflows+=("$f") ;;
+        esac
       done
-      if python3 -c 'import yaml' 2>/dev/null; then
-        for f in "$d"/.github/workflows/*.yml; do
-          [ -e "$f" ] || continue
-          check "$p/$t: valid yaml $(basename "$f")" python3 -c "import sys,yaml; yaml.safe_load(open(sys.argv[1]))" "$f"
-        done
-      fi
     done
   done
+  [ ${#scripts[@]} -gt 0 ] || fail "no generated scripts found"
+  [ ${#workflows[@]} -gt 0 ] || fail "no generated workflows found"
+  if command -v shellcheck >/dev/null 2>&1 && [ ${#scripts[@]} -gt 0 ]; then
+    check "shellcheck: ${#scripts[@]} distinct generated scripts" shellcheck -S warning -e SC1091 "${scripts[@]}"
+  fi
+  if python3 -c 'import yaml' 2>/dev/null && [ ${#workflows[@]} -gt 0 ]; then
+    check "valid yaml: ${#workflows[@]} distinct workflows" python3 -c '
+import sys, yaml
+for path in sys.argv[1:]:
+    try:
+        yaml.safe_load(open(path))
+    except yaml.YAMLError as e:
+        sys.exit("%s: %s" % (path, e))' "${workflows[@]}"
+  fi
 }
 
 test_profile_specifics() {
@@ -2045,6 +2099,10 @@ demo_test_tape() {
 
 test_summary_output() {
   local d out
+  # A backslash in the path is a plain character, not an escape.
+  d=$(new_repo 'back\tslash')
+  out=$("$H" configure --yes -C "$d" 2>&1)
+  check "TODO files listed under a path with a backslash" grep -qE '^ +AGENTS\.md$' <<<"$out"
   d=$(new_repo summ)
   out=$("$H" configure --yes -C "$d" --stack python --artifacts --skills formulate 2>&1)
   check "grouped by directory" grep -qE '^  \+ \.agents/ +.*hooks/ [0-9]' <<<"$out"
@@ -2331,6 +2389,9 @@ test_cli_errors() {
 demo='^test_'
 [ -z "${DEMO_TESTS:-}" ] || demo='^demo_test_'
 for t in $(declare -F | awk '{print $3}' | grep -e '^test_' -e "$demo"); do run_test "$t"; done
+for t in $FILTER; do
+  case $MATCHED in *" $t "*) ;; *) CURRENT=filter fail "no test matches '$t'" ;; esac
+done
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

@@ -23,16 +23,34 @@ _status() { # kind path [note]
 }
 
 _write() { # tmp dest
+  local dir=$TARGET/$2
   [ -n "${DRY_RUN:-}" ] && return 0
-  mkdir -p "$(dirname "$TARGET/$2")"
+  dir=${dir%/*}
+  [ -d "$dir" ] || mkdir -p "$dir"
   cp "$1" "$TARGET/$2"
 }
 
 # emit MODE SRC DEST — render SRC (relative to the module dir) to DEST
 # (relative to the target repo).
 emit() {
-  local mode=$1 src=$MODULE_DIR/$2 dest=$3 out
+  local mode=$1 src=$MODULE_DIR/$2 dest=$3 out dir
   [ -f "$src" ] || harness_die "module $MODULE_NAME: missing template $2"
+  # A new file is rendered straight into place: one process instead of two.
+  case $mode in
+    file | seed | exec)
+      if [ -z "${DRY_RUN:-}" ] && [ ! -e "$TARGET/$dest" ] && [ ! -L "$TARGET/$dest" ]; then
+        dir=$TARGET/$dest
+        dir=${dir%/*}
+        [ -d "$dir" ] || mkdir -p "$dir"
+        HARNESS_WRITING=$TARGET/$dest
+        render_template "$src" "$TARGET/$dest" || harness_die "module $MODULE_NAME: failed to render $2"
+        HARNESS_WRITING=''
+        [ "$mode" != exec ] || chmod +x "$TARGET/$dest"
+        _status created "$dest"
+        return 0
+      fi
+      ;;
+  esac
   HARNESS_SEQ=$((${HARNESS_SEQ:-0} + 1))
   out=$HARNESS_TMP/render.$HARNESS_SEQ
   render_template "$src" "$out" || harness_die "module $MODULE_NAME: failed to render $2"
@@ -185,7 +203,7 @@ _apply_local_attributes() { # tmp
 # Per-file list (--verbose). Sets APPLY_SKIPPED.
 apply_summary_full() {
   local kind path note sym color
-  while IFS="$(printf '\t')" read -r kind path note; do
+  while IFS=$'\t' read -r kind path note; do
     case $kind in
       created | appended) sym='+' color=$C_OK ;;
       overwritten) sym='~' color=$C_WARN ;;
@@ -251,20 +269,33 @@ apply_summary() {
   APPLY_SKIPPED=$(grep -c '^skipped' "$HARNESS_TMP/status" || true)
 }
 
-# Files written in this run that still contain TODO(team), one per line.
+# Files written in this run that still contain TODO(team), one per line,
+# AGENTS.md first. A marker inside `inline code` is text about the notes (as
+# in the onboard skill), not a note to fill in. One awk reads every file.
 apply_todo_files() {
-  local kind path
-  while IFS="$(printf '\t')" read -r kind path _; do
+  local kind path list=$HARNESS_TMP/todo.files
+  : >"$list"
+  while IFS=$'\t' read -r kind path _; do
     case $kind in created | appended | overwritten) ;; *) continue ;; esac
-    [ -f "$TARGET/$path" ] || continue
-    # A marker inside `inline code` is text about the notes (as in the onboard
-    # skill), not a note to fill in.
-    if sed 's/`[^`]*`//g' "$TARGET/$path" 2>/dev/null | grep -q 'TODO(team)'; then printf '%s\n' "$path"; fi
-  done <"$HARNESS_TMP/status" | awk '
-    seen[$0]++ { next }
-    $0 == "AGENTS.md" { first = $0; next }   # the one everybody must fill in
-    { rest[++n] = $0 }
-    END { if (first != "") print first; for (i = 1; i <= n; i++) print rest[i] }'
+    [ -f "$TARGET/$path" ] && printf '%s\n' "$path" >>"$list"
+  done <"$HARNESS_TMP/status"
+  [ -s "$list" ] || return 0
+  TODO_ROOT=$TARGET awk '
+    !($0 in seen) { seen[$0] = 1; order[++n] = $0 }
+    END {
+      for (i = 1; i <= n; i++) {
+        f = order[i]; hit = 0
+        while ((getline l < (ENVIRON["TODO_ROOT"] "/" f)) > 0) {
+          gsub(/`[^`]*`/, "", l)
+          if (index(l, "TODO(team)")) { hit = 1; break }
+        }
+        close(ENVIRON["TODO_ROOT"] "/" f)
+        if (!hit) continue
+        if (f == "AGENTS.md") first = f; else rest[++m] = f
+      }
+      if (first != "") print first
+      for (i = 1; i <= m; i++) print rest[i]
+    }' "$list"
 }
 
 # --local-only: keep everything this run wrote out of git on this machine,
@@ -284,7 +315,7 @@ apply_local_exclude() {
   case $file in /* | [A-Za-z]:*) ;; *) file=$TARGET/$file ;; esac
   LOCAL_EXCLUDE_FILE=$file
   : >"$entries"
-  while IFS="$(printf '\t')" read -r kind path _; do
+  while IFS=$'\t' read -r kind path _; do
     case $kind in created | overwritten | unchanged) ;; *) continue ;; esac
     if git -C "$TARGET" ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
       LOCAL_TRACKED="$LOCAL_TRACKED $path"

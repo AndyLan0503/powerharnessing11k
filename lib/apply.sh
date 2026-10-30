@@ -75,7 +75,7 @@ emit_symlink() {
   elif [ -L "$path" ] && [ -n "${FORCE:-}" ]; then
     if [ -z "${DRY_RUN:-}" ]; then
       rm "$path"
-      ln -s "$link_to" "$path"
+      _link "$link_to" "$dest"
     fi
     _status overwritten "$dest" "link to $link_to"
   elif [ -e "$path" ] || [ -L "$path" ]; then
@@ -83,9 +83,48 @@ emit_symlink() {
   else
     if [ -z "${DRY_RUN:-}" ]; then
       mkdir -p "$(dirname "$path")"
-      ln -s "$link_to" "$path"
+      _link "$link_to" "$dest"
     fi
     _status created "$dest" "link to $link_to"
+  fi
+}
+
+# On Windows, the ln of Git Bash, MSYS2, and Cygwin copies the target unless
+# told to make a real link. These variables ask for one, and for an error
+# instead of a copy when Windows does not allow it; elsewhere they are ignored.
+LINK_ENV='MSYS=winsymlinks:nativestrict CYGWIN=winsymlinks:nativestrict'
+
+# check_links: stop before anything is written if this machine cannot make
+# symbolic links (Windows without Developer Mode), so a refusal never leaves
+# a half-written setup behind.
+check_links() {
+  local probe=$HARNESS_TMP/link-probe err
+  [ -z "${DRY_RUN:-}" ] || return 0
+  rm -rf "$probe"
+  mkdir -p "$probe/target"
+  # shellcheck disable=SC2086 # LINK_ENV is several assignments on purpose
+  if ! err=$(env $LINK_ENV ln -s target "$probe/link" 2>&1) || [ ! -L "$probe/link" ]; then
+    rm -rf "$probe"
+    harness_die "this machine cannot create symbolic links${err:+ ($err)}. On Windows, turn on Developer Mode in Settings, then run this again. Nothing was written."
+  fi
+  rm -rf "$probe"
+}
+
+# _link TARGET DEST. A repository whose git was set up without symlink support
+# has its links checked out as plain files, and would commit this one as a
+# plain file too. It gets core.symlinks=true, and its existing links are
+# checked out again as real links, or the next commit would turn them into
+# plain files for everyone.
+_link() {
+  local err p
+  # shellcheck disable=SC2086 # LINK_ENV is several assignments on purpose
+  err=$(env $LINK_ENV ln -s "$1" "$TARGET/$2" 2>&1) ||
+    harness_die "could not create the symbolic link $2: $err"
+  if [ "$(git -C "$TARGET" config --bool core.symlinks 2>/dev/null)" = false ]; then
+    git -C "$TARGET" config core.symlinks true
+    git -C "$TARGET" ls-files -s | awk -F '\t' '$1 ~ /^120000 / { print $2 }' | while IFS= read -r p; do
+      [ -L "$TARGET/$p" ] || git -C "$TARGET" checkout -- "$p"
+    done
   fi
 }
 
@@ -97,13 +136,18 @@ _apply_append() { # tmp dest
     grep -Ev '^[[:space:]]*(#|$)' "$tmp" >>"$HARNESS_TMP/local.patterns" || true
     return 0
   fi
+  # Likewise, attributes go to this machine's .git/info/attributes.
+  if [ -n "${LOCAL_ONLY:-}" ] && [ "$dest" = .gitattributes ]; then
+    _apply_local_attributes "$tmp"
+    return 0
+  fi
   if [ ! -e "$path" ]; then
     _write "$tmp" "$dest"
     _status created "$dest"
     return
   fi
   # Template lines (comments and blanks excluded) not already in the file.
-  awk 'NR == FNR { have[$0] = 1; next } /^[[:space:]]*(#|$)/ { next } !($0 in have)' \
+  awk 'FILENAME == ARGV[1] { have[$0] = 1; next } /^[[:space:]]*(#|$)/ { next } !($0 in have)' \
     "$path" "$tmp" >"$missing"
   if [ ! -s "$missing" ]; then
     _status unchanged "$dest"
@@ -124,6 +168,18 @@ _apply_append() { # tmp dest
     APPLY_APPENDED="$APPLY_APPENDED $dest"
   fi
   _status appended "$dest" "$(wc -l <"$missing" | tr -d ' ') line(s)"
+}
+
+_apply_local_attributes() { # tmp
+  local file
+  file=$(git -C "$TARGET" rev-parse --git-path info/attributes 2>/dev/null) || harness_die "--local-only needs a git repository"
+  case $file in /* | [A-Za-z]:*) ;; *) file=$TARGET/$file ;; esac
+  [ -z "${DRY_RUN:-}" ] || return 0
+  mkdir -p "$(dirname "$file")"
+  touch "$file"
+  awk 'FILENAME == ARGV[1] { have[$0] = 1; next } /^[[:space:]]*(#|$)/ { next } !($0 in have)' \
+    "$file" "$1" >"$HARNESS_TMP/attributes.missing"
+  cat "$HARNESS_TMP/attributes.missing" >>"$file"
 }
 
 # Per-file list (--verbose). Sets APPLY_SKIPPED.
@@ -225,7 +281,7 @@ apply_local_exclude() {
   local file entries=$HARNESS_TMP/local.entries patterns=$HARNESS_TMP/local.pats kind path _ old
   LOCAL_EXCLUDED=0 LOCAL_TRACKED=''
   file=$(git -C "$TARGET" rev-parse --git-path info/exclude 2>/dev/null) || harness_die "--local-only needs a git repository"
-  case $file in /*) ;; *) file=$TARGET/$file ;; esac
+  case $file in /* | [A-Za-z]:*) ;; *) file=$TARGET/$file ;; esac
   LOCAL_EXCLUDE_FILE=$file
   : >"$entries"
   while IFS="$(printf '\t')" read -r kind path _; do
@@ -285,6 +341,6 @@ apply_local_exclude() {
 local_block_present() {
   local file
   file=$(git -C "$TARGET" rev-parse --git-path info/exclude 2>/dev/null) || return 1
-  case $file in /*) ;; *) file=$TARGET/$file ;; esac
+  case $file in /* | [A-Za-z]:*) ;; *) file=$TARGET/$file ;; esac
   [ -f "$file" ] && grep -qxF "$LOCAL_BLOCK_BEGIN" "$file" && grep -qxF "$LOCAL_BLOCK_END" "$file"
 }

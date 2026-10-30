@@ -22,6 +22,7 @@ with guardrails, skills, and monitoring, plus CI and a PR gate if you want them.
 ![Dependencies: none](https://img.shields.io/badge/dependencies-none-success)
 ![Agents: Claude Code | Codex CLI | GitHub Copilot](https://img.shields.io/badge/agents-Claude%20Code%20%7C%20Codex%20CLI%20%7C%20Copilot-D97757)
 
+[Install](#-install) •
 [Quick start](#-quick-start) •
 [The wizard](#-the-wizard) •
 [What you get](#-what-you-get) •
@@ -40,6 +41,8 @@ with guardrails, skills, and monitoring, plus CI and a PR gate if you want them.
 ```sh
 git clone --depth=1 https://github.com/AndyLan0503/powerharnessing11k ~/powerharnessing11k
 ```
+
+On Windows, or missing git? See the [install steps for each platform](#-install).
 
 **Run** from inside the project you want to set up. It can be an existing repository or a new, empty folder:
 
@@ -68,22 +71,74 @@ powerharnessing11k does it in about a minute and then **leaves**. Everything it 
 - 🧩 **Your domain, your words.** Name your skills, subagents, and rules; you get blank, correctly placed files with `TODO(team)` notes instead of guesses.
 - 🚪 **One shot, no footprint.** No config file, no manifest, no `update` command, no links back to this repo. It runs once per repository and is never needed there again.
 
-## 🚀 Quick start
+## 📥 Install
 
-**1. Clone it once**, anywhere you like (like Powerlevel10k):
+Clone it once, anywhere you like (like Powerlevel10k). It needs bash, git, awk, and sed, and nothing else. Pick your platform:
+
+<details open>
+<summary><b>macOS</b></summary>
+
+Everything it needs ships with macOS, apart from git. If `git --version` asks you to install the command line developer tools, accept. Then:
 
 ```sh
 git clone --depth=1 https://github.com/AndyLan0503/powerharnessing11k ~/powerharnessing11k
 ```
 
-**2. Run it from the project** you want to set up. An empty folder is fine: it offers to `git init` first.
+</details>
+
+<details>
+<summary><b>Linux</b></summary>
+
+bash, awk, and sed come with every common distribution. Install git if you don't have it:
+
+```sh
+sudo apt install git    # Debian, Ubuntu
+sudo dnf install git    # Fedora, RHEL
+```
+
+Then:
+
+```sh
+git clone --depth=1 https://github.com/AndyLan0503/powerharnessing11k ~/powerharnessing11k
+```
+
+</details>
+
+<details>
+<summary><b>Windows</b></summary>
+
+The tool and the hooks it installs are bash scripts. Bash comes with Git for Windows as **Git Bash**.
+
+1. Install [Git for Windows](https://gitforwindows.org/), from the website or in PowerShell:
+
+   ```powershell
+   winget install --id Git.Git -e
+   ```
+
+2. Turn on **Developer Mode** in Windows Settings, so git can create symbolic links.
+3. Open **Git Bash** from the Start menu and run:
+
+   ```sh
+   git config --global core.symlinks true
+   git clone --depth=1 https://github.com/AndyLan0503/powerharnessing11k ~/powerharnessing11k
+   ```
+
+Run the commands in the rest of this README from Git Bash. Already use WSL? Follow the Linux steps inside it instead. See also [Does it work on Windows?](#-faq)
+
+</details>
+
+To update later: `git -C ~/powerharnessing11k pull`.
+
+## 🚀 Quick start
+
+**1. Run it from the project** you want to set up. An empty folder is fine: it offers to `git init` first.
 
 ```sh
 mkdir opt-engine && cd opt-engine
 ~/powerharnessing11k/setup.sh
 ```
 
-**3. Answer a few questions.** Then fill in the `TODO(team)` notes it lists (or ask your agent to run the `onboard` skill, which drafts the project context from your code), commit, and open a PR. Collaborators just pull.
+**2. Answer a few questions.** Then fill in the `TODO(team)` notes it lists (or ask your agent to run the `onboard` skill, which drafts the project context from your code), commit, and open a PR. Collaborators just pull.
 
 Prefer no questions? Everything has a flag. Run this from inside the project folder too:
 
@@ -118,10 +173,10 @@ Press a key to mark an answer, then Enter to confirm it; the marked option is hi
 When it's done you get a short summary and your next steps:
 
 ```
-  50 file(s) written
+  51 file(s) written
 
-  + ./             .gitignore, .editorconfig, artifacts.lock, CONTRIBUTING.md, AGENTS.md
-  + .claude/       CLAUDE.md, skills, agents/ 3, rules/ 5, settings.json
+  + ./             .gitignore, .gitattributes, .editorconfig, artifacts.lock, CONTRIBUTING.md, AGENTS.md
+  + .claude/       CLAUDE.md, agents/ 3, rules/ 5, skills, settings.json
   + .agents/       hooks/ 7, skills/ 7, scripts/
   + scripts/       artifacts.sh, ci/ 2
   + docs/          ARTIFACTS.md, agents/
@@ -401,7 +456,15 @@ To share the setup later, delete the marked block in `.git/info/exclude` and com
 <details>
 <summary><b>Does it work on Windows?</b></summary>
 
-The tool itself needs bash, so run it from WSL or Git Bash. The repo it produces works anywhere, with one thing to know: `.claude/skills` is a symbolic link to `.agents/skills`. Windows collaborators need symlinks enabled in git (`git config --global core.symlinks true`, with Developer Mode on) before cloning, or Claude Code will not find the skills.
+Yes, with bash. The tool and the hooks it installs are bash scripts, so Windows needs Git Bash (part of [Git for Windows](https://gitforwindows.org/)) or WSL. Run the setup from either one. In the repo it produces:
+
+- **Claude Code** on Windows already requires Git for Windows and runs the hooks through its bash.
+- **GitHub Copilot and Codex** run the hooks only when bash is available, so use them from Git Bash or WSL. Started from plain PowerShell, the guardrail hooks may not run.
+- **The PR gate and CI** run on GitHub's Linux runners, so they apply whatever OS people use.
+- `.claude/skills` is a symbolic link to `.agents/skills`. Windows collaborators need symlinks enabled in git (`git config --global core.symlinks true`, with Developer Mode on) before cloning, or Claude Code will not find the skills. The setup makes a real link even in Git Bash, which copies by default. If Windows does not allow links, it stops before writing anything and says how to turn them on.
+- `.gitattributes` rules keep the generated hook and CI scripts on LF line endings, so Windows checkouts, which use CRLF by default, can still run them. Your own scripts are left as they are.
+
+CI runs the test suite on Windows in Git Bash.
 
 </details>
 
@@ -415,7 +478,7 @@ Yes. Fork or import the repo into your company's GitHub, through whatever route 
 <details>
 <summary><b>Why bash?</b></summary>
 
-So it runs anywhere with nothing to install: stock macOS bash 3.2, `git`, `awk`, and `sed`. CI tests it on Linux and on macOS with `/bin/bash`. See [ADR 0001](docs/adr/0001-zero-dependency-shell-cli.md).
+So it runs anywhere with nothing to install: stock macOS bash 3.2, `git`, `awk`, and `sed`. CI tests it on Linux, on macOS with `/bin/bash`, and on Windows in Git Bash. See [ADR 0001](docs/adr/0001-zero-dependency-shell-cli.md).
 
 </details>
 
@@ -435,7 +498,7 @@ It's a spinoff of [Powerlevel10k](https://github.com/romkatv/powerlevel10k): the
 
 ## 📋 Requirements
 
-bash 3.2+ (stock macOS works), git, awk, and sed. `jq` is optional for hooks, which fall back to python3 and then sed. The generated CI uses the `jq` and `gh` preinstalled on GitHub runners; the AI review needs an `ANTHROPIC_API_KEY` secret.
+bash 3.2+ (stock macOS works; on Windows, Git Bash or WSL), git, awk, and sed. `jq` is optional for hooks, which fall back to python3 and then sed. The generated CI uses the `jq` and `gh` preinstalled on GitHub runners; the AI review needs an `ANTHROPIC_API_KEY` secret.
 
 ## 🧑‍💻 Development
 

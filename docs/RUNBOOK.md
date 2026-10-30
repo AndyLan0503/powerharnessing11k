@@ -111,7 +111,7 @@ It also does not guess your domain. It cannot know your solver, your data source
 
 ### Step 0: Prerequisites
 
-- git, and bash 3.2 or newer (stock macOS is fine)
+- git, and bash 3.2 or newer (stock macOS is fine; on Windows, use Git Bash from [Git for Windows](https://gitforwindows.org/), or WSL). The [install steps](../README.md#-install) cover each platform.
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed, to use the result
 - For the Python path: [uv](https://docs.astral.sh/uv/)
 - A GitHub repository (it may be empty), with admin rights for the final settings step

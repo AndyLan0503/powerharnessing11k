@@ -5,8 +5,12 @@
 #   {{#if NAME}} ... {{/if}}     keep block when NAME is truthy
 #   {{#unless NAME}} ... {{/if}} keep block when NAME is falsy
 #
-# Directives must sit alone on their line. Blocks nest. A value is truthy when
-# it is non-empty and not one of 0/false/no/off.
+#   {{> file}}                   include file (relative to the template's
+#                                module), up to five levels deep
+#
+# Directives must sit alone on their line, except {{#if}}/{{#unless}} ...
+# {{/if}} pairs within one line. Blocks nest. A value is truthy when it is
+# non-empty and not one of 0/false/no/off.
 
 function truthy(name,    v) {
   if (!(("HV_" name) in ENVIRON)) return 0
@@ -57,22 +61,43 @@ function subst(line,    out, start, rest, cl, name) {
   return out line
 }
 
-{
-  if (match($0, /^[ \t]*\{\{#if [A-Z][A-Z0-9_]*\}\}[ \t]*$/)) {
-    s = $0; sub(/^[ \t]*\{\{#if /, "", s); sub(/\}\}[ \t]*$/, "", s)
-    keep[++depth] = truthy(s); next
+# One template line: directives open and close blocks, the rest is kept or
+# dropped by the blocks around it.
+function render(line,    s) {
+  if (match(line, /^[ \t]*\{\{#if [A-Z][A-Z0-9_]*\}\}[ \t]*$/)) {
+    s = line; sub(/^[ \t]*\{\{#if /, "", s); sub(/\}\}[ \t]*$/, "", s)
+    keep[++depth] = truthy(s); return
   }
-  if (match($0, /^[ \t]*\{\{#unless [A-Z][A-Z0-9_]*\}\}[ \t]*$/)) {
-    s = $0; sub(/^[ \t]*\{\{#unless /, "", s); sub(/\}\}[ \t]*$/, "", s)
-    keep[++depth] = !truthy(s); next
+  if (match(line, /^[ \t]*\{\{#unless [A-Z][A-Z0-9_]*\}\}[ \t]*$/)) {
+    s = line; sub(/^[ \t]*\{\{#unless /, "", s); sub(/\}\}[ \t]*$/, "", s)
+    keep[++depth] = !truthy(s); return
   }
-  if (match($0, /^[ \t]*\{\{\/if\}\}[ \t]*$/)) {
+  if (match(line, /^[ \t]*\{\{\/if\}\}[ \t]*$/)) {
     if (depth > 0) depth--
-    next
+    return
   }
-  if (active()) print subst($0)
+  if (active()) print subst(line)
 }
 
-END {
-  if (depth != 0) { print "render: unbalanced {{#if}} in " FILENAME > "/dev/stderr"; exit 3 }
+# {{> file}} alone on a line includes file (relative to RENDER_DIR) in its
+# place. An empty file is fine; one that cannot be read fails the render.
+function expand(path, level,    l, f, r) {
+  if (level > 5) { print "render: partials nested too deeply at " path > "/dev/stderr"; exit 3 }
+  while ((r = (getline l < path)) > 0) {
+    if (l ~ /^\{\{> [^}]+\}\}[ \t]*$/) {
+      f = l; sub(/^\{\{> /, "", f); sub(/\}\}[ \t]*$/, "", f)
+      expand(ENVIRON["RENDER_DIR"] "/" f, level + 1)
+    } else {
+      render(l)
+    }
+  }
+  close(path)
+  if (r < 0) { print "render: cannot read " path > "/dev/stderr"; exit 3 }
+}
+
+# Usage: RENDER_DIR=DIR awk -f render.awk TEMPLATE
+BEGIN {
+  expand(ARGV[1], 0)
+  if (depth != 0) { print "render: unbalanced {{#if}} in " ARGV[1] > "/dev/stderr"; exit 3 }
+  exit
 }

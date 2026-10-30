@@ -97,7 +97,7 @@ approval_policy = "on-request"
 # Read anywhere, write only inside this repository, no network by default.
 sandbox_mode = "workspace-write"
 TOML
-  while IFS="$(printf '\t')" read -r name url token; do
+  while IFS=$'\t' read -r name url token; do
     printf '\n[mcp_servers.%s]\nurl = "%s"\nbearer_token_env_var = "%s"\n' \
       "$(printf '%s' "$name" | tr -c 'A-Za-z0-9_\n-' '_')" "$(_codex_toml_str "$url")" "$token"
   done <"$HARNESS_TMP/settings.mcp"
@@ -147,7 +147,7 @@ RULES
 # no cloud session-start use for the install hook, so that event is skipped.
 _codex_hook_rows() {
   local event script timeout
-  while IFS="$(printf '\t')" read -r event script timeout; do
+  while IFS=$'\t' read -r event script timeout; do
     case $event in
       pre-shell) printf 'PreToolUse\tBash\t%s\t%s\n' "$script" "$timeout" ;;
       pre-edit) printf 'PreToolUse\tapply_patch\t%s\t%s\n' "$script" "$timeout" ;;
@@ -176,7 +176,7 @@ _codex_hooks() { # -> stdout
       [ "$matcher" = - ] || printf '        "matcher": "%s",\n' "$matcher"
       printf '        "hooks": ['
       h_first=1
-      while IFS="$(printf '\t')" read -r script timeout; do
+      while IFS=$'\t' read -r script timeout; do
         [ $h_first -eq 1 ] || printf ','
         h_first=0
         printf '\n          {\n'

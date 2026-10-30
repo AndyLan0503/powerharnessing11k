@@ -60,7 +60,7 @@ agent_claude_role() { # name file
 _claude_mcp() { # -> stdout
   local name url token first=1
   printf '{\n  "mcpServers": {'
-  while IFS="$(printf '\t')" read -r name url token; do
+  while IFS=$'\t' read -r name url token; do
     [ $first -eq 1 ] || printf ','
     first=0
     printf '\n    "%s": {\n      "type": "http",\n      "url": "%s",\n      "headers": {\n        "Authorization": "Bearer ${%s}"\n      }\n    }' \
@@ -106,7 +106,7 @@ _claude_allow() {
 # Neutral hook events as Claude's "Event<TAB>matcher<TAB>script<TAB>timeout".
 _claude_hooks() {
   local event script timeout
-  while IFS="$(printf '\t')" read -r event script timeout; do
+  while IFS=$'\t' read -r event script timeout; do
     case $event in
       session-start) printf 'SessionStart\t\t%s\t%s\n' "$script" "$timeout" ;;
       pre-shell) printf 'PreToolUse\tBash\t%s\t%s\n' "$script" "$timeout" ;;
@@ -133,14 +133,14 @@ _claude_settings() { # -> stdout
   printf '  }'
 
   awk -F '\t' '$1 == "claude" && $2 == "string" { print $3 "\t" $4 }' "$HARNESS_TMP/settings.agent" |
-    while IFS="$(printf '\t')" read -r key value; do
+    while IFS=$'\t' read -r key value; do
       printf ',\n  "%s": "%s"' "$(json_escape "$key")" "$(json_escape "$value")"
     done
 
   if grep -q "^claude	env	" "$HARNESS_TMP/settings.agent"; then
     printf ',\n  "env": {'
     ev_first=1
-    while IFS="$(printf '\t')" read -r key value; do
+    while IFS=$'\t' read -r key value; do
       [ $ev_first -eq 1 ] || printf ','
       ev_first=0
       printf '\n    "%s": "%s"' "$(json_escape "$key")" "$(json_escape "$value")"
@@ -166,7 +166,7 @@ _claude_settings() { # -> stdout
         h_first=1
         # Tab is IFS whitespace, so empty fields would collapse: let awk pick
         # the two (always non-empty) columns we need.
-        while IFS="$(printf '\t')" read -r script timeout; do
+        while IFS=$'\t' read -r script timeout; do
           [ $h_first -eq 1 ] || printf ','
           h_first=0
           printf '\n          {\n'

@@ -79,6 +79,21 @@ profile_load() { # profile tier -> sets HV_PROFILE HV_MODULES HV_GUARD_LEVEL
   export HV_PROFILE HV_MODULES HV_GUARD_LEVEL
 }
 
+# set_flags PREFIX SELECTED NAME...: exports PREFIX_NAME (upper case, "-" as
+# "_") for each NAME: 1 when NAME is in the space-separated SELECTED list,
+# empty otherwise. One tr for all names: a subshell each adds up on Windows.
+set_flags() {
+  local prefix=$1 selected=$2 m up ups
+  shift 2
+  ups=$(printf '%s ' "$@" | tr 'a-z-' 'A-Z_')
+  for m in "$@"; do
+    up=${ups%% *}
+    ups=${ups#* }
+    if list_has "$selected" "$m"; then set_var "${prefix}_$up" 1; else set_var "${prefix}_$up" ''; fi
+    export "${prefix}_$up"
+  done
+}
+
 # Flags derived from answers, used by templates ({{#if MOD_CI}} etc.).
 derive_vars() {
   local m up
@@ -100,11 +115,8 @@ derive_vars() {
   # Profile flags. ENGINEERING: profiles whose work ships through PRs and CI.
   # SOLO: one person, no review flow (pushing to the default branch is fine).
   HV_PROFILE=${HV_PROFILE:-software}
-  for m in $ALL_PROFILES; do
-    up=$(printf '%s' "$m" | tr 'a-z' 'A-Z')
-    if [ "$HV_PROFILE" = "$m" ]; then set_var "HV_PROFILE_$up" 1; else set_var "HV_PROFILE_$up" ''; fi
-    export "HV_PROFILE_$up"
-  done
+  # shellcheck disable=SC2086 # word lists on purpose
+  set_flags HV_PROFILE "$HV_PROFILE" $ALL_PROFILES
   HV_PROFILE_TITLE=$(profile_field "$HV_PROFILE" TITLE)
   HV_PROFILE_ENGINEERING='' HV_PROFILE_SOLO='' HV_PROTECT_RAW_DATA=''
   case $HV_PROFILE in software | ml | agentic) HV_PROFILE_ENGINEERING=1 ;; esac
@@ -156,11 +168,8 @@ derive_vars() {
   export HV_GATE_NEEDS
   export HV_PROFILE HV_PROFILE_TITLE HV_PROFILE_ENGINEERING HV_PROFILE_SOLO HV_PROTECT_RAW_DATA HV_NOTEBOOK_CHECK
 
-  for m in $ALL_MODULES; do
-    up=$(printf '%s' "$m" | tr 'a-z-' 'A-Z_')
-    if list_has "$HV_MODULES" "$m"; then set_var "HV_MOD_$up" 1; else set_var "HV_MOD_$up" ''; fi
-    export "HV_MOD_$up"
-  done
+  # shellcheck disable=SC2086
+  set_flags HV_MOD "$HV_MODULES" $ALL_MODULES
   # The files that mean "the project exists" for this stack. Until one does,
   # lint, typecheck, and tests have nothing to run against: the stop check
   # and the CI steps skip instead of failing.
@@ -185,16 +194,8 @@ derive_vars() {
     *) HV_NODE_LOCKFILE=package-lock.json ;;
   esac
   export HV_STACK_MANIFESTS HV_CI_HAS_PROJECT HV_PROJECT_MISSING HV_NODE_LOCKFILE
-  for m in node python go rust generic; do
-    up=$(printf '%s' "$m" | tr 'a-z' 'A-Z')
-    if [ "$HV_STACK" = "$m" ]; then set_var "HV_STACK_$up" 1; else set_var "HV_STACK_$up" ''; fi
-    export "HV_STACK_$up"
-  done
-  for m in npm pnpm yarn bun uv poetry pip; do
-    up=$(printf '%s' "$m" | tr 'a-z' 'A-Z')
-    if [ "$HV_PKG_MANAGER" = "$m" ]; then set_var "HV_PM_$up" 1; else set_var "HV_PM_$up" ''; fi
-    export "HV_PM_$up"
-  done
+  set_flags HV_STACK "$HV_STACK" node python go rust generic
+  set_flags HV_PM "${HV_PKG_MANAGER:-}" npm pnpm yarn bun uv poetry pip
 
   HV_DEPENDABOT_ECOSYSTEM='' HV_CODEQL_LANGUAGE='' HV_CODEQL_BUILD_MODE=none
   case $HV_STACK in
